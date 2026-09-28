@@ -351,7 +351,7 @@ export function generateCrmAnnouncements({
     const progress = Math.round(Number(branch.progress) || 80);
 
     // Create a milestone post for active branches
-    if (branch.branchId === 'HBR' || branch.branchId === 'SARJAPURA' || progress >= 40) {
+    if (branch.branchId === 'HBR' || branch.branchId === 'SARJAPURA' || branch.branchId === 'SARJAPUR' || progress >= 40) {
       const displayPercentage = branch.branchId === 'HBR' ? 80 : progress;
       const isHundred = displayPercentage >= 100;
       const id = `crm-snippet-target-milestone-${branch.branchId}`;

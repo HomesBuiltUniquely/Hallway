@@ -58,13 +58,22 @@ function LeaderboardsInner() {
         return row.department.toLowerCase() === activeDepartment.toLowerCase();
       });
     }
-    if (!localSearch.trim()) return rows;
-    const q = localSearch.toLowerCase();
-    return rows.filter(
-      (row) =>
-        row.name.toLowerCase().includes(q) ||
-        (row.role || '').toLowerCase().includes(q)
+    if (localSearch.trim()) {
+      const q = localSearch.toLowerCase();
+      rows = rows.filter(
+        (row) =>
+          row.name.toLowerCase().includes(q) ||
+          (row.role || '').toLowerCase().includes(q)
+      );
+    }
+    // Strictly rank by highest gross booking value (revenue) descending
+    const sorted = [...rows].sort(
+      (a, b) => (Number(b.revenue) || 0) - (Number(a.revenue) || 0)
     );
+    return sorted.map((member, idx) => ({
+      ...member,
+      rank: idx + 1,
+    }));
   }, [data?.individuals, localSearch, activeDepartment]);
 
   const teams = useMemo(() => {
@@ -77,13 +86,22 @@ function LeaderboardsInner() {
         return row.department.toLowerCase() === activeDepartment.toLowerCase();
       });
     }
-    if (!localSearch.trim()) return rows;
-    const q = localSearch.toLowerCase();
-    return rows.filter(
-      (row) =>
-        row.teamName.toLowerCase().includes(q) ||
-        (row.leadName || '').toLowerCase().includes(q)
+    if (localSearch.trim()) {
+      const q = localSearch.toLowerCase();
+      rows = rows.filter(
+        (row) =>
+          row.teamName.toLowerCase().includes(q) ||
+          (row.leadName || '').toLowerCase().includes(q)
+      );
+    }
+    // Strictly rank by highest team gross booking value descending
+    const sorted = [...rows].sort(
+      (a, b) => (Number(b.totalRevenueInr) || 0) - (Number(a.totalRevenueInr) || 0)
     );
+    return sorted.map((team, idx) => ({
+      ...team,
+      rank: idx + 1,
+    }));
   }, [data?.teams, localSearch, activeDepartment]);
 
   return (
@@ -132,7 +150,7 @@ function LeaderboardsInner() {
               </h2>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Top 5 performers by gross bookings and conversion efficiency.
+              Top performers ranked by highest gross booking value and conversion efficiency.
             </p>
           </div>
 
@@ -358,10 +376,10 @@ function LeaderboardsInner() {
               </button>
             </div>
             <div className="space-y-3 max-h-80 overflow-y-auto">
-              {(data?.individuals || []).length === 0 ? (
+              {individuals.length === 0 ? (
                 <p className="text-xs text-slate-400 text-center py-8">No roster members yet.</p>
               ) : (
-                (data?.individuals || []).map((member) => (
+                individuals.map((member) => (
                   <div
                     key={member.id}
                     className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 text-xs"

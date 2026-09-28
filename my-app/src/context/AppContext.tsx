@@ -18,7 +18,7 @@ import {
   designProjectsMock
 } from '../data/mockData';
 import { fetchFeed, fetchTargets, clearCrmSession, fetchLeaderboard } from '../lib/crmApi';
-import { generateCrmAnnouncements } from '../lib/crmAnnouncementsGenerator';
+import { generateCrmAnnouncements, formatInrToLakhsOrCrores } from '../lib/crmAnnouncementsGenerator';
 import { clearDesignHandoff } from '../lib/modulePortals';
 import { isTodayOrYesterday, cleanPostContent, getYesterdayYmd } from '../lib/hallwayDisplay';
 
@@ -167,7 +167,7 @@ function formatBranchName(raw?: string): string {
 
 const BRANCH_TARGET_CONFIGS = [
   { id: 'JP_NAGAR', name: 'JP Nagar', team: 'JP Nagar Hub' },
-  { id: 'SARJAPURA', name: 'Sarjapura', team: 'Sarjapura Hub' },
+  { id: 'SARJAPUR', name: 'Sarjapura', team: 'Sarjapura Hub' },
   { id: 'HBR', name: 'HBR Layout', team: 'HBR Layout Hub' },
 ];
 
@@ -327,7 +327,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (branchTargets.length === 0) {
         branchTargets.push(
           {
-            branchId: 'SARJAPURA',
+            branchId: 'SARJAPUR',
             branchName: 'Sarjapura',
             team: 'Sarjapura Hub',
             title: 'Monthly Target',
@@ -401,12 +401,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const comments = mergeComments(existing?.comments, existingLocal?.comments);
         const commentsCount = Math.max(existing?.commentsCount || 0, comments.length, existingLocal?.commentsCount || 0);
 
+        const currentFormatted = target.currentInr
+          ? formatInrToLakhsOrCrores(target.currentInr)
+          : (target.current || '₹0')
+              .replace(/[¹]/g, '1')
+              .replace(/[²]/g, '2')
+              .replace(/[\u20B9â‚¹]/g, '₹');
+        const targetFormatted = target.targetInr
+          ? formatInrToLakhsOrCrores(target.targetInr)
+          : (target.target || '₹0')
+              .replace(/[¹]/g, '1')
+              .replace(/[²]/g, '2')
+              .replace(/[\u20B9â‚¹]/g, '₹');
+
         const branchPrefix = target.branchName ? `${target.branchName}: ` : '';
-        const title = `${branchPrefix}${target.title}: ${target.current} achieved (${target.progress}%)`;
+        const title = `${branchPrefix}${target.title}: ${currentFormatted} achieved (${target.progress}%)`;
         const content =
           target.branchName && target.branchId !== 'all'
-            ? `${target.branchName} Hub monthly gross booking pacing is at ${target.current} towards the ${target.target} branch target (${target.progress}% achieved).`
-            : `Monthly gross booking pacing across all corridors is at ${target.current} towards the ${target.target} target (${target.progress}% achieved).`;
+            ? `${target.branchName} Hub monthly gross booking pacing is at ${currentFormatted} towards the ${targetFormatted} branch target (${target.progress}% achieved).`
+            : `Monthly gross booking pacing across all corridors is at ${currentFormatted} towards the ${targetFormatted} target (${target.progress}% achieved).`;
 
         targetPosts.push({
           id,
@@ -431,8 +444,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             target: target.targetInr || 100,
             label: target.branchName ? `${target.branchName} Target` : target.title,
             percentage: target.progress,
-            currentFormatted: target.current,
-            targetFormatted: target.target,
+            currentFormatted,
+            targetFormatted,
           },
           reactions,
           commentsCount,

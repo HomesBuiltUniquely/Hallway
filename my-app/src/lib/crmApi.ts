@@ -243,7 +243,9 @@ function sharedQuery(params: InsightsFilterParams, extras?: Record<string, strin
     if (params.dateTo) search.set('dateTo', params.dateTo);
   }
   if (params.branchId && params.branchId !== 'all') {
-    search.set('branchId', params.branchId);
+    const rawBranch = params.branchId.trim().toUpperCase();
+    const normalizedBranch = rawBranch === 'SARJAPURA' ? 'SARJAPUR' : params.branchId;
+    search.set('branchId', normalizedBranch);
   }
   if (params.salesManagerId != null) {
     search.set('salesManagerId', String(params.salesManagerId));
@@ -398,18 +400,31 @@ export async function fetchInsightsFilterOptions(
   token?: string | null,
   signal?: AbortSignal
 ): Promise<InsightsFilterOptions> {
-  const qs = branchId && branchId !== 'all' ? `?branchId=${encodeURIComponent(branchId)}` : '';
+  const normalizedBranch =
+    branchId && branchId.trim().toUpperCase() === 'SARJAPURA' ? 'SARJAPUR' : branchId;
+  const qs =
+    normalizedBranch && normalizedBranch !== 'all'
+      ? `?branchId=${encodeURIComponent(normalizedBranch)}`
+      : '';
   const data = await crmFetch<InsightsFilterOptions>(
     `/v1/crm/insights/filter-options${qs}`,
     { signal },
     token
   );
   if (data?.branches && Array.isArray(data.branches)) {
-    data.branches = data.branches.filter(
-      (b) =>
-        b.id?.trim().toUpperCase() !== 'SARJAPUR' &&
-        b.name?.trim().toUpperCase() !== 'SARJAPUR'
-    );
+    data.branches = data.branches.map((b) => {
+      const u = b.id?.trim().toUpperCase();
+      if (u === 'SARJAPUR' || u === 'SARJAPURA') {
+        return { id: 'SARJAPUR', name: 'Sarjapura' };
+      }
+      if (u === 'JP_NAGAR') {
+        return { id: 'JP_NAGAR', name: 'JP Nagar' };
+      }
+      if (u === 'HBR') {
+        return { id: 'HBR', name: 'HBR Layout' };
+      }
+      return b;
+    });
   }
   return data;
 }
@@ -490,7 +505,11 @@ function hallwayQuery(
   if (params) {
     for (const [key, value] of Object.entries(params)) {
       if (value == null || value === '') continue;
-      search.set(key, String(value));
+      let val = String(value);
+      if (key === 'branchId' && val.trim().toUpperCase() === 'SARJAPURA') {
+        val = 'SARJAPUR';
+      }
+      search.set(key, val);
     }
   }
   const qs = search.toString();
