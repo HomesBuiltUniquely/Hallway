@@ -63,7 +63,22 @@ app.get('/api/announcements', async (req, res) => {
   } catch (err) {
     console.error('MySQL query error, falling back to JSON:', err.message);
   }
-  res.json(getJsonAnnouncements());
+  const list = getJsonAnnouncements();
+  list.sort((a, b) => {
+    const getTime = (p) => {
+      if (p.createdAt) {
+        const t = new Date(p.createdAt).getTime();
+        if (!isNaN(t)) return t;
+      }
+      if (p.id && String(p.id).startsWith('post-')) {
+        const num = Number(String(p.id).replace('post-', ''));
+        if (!isNaN(num)) return num;
+      }
+      return 0;
+    };
+    return getTime(b) - getTime(a);
+  });
+  res.json(list);
 });
 
 // GET /api/announcements/:id - get single announcement
@@ -115,6 +130,7 @@ app.post('/api/announcements', async (req, res) => {
     categoryColor: colors[type] || '#3B82F6',
     title: title.trim(),
     timestamp: 'Just Now',
+    createdAt: new Date().toISOString(),
     author: author || {
       name: 'Ranjith',
       avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
@@ -194,7 +210,7 @@ app.post('/api/announcements/:id/comments', async (req, res) => {
 // POST /api/announcements/:id/reactions - toggle reaction on announcement
 app.post('/api/announcements/:id/reactions', async (req, res) => {
   const { reactionType } = req.body;
-  if (!['thumbsUp', 'clap', 'heart'].includes(reactionType)) {
+  if (!['thumbsUp', 'clap', 'heart', 'joy', 'surprised', 'sad', 'pray'].includes(reactionType)) {
     return res.status(400).json({ error: 'Invalid reaction type' });
   }
 

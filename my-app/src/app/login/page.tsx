@@ -10,8 +10,6 @@ import {
   Eye,
   EyeOff,
   ArrowRight,
-  Briefcase,
-  Palette,
   AlertCircle,
   Loader2
 } from 'lucide-react';
@@ -22,7 +20,6 @@ import { saveDesignHandoff } from '../../lib/modulePortals';
 export default function LoginPage() {
   const router = useRouter();
   const { login, theme, toggleTheme } = useApp();
-  const [role, setRole] = useState<'crm' | 'design'>('crm');
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
@@ -30,13 +27,6 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const passwordTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-  const handleRoleChange = (newRole: 'crm' | 'design') => {
-    setRole(newRole);
-    setErrorMessage(null);
-    setIdentifier('');
-    setPassword('');
-  };
 
   const toggleShowPassword = () => {
     if (showPassword) {
@@ -68,79 +58,70 @@ export default function LoginPage() {
       return;
     }
 
-    if (role === 'design') {
-      // Designers path: Call CRM BFF proxy -> Design Module POST /api/auth/login
-      setIsLoading(true);
-      try {
-        const res = await fetch('/api/design-module/auth/login', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            email: id,
-            password: password,
-          }),
-        });
+    setIsLoading(true);
+    let crmErr: any = null;
 
-        const data = await res.json().catch(() => null);
+    // 1. Try CRM Sales Login
+    try {
+      const data = await loginToCrm(id, password);
+      const user = data.user;
+      login(
+        user?.email || user?.username || id,
+        crmDisplayName(user) || id,
+        user?.role || 'SALES',
+        'Sales'
+      );
+      router.replace('/');
+      return;
+    } catch (err: any) {
+      crmErr = err;
+    }
 
-        if (res.ok && data?.sessionId && data?.user) {
-          saveDesignHandoff(data.user, data.sessionId);
-          const designUser = data.user as { email?: string; name?: string; role?: string };
-          login(
-            designUser.email || id,
-            designUser.name || designUser.email || id,
-            designUser.role || 'DESIGN',
-            'Design'
-          );
-          router.replace('/');
-          return;
-        }
+    // 2. Fallback / check Design Module login
+    try {
+      const res = await fetch('/api/design-module/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: id,
+          password: password,
+        }),
+      });
 
-        // Handle errors from Design Module
-        if (res.status === 401) {
-          setErrorMessage(data?.message || 'Invalid email or password');
-        } else if (res.status === 400) {
-          setErrorMessage(data?.message || 'Email and password are required');
-        } else {
-          setErrorMessage(data?.message || 'Design Module is unreachable. Try again.');
-        }
-      } catch (err: any) {
-        console.error('Design Module login error:', err);
-        setErrorMessage('Design Module is unreachable. Try again.');
-      } finally {
-        setIsLoading(false);
-      }
-    } else {
-      setIsLoading(true);
-      try {
-        const data = await loginToCrm(id, password);
-        const user = data.user;
+      const data = await res.json().catch(() => null);
+
+      if (res.ok && data?.sessionId && data?.user) {
+        saveDesignHandoff(data.user, data.sessionId);
+        const designUser = data.user as { email?: string; name?: string; role?: string };
         login(
-          user?.email || user?.username || id,
-          crmDisplayName(user) || id,
-          user?.role || 'SALES',
-          'Sales'
+          designUser.email || id,
+          designUser.name || designUser.email || id,
+          designUser.role || 'DESIGN',
+          'Design'
         );
         router.replace('/');
-      } catch (err) {
-        if (err instanceof CrmApiError) {
-          if (err.status === 401 || err.status === 400) {
-            setErrorMessage(
-              err.message && !/authorization failed|bad request/i.test(err.message)
-                ? err.message
-                : 'Invalid username or password'
-            );
-          } else {
-            setErrorMessage(err.message);
-          }
-        } else {
-          setErrorMessage('Hub CRM is unreachable. Try again.');
-        }
-      } finally {
-        setIsLoading(false);
+        return;
       }
+    } catch {
+      // ignore design module network fallback error
+    }
+
+    // If both failed, display error
+    setIsLoading(false);
+    if (crmErr instanceof CrmApiError) {
+      if (crmErr.status === 401 || crmErr.status === 400) {
+        setErrorMessage(
+          crmErr.message && !/authorization failed|bad request/i.test(crmErr.message)
+            ? crmErr.message
+            : 'Invalid username or password'
+        );
+      } else {
+        setErrorMessage(crmErr.message);
+      }
+    } else {
+      setErrorMessage('Invalid username or password');
     }
   };
 
@@ -183,49 +164,12 @@ export default function LoginPage() {
 
             <div>
               <h1 className="text-2xl sm:text-[28px] font-extrabold text-slate-900 dark:text-white tracking-tight">
-                Welcome to HUB
+                Pulse of HUB
               </h1>
               <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1 font-medium">
-                Unified Portal for CRM &amp; Design Studios
+                Where deal momentum turns into dream homes.
               </p>
             </div>
-          </div>
-
-          {/* Role Segmented Toggle: CRM Sales vs Designers */}
-          <div className="space-y-1.5">
-            <div className="p-1 bg-slate-100/90 dark:bg-slate-800/80 rounded-2xl border border-slate-200/70 dark:border-slate-700/60 flex gap-1">
-              <button
-                type="button"
-                onClick={() => handleRoleChange('crm')}
-                className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer select-none ${
-                  role === 'crm'
-                    ? 'bg-white dark:bg-[#151D2E] text-slate-900 dark:text-white shadow-xs font-extrabold border border-slate-200/50 dark:border-slate-700/60'
-                    : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-                }`}
-              >
-                <Briefcase className={`w-3.5 h-3.5 ${role === 'crm' ? 'text-red-600 dark:text-red-500' : 'text-slate-400'}`} />
-                <span>CRM Sales</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleRoleChange('design')}
-                className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer select-none ${
-                  role === 'design'
-                    ? 'bg-white dark:bg-[#151D2E] text-slate-900 dark:text-white shadow-xs font-extrabold border border-slate-200/50 dark:border-slate-700/60'
-                    : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-                }`}
-              >
-                <Palette className={`w-3.5 h-3.5 ${role === 'design' ? 'text-red-600 dark:text-red-500' : 'text-slate-400'}`} />
-                <span>Designers</span>
-              </button>
-            </div>
-
-            <p className="text-[11px] text-center text-slate-400 dark:text-slate-500">
-              {role === 'crm'
-                ? 'Sales CRM — leads, booking, token'
-                : 'Design Module — designers, TDM, DQC, finance'}
-            </p>
           </div>
 
           {/* Error Message Alert */}
@@ -241,7 +185,7 @@ export default function LoginPage() {
             {/* Field 1: Username or Email */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 ml-0.5">
-                {role === 'design' ? 'Designer Email' : 'Username or Email'}
+                Username or Email
               </label>
               <div className="relative group">
                 <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-red-500 transition-colors" />
@@ -254,11 +198,7 @@ export default function LoginPage() {
                     if (errorMessage) setErrorMessage(null);
                   }}
                   className="w-full pl-10 pr-4 py-3 bg-slate-50/80 hover:bg-slate-50 dark:bg-slate-800/50 dark:hover:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80 rounded-2xl text-xs sm:text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:bg-white dark:focus:bg-slate-800 focus:border-red-500 focus:ring-4 focus:ring-red-500/15 transition-all font-sans"
-                  placeholder={
-                    role === 'crm'
-                      ? 'e.g. ranjith or sales@hubinterior.com'
-                      : 'e.g. designer@hubinterior.com'
-                  }
+                  placeholder="e.g. ranjith or sales@hubinterior.com"
                 />
               </div>
             </div>
@@ -331,7 +271,7 @@ export default function LoginPage() {
                 </>
               ) : (
                 <>
-                  <span>Enter Hallway</span>
+                  <span>Enter Home</span>
                   <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform duration-200" />
                 </>
               )}
@@ -343,7 +283,7 @@ export default function LoginPage() {
             <p className="text-xs text-slate-500 dark:text-slate-400">
               Not a member?{' '}
               <span className="font-semibold text-slate-700 dark:text-slate-300">
-                Contact your Admin or TDM for access
+                Contact your Admin for access
               </span>
             </p>
           </div>

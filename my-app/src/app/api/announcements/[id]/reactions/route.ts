@@ -10,13 +10,13 @@ export async function POST(request: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
     const body = await request.json();
-    const { reactionType } = body;
+    const { reactionType, postMetadata } = body;
 
-    if (!['thumbsUp', 'clap', 'heart'].includes(reactionType)) {
+    if (!['thumbsUp', 'clap', 'heart', 'joy', 'surprised', 'pray'].includes(reactionType)) {
       return NextResponse.json({ error: 'Invalid reaction type' }, { status: 400 });
     }
 
-    const reactions = await toggleReaction(id, reactionType);
+    const reactions = await toggleReaction(id, reactionType, postMetadata);
     if (!reactions) {
       return NextResponse.json({ error: 'Announcement not found' }, { status: 404 });
     }

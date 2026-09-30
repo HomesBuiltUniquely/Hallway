@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -10,23 +10,76 @@ import {
   Target,
   Users,
   Megaphone,
-  LineChart,
-  Briefcase,
-  Palette,
+  ChevronRight,
 } from 'lucide-react';
-import HowsLogo from '../common/HowsLogo';
 import { useApp } from '../../context/AppContext';
-import { openCrmDashboard, openDesignDashboard } from '../../lib/modulePortals';
+
+/** 4-tile launcher icon as in HOWS CRM */
+function Hows4TileIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 32 32"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      aria-hidden="true"
+    >
+      <rect x="2" y="2" width="12" height="12" rx="3.5" fill="#1DA1E6" />
+      <rect x="18" y="2" width="12" height="12" rx="3.5" fill="#1DA1E6" />
+      <rect x="2" y="18" width="12" height="12" rx="3.5" fill="#1DA1E6" />
+      <rect x="18" y="18" width="12" height="12" rx="3.5" fill="#1DA1E6" />
+    </svg>
+  );
+}
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const { currentUser, loginPortal } = useApp();
-  const [isHovered, setIsHovered] = useState(false);
+  const {
+    sidebarCollapsed,
+    isSidebarHovered,
+    setIsSidebarHovered,
+  } = useApp();
 
-  const isDesigner = loginPortal === 'design' || currentUser.department === 'Design';
+  const [isModuleMenuOpen, setIsModuleMenuOpen] = useState(false);
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const moduleMenuRef = useRef<HTMLDivElement>(null);
+
+  // Effective expanded state: either hovered or pinned
+  const isExpanded = !sidebarCollapsed || isSidebarHovered || isModuleMenuOpen;
+
+  const handleMouseEnter = () => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+    setIsSidebarHovered(true);
+  };
+
+  const handleMouseLeave = () => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+    }
+    // Safety buffer (120ms) so quick cursor slips don't trigger jarring collapses
+    hoverTimeoutRef.current = setTimeout(() => {
+      if (!isModuleMenuOpen) {
+        setIsSidebarHovered(false);
+      }
+    }, 120);
+  };
+
+  // Close module popup on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (moduleMenuRef.current && !moduleMenuRef.current.contains(e.target as Node)) {
+        setIsModuleMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const mainNavItems = [
-    { name: 'Home', href: '/', icon: Home },
+    { name: 'Dashboard', href: '/', icon: Home },
     { name: 'Leaderboards', href: '/leaderboards', icon: BarChart2 },
     { name: 'Book of Records', href: '/records', icon: Award },
     { name: 'Targets', href: '/targets', icon: Target },
@@ -34,45 +87,97 @@ export default function Sidebar() {
     { name: 'Announcements', href: '/announcements', icon: Megaphone },
   ];
 
-  // CRM ERP and Design ERP removed per requirement. Insights remains for presales/analytics.
-  const erpItems = isDesigner
-    ? []
-    : [
-        { name: 'Insights', href: '/insights', icon: LineChart, badge: 'CRM' },
-      ];
-
   return (
     <aside
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
       className={`fixed top-0 left-0 bottom-0 z-40 bg-white dark:bg-[#0B1320] text-slate-800 dark:text-slate-200 border-r border-slate-200 dark:border-slate-800/80 flex flex-col transition-all duration-300 ease-in-out select-none font-sans ${
-        isHovered ? 'w-[240px] shadow-2xl' : 'w-[76px] shadow-xs'
+        isExpanded ? 'w-[240px] shadow-2xl' : 'w-[76px] shadow-xs'
       }`}
     >
-      {/* Brand Header with HOWS Logo - No collapse/expand button */}
-      <div className="h-16 px-3 flex items-center border-b border-slate-100 dark:border-slate-800/60 overflow-hidden">
-        <Link href="/" className="flex items-center w-full">
-          {isHovered ? (
-            <div className="px-1 transition-opacity duration-200 animate-in fade-in">
-              <HowsLogo size={34} />
+      {/* Top Section: HOWS Logo */}
+      <div className="h-16 px-3 flex items-center border-b border-slate-100 dark:border-slate-800/70 shrink-0 overflow-hidden">
+        {isExpanded ? (
+          <Link
+            href="/"
+            className="flex items-center gap-3 min-w-0 animate-in fade-in duration-200"
+          >
+            {/* HOWS Authentic Logo Image - wide, clear, and unconfined */}
+            <div className="w-11 h-11 shrink-0 select-none flex items-center justify-center">
+              <img
+                src="/hows-logo.png?v=5"
+                alt="HOWS Logo"
+                className="w-full h-full object-contain"
+              />
             </div>
-          ) : (
-            <div className="w-10 h-10 rounded-xl border-2 border-sky-400 dark:border-sky-500 bg-sky-50 dark:bg-sky-950/40 p-1 flex flex-col justify-center items-center shadow-xs mx-auto shrink-0">
-              <div className="flex justify-between w-full px-0.5 leading-none">
-                <span className="text-[10px] font-black text-sky-600 dark:text-sky-400">H</span>
-                <span className="text-[10px] font-black text-sky-600 dark:text-sky-400">O</span>
+
+            <div className="flex flex-col min-w-0 justify-center">
+              <div className="flex items-center gap-1 leading-none">
+                <span className="font-extrabold text-slate-900 dark:text-white text-[16px] tracking-tight font-sans">
+                  Hows ERP
+                </span>
               </div>
-              <div className="flex justify-between w-full px-0.5 leading-none mt-0.5">
-                <span className="text-[10px] font-black text-sky-600 dark:text-sky-400">W</span>
-                <span className="text-[10px] font-black text-sky-600 dark:text-sky-400">S</span>
+              <span className="text-[11px] text-slate-400 dark:text-slate-500 font-medium tracking-wide mt-0.5 truncate">
+                Digital Corridor
+              </span>
+            </div>
+          </Link>
+        ) : (
+          /* Collapsed Centered HOWS Logo */
+          <Link
+            href="/"
+            title="Hows ERP"
+            className="w-11 h-11 flex items-center justify-center mx-auto shrink-0 hover:scale-105 transition-transform cursor-pointer select-none"
+          >
+            <img
+              src="/hows-logo.png?v=5"
+              alt="HOWS Logo"
+              className="w-full h-full object-contain"
+            />
+          </Link>
+        )}
+      </div>
+
+      {/* ALL MODULES Launcher Card (Image 1 & 2) */}
+      <div className="px-3 pt-3 pb-1 shrink-0 relative" ref={moduleMenuRef}>
+        {isExpanded ? (
+          <button
+            type="button"
+            onClick={() => setIsModuleMenuOpen(!isModuleMenuOpen)}
+            title="Switch Module"
+            className="w-full rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-850/70 hover:bg-sky-50 dark:hover:bg-slate-800 hover:border-sky-300 dark:hover:border-sky-700 transition-all px-3 py-2 flex items-center justify-between shadow-2xs cursor-pointer group"
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-6 h-6 flex items-center justify-center shrink-0">
+                <Hows4TileIcon className="w-5 h-5 transition-transform group-hover:scale-105" />
+              </div>
+              <div className="flex flex-col text-left min-w-0">
+                <span className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400 leading-none">
+                  ALL MODULES
+                </span>
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-100 tracking-tight leading-tight mt-0.5 truncate">
+                  CRM
+                </span>
               </div>
             </div>
-          )}
-        </Link>
+            <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-0.5 transition-transform shrink-0" />
+          </button>
+        ) : (
+          /* Collapsed 4-tile Button */
+          <button
+            type="button"
+            onClick={() => setIsModuleMenuOpen(!isModuleMenuOpen)}
+            title="All Modules"
+            className="w-11 h-11 mx-auto rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-850 hover:bg-sky-50 dark:hover:bg-slate-800 hover:border-sky-300 dark:hover:border-sky-700 transition-all flex items-center justify-center cursor-pointer shadow-2xs group"
+          >
+            <Hows4TileIcon className="w-5 h-5 transition-transform group-hover:scale-110" />
+          </button>
+        )}
+
       </div>
 
       {/* Main Navigation List */}
-      <nav className="flex-1 px-3 py-4 space-y-1.5 overflow-y-auto overflow-x-hidden custom-scrollbar">
+      <nav className="flex-1 px-3 py-3 space-y-1 overflow-y-auto overflow-x-hidden custom-scrollbar">
         {mainNavItems.map((item) => {
           const isActive = pathname === item.href;
           const Icon = item.icon;
@@ -81,124 +186,41 @@ export default function Sidebar() {
             <Link
               key={item.name}
               href={item.href}
-              title={!isHovered ? item.name : undefined}
+              title={!isExpanded ? item.name : undefined}
               className={`flex items-center rounded-xl text-xs sm:text-sm font-semibold transition-all group relative overflow-hidden ${
-                isHovered ? 'px-3.5 py-2.5 gap-3' : 'px-0 py-2.5 justify-center'
+                isExpanded ? 'px-3.5 py-2.5' : 'px-0 py-2.5 justify-center'
               } ${
                 isActive
-                  ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-bold shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                  ? 'bg-[#E8F1FD] dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 font-bold shadow-2xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/70 dark:hover:bg-slate-800/50'
               }`}
             >
-              <div className={`flex items-center justify-center shrink-0 ${isHovered ? 'w-5 h-5' : 'w-10 h-10'}`}>
+              <div className={`flex items-center justify-center shrink-0 ${isExpanded ? 'w-5 h-5 mr-3' : 'w-10 h-10'}`}>
                 <Icon
                   className={`w-4 h-4 transition-transform group-hover:scale-110 ${
-                    isActive ? 'text-slate-900 dark:text-white' : 'text-slate-400'
+                    isActive ? 'text-sky-600 dark:text-sky-400' : 'text-slate-600 dark:text-slate-400'
                   }`}
                 />
               </div>
 
-              {isHovered && (
-                <span className="truncate flex-1 tracking-tight whitespace-nowrap animate-in fade-in duration-200">
-                  {item.name}
-                </span>
-              )}
+              {isExpanded && (
+                <>
+                  <span className="truncate flex-1 tracking-tight whitespace-nowrap animate-in fade-in duration-150">
+                    {item.name}
+                  </span>
 
-              {!isHovered && isActive && (
-                <span className="absolute left-0 top-2 bottom-2 w-1 bg-sky-500 rounded-r-full" />
+                  {/* Active Blue Dot Indicator (Image 2) */}
+                  {isActive && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-sky-500 shrink-0 ml-1.5" />
+                  )}
+                </>
               )}
             </Link>
           );
         })}
 
-        {/* Dynamic ERP Module (Insights only - CRM ERP & Design ERP removed per requirement) */}
-        {erpItems.length > 0 && (
-          <div className="pt-3 mt-3 border-t border-slate-100 dark:border-slate-800/60">
-            {isHovered && (
-              <span className="px-3 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block mb-1 animate-in fade-in duration-150">
-                Presales Module
-              </span>
-            )}
-
-            {erpItems.map((erpItem) => {
-              const isActive = pathname.startsWith(erpItem.href);
-              const ErpIcon = erpItem.icon;
-
-              return (
-                <Link
-                  key={erpItem.href}
-                  href={erpItem.href}
-                  title={!isHovered ? erpItem.name : undefined}
-                  className={`flex items-center rounded-xl text-xs sm:text-sm font-bold transition-all group relative overflow-hidden ${
-                    isHovered ? 'px-3.5 py-2.5 gap-3' : 'px-0 py-2.5 justify-center'
-                  } ${
-                    isActive
-                      ? 'bg-[#EBF2FE] dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border border-sky-300/60 dark:border-sky-800/60'
-                      : 'text-sky-600 dark:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-950/40'
-                  }`}
-                >
-                  <div className={`flex items-center justify-center shrink-0 ${isHovered ? 'w-5 h-5' : 'w-10 h-10'}`}>
-                    <ErpIcon className="w-4 h-4 transition-transform group-hover:scale-110" />
-                  </div>
-
-                  {isHovered && (
-                    <span className="truncate flex-1 tracking-tight whitespace-nowrap animate-in fade-in duration-200">
-                      {erpItem.name}
-                    </span>
-                  )}
-
-                  {isHovered && erpItem.badge && (
-                    <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full uppercase bg-sky-600 text-white shrink-0 animate-in fade-in duration-200">
-                      {erpItem.badge}
-                    </span>
-                  )}
-
-                  {!isHovered && isActive && (
-                    <span className="absolute left-0 top-2 bottom-2 w-1 bg-sky-600 rounded-r-full" />
-                  )}
-                </Link>
-              );
-            })}
-          </div>
-        )}
-
-        <div className="pt-3 mt-3 border-t border-slate-100 dark:border-slate-800/60 space-y-1.5">
-          {isHovered && (
-            <span className="px-3 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block mb-1 animate-in fade-in duration-150">
-              Dashboards
-            </span>
-          )}
-          {isDesigner ? (
-            <button
-              type="button"
-              onClick={openDesignDashboard}
-              title={!isHovered ? 'Design Module' : undefined}
-              className={`w-full flex items-center rounded-xl text-xs sm:text-sm font-semibold transition-all group relative overflow-hidden text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 ${
-                isHovered ? 'px-3.5 py-2.5 gap-3' : 'px-0 py-2.5 justify-center'
-              }`}
-            >
-              <div className={`flex items-center justify-center shrink-0 ${isHovered ? 'w-5 h-5' : 'w-10 h-10'}`}>
-                <Palette className="w-4 h-4" />
-              </div>
-              {isHovered && <span className="truncate flex-1 text-left">Design Module</span>}
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={openCrmDashboard}
-              title={!isHovered ? 'CRM' : undefined}
-              className={`w-full flex items-center rounded-xl text-xs sm:text-sm font-semibold transition-all group relative overflow-hidden text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950/40 ${
-                isHovered ? 'px-3.5 py-2.5 gap-3' : 'px-0 py-2.5 justify-center'
-              }`}
-            >
-              <div className={`flex items-center justify-center shrink-0 ${isHovered ? 'w-5 h-5' : 'w-10 h-10'}`}>
-                <Briefcase className="w-4 h-4" />
-              </div>
-              {isHovered && <span className="truncate flex-1 text-left">CRM</span>}
-            </button>
-          )}
-        </div>
       </nav>
+
     </aside>
   );
 }

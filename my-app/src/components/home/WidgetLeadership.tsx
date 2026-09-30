@@ -9,7 +9,22 @@ import { formatRelativeTime } from '../../lib/hallwayDisplay';
 export default function WidgetLeadership() {
   const { feedPosts } = useApp();
 
-  const leadershipPost = feedPosts.find((p) => p.type === 'announcement');
+  const leadershipPost = [...feedPosts]
+    .filter((p) => p.type === 'announcement' || p.type === 'general')
+    .sort((a, b) => {
+      const getTime = (p: any) => {
+        if (p.createdAt) {
+          const t = new Date(p.createdAt).getTime();
+          if (!isNaN(t)) return t;
+        }
+        if (p.id?.startsWith('post-')) {
+          const num = Number(p.id.replace('post-', ''));
+          if (!isNaN(num)) return num;
+        }
+        return 0;
+      };
+      return getTime(b) - getTime(a);
+    })[0];
 
   return (
     <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800/90 rounded-2xl p-5 shadow-xs">

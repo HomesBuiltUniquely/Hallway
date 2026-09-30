@@ -128,17 +128,11 @@ export function FilterBar({
             }
           >
             <option value="">All branches</option>
-            {(options?.branches || [])
-              .filter(
-                (b) =>
-                  b.id?.trim().toUpperCase() !== 'SARJAPUR' &&
-                  b.name?.trim().toUpperCase() !== 'SARJAPUR'
-              )
-              .map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
+            {(options?.branches || []).map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
           </select>
         </label>
 

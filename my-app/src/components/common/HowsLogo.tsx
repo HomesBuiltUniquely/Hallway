@@ -5,19 +5,16 @@ import React from 'react';
 export default function HowsLogo({ size = 36, className = '' }: { size?: number; className?: string }) {
   return (
     <div className={`flex items-center gap-2.5 ${className}`}>
-      {/* HOWS Stylized 2x2 Badge */}
+      {/* HOWS Authentic Badge Image */}
       <div
         style={{ width: size, height: size }}
-        className="rounded-xl border-2 border-sky-400 dark:border-sky-500 bg-sky-50/90 dark:bg-sky-950/40 p-1 flex flex-col justify-center items-center shadow-xs shrink-0 select-none"
+        className="shrink-0 select-none flex items-center justify-center"
       >
-        <div className="flex justify-between w-full px-0.5 leading-none">
-          <span className="text-[11px] font-black tracking-tight text-sky-600 dark:text-sky-400 font-sans">H</span>
-          <span className="text-[11px] font-black tracking-tight text-sky-600 dark:text-sky-400 font-sans">O</span>
-        </div>
-        <div className="flex justify-between w-full px-0.5 leading-none mt-0.5">
-          <span className="text-[11px] font-black tracking-tight text-sky-600 dark:text-sky-400 font-sans">W</span>
-          <span className="text-[11px] font-black tracking-tight text-sky-600 dark:text-sky-400 font-sans">S</span>
-        </div>
+        <img
+          src="/hows-logo.png?v=5"
+          alt="HOWS Logo"
+          className="w-full h-full object-contain"
+        />
       </div>
 
       <div className="flex flex-col min-w-0">

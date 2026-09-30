@@ -42,18 +42,29 @@ export function CorridorScopeBar({
   onManager?: (salesManagerId?: number) => void;
   showManager?: boolean;
 }) {
-  const branches = (options?.branches || []).filter(
-    (branch) =>
-      branch.id?.trim().toUpperCase() !== 'SARJAPUR' &&
-      branch.name?.trim().toUpperCase() !== 'SARJAPUR'
-  );
+  const branches = (options?.branches || []).map((branch) => {
+    const rawId = branch.id?.trim().toUpperCase();
+    if (rawId === 'SARJAPUR' || rawId === 'SARJAPURA') {
+      return { id: 'SARJAPUR', name: 'Sarjapura' };
+    }
+    if (rawId === 'JP_NAGAR') {
+      return { id: 'JP_NAGAR', name: 'JP Nagar' };
+    }
+    if (rawId === 'HBR') {
+      return { id: 'HBR', name: 'HBR Layout' };
+    }
+    return branch;
+  });
   const managers = options?.salesManagers || [];
+
+  const normalizedSelectedBranch =
+    branchId?.trim().toUpperCase() === 'SARJAPURA' ? 'SARJAPUR' : (branchId || '');
 
   return (
     <div className="flex flex-wrap items-center gap-2">
       <select
         className={selectClass}
-        value={branchId || ''}
+        value={normalizedSelectedBranch}
         onChange={(e) => onBranch(e.target.value || undefined)}
       >
         <option value="">All branches</option>

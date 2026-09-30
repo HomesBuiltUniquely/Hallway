@@ -13,6 +13,8 @@ import {
   displayRate,
 } from '../../components/hallway/CorridorGate';
 import { CorridorScopeBar, useCorridorScope } from '../../components/hallway/CorridorScopeBar';
+import DepartmentPills from '../../components/common/DepartmentPills';
+import { useApp } from '../../context/AppContext';
 import { progressWidth } from '../../lib/hallwayDisplay';
 
 const PERIODS: { label: string; value: LeaderboardPeriod }[] = [
@@ -21,6 +23,15 @@ const PERIODS: { label: string; value: LeaderboardPeriod }[] = [
   { label: 'QTD', value: 'qtd' },
 ];
 
+const DEPARTMENTS = [
+  'All Departments',
+  'Sales',
+  'Design',
+  'Operations',
+  'HR',
+  'Finance',
+] as const;
+
 function TrendMark({ trend }: { trend?: HallwayTrend }) {
   if (trend === 'up') return <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />;
   if (trend === 'down') return <TrendingDown className="w-3.5 h-3.5 text-rose-500" />;
@@ -28,6 +39,7 @@ function TrendMark({ trend }: { trend?: HallwayTrend }) {
 }
 
 function LeaderboardsInner() {
+  const { activeDepartment, setActiveDepartment } = useApp();
   const { branchId, setBranchId, salesManagerId, setSalesManagerId, options } = useCorridorScope();
   const [period, setPeriod] = useState<LeaderboardPeriod>('mtd');
   const [view, setView] = useState<'Individual' | 'Team'>('Individual');
@@ -37,36 +49,70 @@ function LeaderboardsInner() {
   const { data, loading, error } = useLeaderboard(period, { branchId, salesManagerId });
 
   const individuals = useMemo(() => {
-    const rows = data?.individuals || [];
-    if (!localSearch.trim()) return rows;
-    const q = localSearch.toLowerCase();
-    return rows.filter(
-      (row) =>
-        row.name.toLowerCase().includes(q) ||
-        (row.role || '').toLowerCase().includes(q)
+    let rows = data?.individuals || [];
+    if (activeDepartment && activeDepartment !== 'All Departments') {
+      rows = rows.filter((row) => {
+        if (!row.department) {
+          return activeDepartment === 'Sales';
+        }
+        return row.department.toLowerCase() === activeDepartment.toLowerCase();
+      });
+    }
+    if (localSearch.trim()) {
+      const q = localSearch.toLowerCase();
+      rows = rows.filter(
+        (row) =>
+          row.name.toLowerCase().includes(q) ||
+          (row.role || '').toLowerCase().includes(q)
+      );
+    }
+    // Strictly rank by highest gross booking value (revenue) descending
+    const sorted = [...rows].sort(
+      (a, b) => (Number(b.revenue) || 0) - (Number(a.revenue) || 0)
     );
-  }, [data?.individuals, localSearch]);
+    return sorted.map((member, idx) => ({
+      ...member,
+      rank: idx + 1,
+    }));
+  }, [data?.individuals, localSearch, activeDepartment]);
 
   const teams = useMemo(() => {
-    const rows = data?.teams || [];
-    if (!localSearch.trim()) return rows;
-    const q = localSearch.toLowerCase();
-    return rows.filter(
-      (row) =>
-        row.teamName.toLowerCase().includes(q) ||
-        (row.leadName || '').toLowerCase().includes(q)
+    let rows = data?.teams || [];
+    if (activeDepartment && activeDepartment !== 'All Departments') {
+      rows = rows.filter((row) => {
+        if (!row.department) {
+          return activeDepartment === 'Sales';
+        }
+        return row.department.toLowerCase() === activeDepartment.toLowerCase();
+      });
+    }
+    if (localSearch.trim()) {
+      const q = localSearch.toLowerCase();
+      rows = rows.filter(
+        (row) =>
+          row.teamName.toLowerCase().includes(q) ||
+          (row.leadName || '').toLowerCase().includes(q)
+      );
+    }
+    // Strictly rank by highest team gross booking value descending
+    const sorted = [...rows].sort(
+      (a, b) => (Number(b.totalRevenueInr) || 0) - (Number(a.totalRevenueInr) || 0)
     );
-  }, [data?.teams, localSearch]);
+    return sorted.map((team, idx) => ({
+      ...team,
+      rank: idx + 1,
+    }));
+  }, [data?.teams, localSearch, activeDepartment]);
 
   return (
     <div className="space-y-6 font-sans">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-            Performance Leaderboards
+            Performance <span className="text-rose-500 dark:text-rose-400">Leaderboards</span>
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Hub gross bookings and conversion as returned by CRM. Metrics are not recomputed here.
+            Real-time velocity metrics across all operating divisions.
           </p>
         </div>
         <div className="relative w-full md:w-64">
@@ -80,6 +126,9 @@ function LeaderboardsInner() {
           />
         </div>
       </div>
+
+      {/* Department Filter Pills */}
+      <DepartmentPills />
 
       <CorridorScopeBar
         branchId={branchId}
@@ -101,7 +150,7 @@ function LeaderboardsInner() {
               </h2>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Top performers by gross bookings and conversion efficiency.
+              Top performers ranked by highest gross booking value and conversion efficiency.
             </p>
           </div>
 
@@ -151,7 +200,7 @@ function LeaderboardsInner() {
         </div>
 
         {loading ? (
-          <CorridorSkeleton rows={6} />
+          <CorridorSkeleton rows={5} />
         ) : view === 'Individual' ? (
           individuals.length === 0 ? (
             <EmptyState
@@ -171,7 +220,7 @@ function LeaderboardsInner() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-medium">
-                  {individuals.map((member) => {
+                  {individuals.slice(0, 5).map((member) => {
                     const rankStyles =
                       {
                         1: 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300',
@@ -264,7 +313,7 @@ function LeaderboardsInner() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-medium">
-                {teams.map((team) => (
+                {teams.slice(0, 5).map((team) => (
                   <tr key={team.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
                     <td className="py-4 pl-2">
                       <span className="w-6 h-6 rounded-full inline-flex items-center justify-center font-bold text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
@@ -327,10 +376,10 @@ function LeaderboardsInner() {
               </button>
             </div>
             <div className="space-y-3 max-h-80 overflow-y-auto">
-              {(data?.individuals || []).length === 0 ? (
+              {individuals.length === 0 ? (
                 <p className="text-xs text-slate-400 text-center py-8">No roster members yet.</p>
               ) : (
-                (data?.individuals || []).map((member) => (
+                individuals.map((member) => (
                   <div
                     key={member.id}
                     className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 text-xs"

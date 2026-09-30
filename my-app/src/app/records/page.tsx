@@ -12,6 +12,7 @@ import {
   CorridorSkeleton,
 } from '../../components/hallway/CorridorGate';
 import { CorridorScopeBar, useCorridorScope } from '../../components/hallway/CorridorScopeBar';
+import DepartmentPills from '../../components/common/DepartmentPills';
 
 // Authentic Google Profile Avatar (deterministic saturated Material palette + clean initials)
 function GoogleProfileAvatar({
@@ -257,6 +258,9 @@ function RecordsInner() {
           The definitive register of all-time sales milestones and record-breaking achievements across Hub.
         </p>
       </div>
+
+      {/* Department Filter Pills */}
+      <DepartmentPills />
 
       <CorridorScopeBar
         branchId={branchId}

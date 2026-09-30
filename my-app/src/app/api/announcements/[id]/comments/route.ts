@@ -10,7 +10,7 @@ export async function POST(request: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
     const body = await request.json();
-    const { content, authorName, authorHandle, authorAvatar, authorRole } = body;
+    const { content, authorName, authorHandle, authorAvatar, authorRole, postMetadata } = body;
 
     if (!content || !content.trim()) {
       return NextResponse.json({ error: 'Comment content cannot be empty' }, { status: 400 });
@@ -22,7 +22,7 @@ export async function POST(request: Request, context: RouteContext) {
       authorHandle,
       authorAvatar,
       authorRole
-    });
+    }, postMetadata);
 
     return NextResponse.json({
       success: true,

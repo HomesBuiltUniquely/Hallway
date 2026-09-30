@@ -44,17 +44,27 @@ export interface FeedPost {
     targetFormatted?: string;
   };
   reactions: {
-    thumbsUp: number;
-    clap: number;
+    thumbsUp?: number;
+    clap?: number;
     heart?: number;
+    joy?: number;
+    surprised?: number;
+    sad?: number;
+    pray?: number;
     userThumbsUp?: boolean;
     userClap?: boolean;
     userHeart?: boolean;
+    userJoy?: boolean;
+    userSurprised?: boolean;
+    userSad?: boolean;
+    userPray?: boolean;
+    [key: string]: any;
   };
   commentsCount: number;
   comments: Comment[];
   badgeText?: string;
   department?: 'Sales' | 'Design' | 'Operations' | 'HR' | 'Finance';
+  iconEmoji?: string;
 }
 
 export interface CalendarEvent {

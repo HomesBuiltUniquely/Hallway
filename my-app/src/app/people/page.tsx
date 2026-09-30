@@ -13,6 +13,7 @@ import {
   displayRate,
 } from '../../components/hallway/CorridorGate';
 import { CorridorScopeBar, useCorridorScope } from '../../components/hallway/CorridorScopeBar';
+import DepartmentPills from '../../components/common/DepartmentPills';
 
 const ROLE_FILTERS: { label: string; value?: HallwayPeopleRole }[] = [
   { label: 'All roles' },
@@ -64,6 +65,9 @@ function PeopleInner() {
           />
         </div>
       </div>
+
+      {/* Department Filter Pills */}
+      <DepartmentPills />
 
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         <CorridorScopeBar

@@ -1,0 +1,21 @@
+<svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Rounded tile matching CRM & Design theme (#00A7FF) with soft rounded-tr profile -->
+  <rect x="0" y="0" width="120" height="120" rx="28" fill="#00A7FF"/>
+  
+  <!-- Crisp white HR / Personnel ID Badge & People silhouette -->
+  <g fill="#FFFFFF">
+    <!-- User Head -->
+    <circle cx="60" cy="46" r="16" />
+    
+    <!-- User Torso / Shoulders with professional lapel -->
+    <path d="M34 88C34 75 44 68 60 68C76 68 86 75 86 88C86 90.2 84.2 92 82 92H38C35.8 92 34 90.2 34 88Z" />
+    
+    <!-- ID Card Lanyard / Clip Accent at top -->
+    <rect x="52" y="16" width="16" height="6" rx="3" />
+    <path d="M57 22H63V26H57V22Z" />
+
+    <!-- HR Small Badge / Star / Network Check on the badge -->
+    <circle cx="82" cy="50" r="10" fill="#00A7FF" stroke="#FFFFFF" stroke-width="3"/>
+    <path d="M78 50L81 53L86 47" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

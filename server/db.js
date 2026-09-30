@@ -136,7 +136,7 @@ async function initDb() {
 
 async function getAnnouncements() {
   const [rows] = await pool.query(
-    'SELECT * FROM announcements ORDER BY created_at DESC'
+    'SELECT * FROM announcements ORDER BY created_at DESC, id DESC'
   );
 
   const announcements = [];
@@ -152,6 +152,7 @@ async function getAnnouncements() {
       categoryColor: row.category_color,
       title: row.title,
       timestamp: row.timestamp_text,
+      createdAt: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
       author: {
         name: row.author_name,
         avatar: row.author_avatar,

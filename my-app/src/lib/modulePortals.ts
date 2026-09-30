@@ -54,9 +54,9 @@ export function clearDesignHandoff() {
 export function openCrmDashboard() {
   const origin = crmFrontendUrl();
   if (!origin) {
-    window.alert(
-      'CRM frontend URL is not set. Add NEXT_PUBLIC_CRM_FRONTEND_URL for the CrmInceneration Next.js app (not https://hows.hubinterior.com).'
-    );
+    if (typeof window !== 'undefined') {
+      window.location.assign('/crm-erp');
+    }
     return;
   }
 

@@ -9,6 +9,7 @@ import {
   CorridorSkeleton,
 } from '../../components/hallway/CorridorGate';
 import { CorridorScopeBar, useCorridorScope } from '../../components/hallway/CorridorScopeBar';
+import DepartmentPills from '../../components/common/DepartmentPills';
 import { progressWidth } from '../../lib/hallwayDisplay';
 
 function TargetsInner() {
@@ -31,6 +32,9 @@ function TargetsInner() {
           Monthly gross booking vs Hub incentives target. Progress comes from CRM.
         </p>
       </div>
+
+      {/* Department Filter Pills */}
+      <DepartmentPills />
 
       <CorridorScopeBar
         branchId={branchId}

@@ -1,53 +1,67 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Heart, MessageCircle, Send, Sparkles, UserCheck, ChevronDown, Award } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Heart, MessageCircle, Send, Sparkles, Award, Smile } from 'lucide-react';
 import { FeedPost } from '../../types';
 import { useApp } from '../../context/AppContext';
-import { alternateUserMock, currentUserMock, designerUserMock } from '../../data/mockData';
-import { formatRelativeTime } from '../../lib/hallwayDisplay';
+import { formatRelativeTime, cleanPostContent } from '../../lib/hallwayDisplay';
+
+const WHATSAPP_EMOJIS = [
+  { key: 'thumbsUp', emoji: '👍', label: 'Like' },
+  { key: 'heart', emoji: '❤️', label: 'Love' },
+  { key: 'joy', emoji: '😂', label: 'Haha' },
+  { key: 'surprised', emoji: '😮', label: 'Wow' },
+  { key: 'clap', emoji: '👏', label: 'Clap' },
+  { key: 'pray', emoji: '🙏', label: 'Thanks' },
+] as const;
 
 export default function FeedCard({ post }: { post: FeedPost }) {
   const { addReaction, addComment, likeComment, currentUser } = useApp();
   const [showComments, setShowComments] = useState(false);
   const [commentInput, setCommentInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const pickerRef = useRef<HTMLDivElement>(null);
+  const emojiTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Active commenting persona (defaults to current logged-in user, but allows switching, e.g., to Ranjith)
-  const [activePersona, setActivePersona] = useState<{
-    name: string;
-    handle: string;
-    avatar: string;
-    role: string;
-  }>({
-    name: currentUser.name === 'Super Admin' ? 'Ranjith' : currentUser.name,
-    handle: currentUser.name === 'Super Admin' ? 'ranjith' : currentUser.name.toLowerCase().replace(/\s+/g, '.'),
-    avatar: currentUser.name === 'Super Admin' ? alternateUserMock.avatar : currentUser.avatar,
-    role: currentUser.name === 'Super Admin' ? 'CRM Lead' : currentUser.role
-  });
-
-  const [showPersonaPicker, setShowPersonaPicker] = useState(false);
-
-  const availablePersonas = [
-    {
-      name: 'Ranjith',
-      handle: 'ranjith',
-      avatar: alternateUserMock.avatar,
-      role: 'CRM Lead'
-    },
-    {
-      name: 'Super Admin',
-      handle: 'admin',
-      avatar: currentUserMock.avatar,
-      role: 'Leadership HQ'
-    },
-    {
-      name: 'Maya Lin',
-      handle: 'maya.lin',
-      avatar: designerUserMock.avatar,
-      role: 'Design Lead'
+  const handleEmojiMouseEnter = () => {
+    if (emojiTimeoutRef.current) {
+      clearTimeout(emojiTimeoutRef.current);
+      emojiTimeoutRef.current = null;
     }
-  ];
+    setShowEmojiPicker(true);
+  };
+
+  const handleEmojiMouseLeave = () => {
+    if (emojiTimeoutRef.current) {
+      clearTimeout(emojiTimeoutRef.current);
+    }
+    emojiTimeoutRef.current = setTimeout(() => {
+      setShowEmojiPicker(false);
+    }, 250);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (emojiTimeoutRef.current) clearTimeout(emojiTimeoutRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!showEmojiPicker) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setShowEmojiPicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showEmojiPicker]);
+
+  const currentUserHandle =
+    currentUser.name === 'Super Admin'
+      ? 'admin'
+      : (currentUser.name || 'user').toLowerCase().replace(/\s+/g, '.');
 
   const handleSendComment = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -56,10 +70,10 @@ export default function FeedCard({ post }: { post: FeedPost }) {
     setIsSubmitting(true);
     try {
       await addComment(post.id, commentInput, {
-        name: activePersona.name,
-        handle: activePersona.handle,
-        avatar: activePersona.avatar,
-        role: activePersona.role
+        name: currentUser.name,
+        handle: currentUserHandle,
+        avatar: currentUser.avatar,
+        role: currentUser.role
       });
       setCommentInput('');
     } finally {
@@ -99,7 +113,7 @@ export default function FeedCard({ post }: { post: FeedPost }) {
 
       {/* Post Body Content */}
       <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed mb-4">
-        {post.content}
+        {cleanPostContent(post.content)}
       </p>
 
       {/* Quota Progress Bar (if quota milestone post) */}
@@ -118,59 +132,93 @@ export default function FeedCard({ post }: { post: FeedPost }) {
         </div>
       )}
 
-      {/* Card Actions & Reactions (Instagram style toolbar) */}
-      <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800/80 text-xs text-slate-500 dark:text-slate-400">
-        <div className="flex items-center gap-2">
-          {/* Thumbs Up Button */}
-          <button
-            onClick={() => addReaction(post.id, 'thumbsUp')}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-all font-medium ${post.reactions.userThumbsUp
-                ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 font-semibold'
-                : 'hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-slate-200'
-              }`}
-            title="Like update"
-          >
-            <span>👍</span>
-            <span>{post.reactions.thumbsUp}</span>
-          </button>
+      {/* WhatsApp-Style Reactions & Comments Bar */}
+      <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800/80 text-xs text-slate-500 dark:text-slate-400 relative">
+        <div className="flex items-center gap-1.5 flex-wrap relative">
+          {/* Active Reaction Badges (WhatsApp message reaction pills) */}
+          {WHATSAPP_EMOJIS.map((item) => {
+            const count = post.reactions[item.key] || 0;
+            if (count <= 0) return null;
+            const userKey = `user${item.key.charAt(0).toUpperCase() + item.key.slice(1)}`;
+            const userReacted = Boolean(post.reactions[userKey]);
 
-          {/* Clap / React Button */}
-          <button
-            onClick={() => addReaction(post.id, 'clap')}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-all font-medium ${post.reactions.userClap
-                ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 font-semibold'
-                : 'hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-slate-200'
-              }`}
-            title="Clap celebrate"
-          >
-            <span>👏</span>
-            <span>{post.reactions.clap > 0 ? post.reactions.clap : 'React'}</span>
-          </button>
-
-          {/* Instagram Heart Button */}
-          <button
-            onClick={() => addReaction(post.id, 'heart')}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-all font-medium ${post.reactions.userHeart
-                ? 'bg-red-50 dark:bg-red-950/40 text-red-500 font-semibold'
-                : 'hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-red-500 dark:hover:text-red-400'
-              }`}
-            title="Love this update"
-          >
-            <Heart
-              className={`w-3.5 h-3.5 ${post.reactions.userHeart ? 'fill-red-500 text-red-500' : 'text-slate-400'
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => addReaction(post.id, item.key)}
+                title={userReacted ? `Remove ${item.label}` : `React with ${item.label}`}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold transition-all shadow-2xs border cursor-pointer ${
+                  userReacted
+                    ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-400/30'
+                    : 'bg-slate-100/90 dark:bg-slate-800/90 hover:bg-slate-200 dark:hover:bg-slate-700/80 border-slate-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-300'
                 }`}
-            />
-            <span>{post.reactions.heart || 0}</span>
-          </button>
+              >
+                <span className="text-sm leading-none">{item.emoji}</span>
+                <span className="text-[11px] font-bold">{count}</span>
+              </button>
+            );
+          })}
+
+          {/* React Trigger Button with Hoverable Reaction Picker */}
+          <div
+            className="relative inline-flex items-center"
+            onMouseEnter={handleEmojiMouseEnter}
+            onMouseLeave={handleEmojiMouseLeave}
+          >
+            {/* Floating WhatsApp Reaction Picker */}
+            {showEmojiPicker && (
+              <div
+                ref={pickerRef}
+                className="absolute bottom-full left-0 mb-2 z-30 flex items-center gap-1 bg-white dark:bg-[#1f2c34] px-2.5 py-1.5 rounded-full shadow-2xl border border-slate-200/90 dark:border-slate-700/80 animate-in fade-in zoom-in-95 duration-150 select-none"
+              >
+                {WHATSAPP_EMOJIS.map((item) => {
+                  const userKey = `user${item.key.charAt(0).toUpperCase() + item.key.slice(1)}`;
+                  const isUserActive = Boolean(post.reactions[userKey]);
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => {
+                        addReaction(post.id, item.key);
+                        setShowEmojiPicker(false);
+                      }}
+                      title={item.label}
+                      className={`p-1.5 text-xl sm:text-2xl rounded-full transition-all duration-150 hover:scale-130 active:scale-95 cursor-pointer relative ${
+                        isUserActive ? 'bg-emerald-50 dark:bg-emerald-950/40' : 'hover:bg-slate-100 dark:hover:bg-slate-700/60'
+                      }`}
+                    >
+                      <span>{item.emoji}</span>
+                      {isUserActive && (
+                        <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-emerald-500" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* WhatsApp React Trigger Button */}
+            <button
+              type="button"
+              onClick={() => setShowEmojiPicker((prev) => !prev)}
+              title="React"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 bg-slate-100/70 dark:bg-slate-800/70 hover:bg-slate-200/80 dark:hover:bg-slate-700 transition-all border border-transparent hover:border-slate-200 dark:hover:border-slate-700 cursor-pointer"
+            >
+              <Smile className="w-3.5 h-3.5 text-amber-500" />
+              <span>React</span>
+            </button>
+          </div>
         </div>
 
         {/* Comment Count / Drawer Toggle */}
         <button
           onClick={() => setShowComments(!showComments)}
-          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-colors font-semibold ${showComments
-              ? 'bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400'
-              : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-            }`}
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full transition-colors text-xs font-semibold cursor-pointer ${
+            showComments
+              ? 'bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400 font-bold'
+              : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
         >
           <MessageCircle className="w-3.5 h-3.5" />
           <span>{post.commentsCount} {post.commentsCount === 1 ? 'comment' : 'comments'}</span>
@@ -207,82 +255,17 @@ export default function FeedCard({ post }: { post: FeedPost }) {
             </div>
           )}
 
-          {/* Active Commenter Banner (Instagram "Commenting as @ranjith") */}
-          <div className="flex items-center justify-between px-3 py-2 bg-slate-50 dark:bg-slate-800/70 rounded-xl border border-slate-100 dark:border-slate-800 text-xs">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="relative shrink-0">
-                <img
-                  src={activePersona.avatar}
-                  alt={activePersona.name}
-                  className="w-7 h-7 rounded-full object-cover ring-2 ring-sky-500/50"
-                />
-                <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-500 ring-1 ring-white dark:ring-slate-900" />
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="font-extrabold text-slate-900 dark:text-white truncate">
-                    {activePersona.name}
-                  </span>
-                  <span className="text-[10px] text-sky-600 dark:text-sky-400 font-mono font-medium">
-                    @{activePersona.handle}
-                  </span>
-                </div>
-                <p className="text-[10px] text-slate-400 truncate">{activePersona.role}</p>
-              </div>
-            </div>
-
-            {/* Switch Persona Dropdown Toggle */}
-            <div className="relative shrink-0">
-              <button
-                type="button"
-                onClick={() => setShowPersonaPicker(!showPersonaPicker)}
-                className="flex items-center gap-1 px-2.5 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-[11px] font-semibold hover:border-sky-400 transition-colors"
-              >
-                <span>Switch profile</span>
-                <ChevronDown className="w-3 h-3 text-slate-400" />
-              </button>
-
-              {showPersonaPicker && (
-                <div className="absolute right-0 mt-1.5 w-56 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-800 p-1.5 z-30 text-xs animate-in fade-in duration-100">
-                  <p className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    Comment as team member:
-                  </p>
-                  {availablePersonas.map((p) => (
-                    <button
-                      key={p.handle}
-                      type="button"
-                      onClick={() => {
-                        setActivePersona(p);
-                        setShowPersonaPicker(false);
-                      }}
-                      className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-left transition-colors ${activePersona.handle === p.handle
-                          ? 'bg-sky-50 dark:bg-sky-950/50 text-sky-600 dark:text-sky-400 font-bold'
-                          : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
-                        }`}
-                    >
-                      <img src={p.avatar} alt={p.name} className="w-5 h-5 rounded-full object-cover" />
-                      <div className="min-w-0">
-                        <p className="text-xs truncate">{p.name}</p>
-                        <p className="text-[10px] text-slate-400 font-mono">@{p.handle}</p>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
           {/* Instagram-Style Comment Input Box */}
           <form onSubmit={handleSendComment} className="space-y-2">
             <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700/80 rounded-2xl px-3 py-2 focus-within:ring-2 focus-within:ring-sky-500/40 focus-within:border-sky-500 transition-all">
               <img
-                src={activePersona.avatar}
-                alt={activePersona.name}
+                src={currentUser.avatar}
+                alt={currentUser.name}
                 className="w-6 h-6 rounded-full object-cover ring-1 ring-slate-300 dark:ring-slate-600 shrink-0"
               />
               <input
                 type="text"
-                placeholder={`Add a comment as @${activePersona.handle}...`}
+                placeholder={`Add a comment as @${currentUserHandle}...`}
                 value={commentInput}
                 onChange={(e) => setCommentInput(e.target.value)}
                 className="flex-1 bg-transparent text-xs sm:text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none"
@@ -379,7 +362,7 @@ export default function FeedCard({ post }: { post: FeedPost }) {
               ))
             ) : (
               <div className="py-4 text-center text-xs text-slate-400">
-                No comments yet. Start the conversation as @{activePersona.handle}!
+                No comments yet. Start the conversation as @{currentUserHandle}!
               </div>
             )}
           </div>
