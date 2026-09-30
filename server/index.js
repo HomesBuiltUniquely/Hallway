@@ -1,4 +1,5 @@
-require('dotenv').config({ quiet: true });
+require('dotenv').config({ quiet: true }); // local .env for PORT / MySQL
+
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
@@ -256,7 +257,9 @@ async function startServer() {
     useMySql = false;
   }
 
-  app.listen(PORT);
+  app.listen(PORT, () => {
+    console.log(`Hallway announcements API on http://localhost:${PORT} (${useMySql ? 'MySQL' : 'JSON file'})`);
+  });
 }
 
 startServer();
