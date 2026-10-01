@@ -700,3 +700,68 @@ export async function toggleCommentLike(announcementId: string, commentId: strin
   saveJsonAnnouncements(list);
   return comm;
 }
+
+export async function deleteAnnouncement(id: string): Promise<boolean> {
+  let deletedFromMysql = false;
+  try {
+    const pool = getPool();
+    await pool.query('DELETE FROM comments WHERE announcement_id = ?', [id]);
+    const [res] = await pool.query<any>('DELETE FROM announcements WHERE id = ?', [id]);
+    deletedFromMysql = res?.affectedRows > 0;
+  } catch (err: any) {
+    console.error('MySQL error in deleteAnnouncement:', err?.message || err);
+  }
+
+  // Also remove from persistent JSON storage
+  try {
+    const list = getJsonAnnouncements();
+    const filtered = list.filter((a) => a.id !== id);
+    if (filtered.length !== list.length) {
+      saveJsonAnnouncements(filtered);
+      return true;
+    }
+  } catch (err) {
+    console.error('JSON sync error in deleteAnnouncement:', err);
+  }
+
+  return deletedFromMysql;
+}
+
+export async function deleteComment(announcementId: string, commentId: string): Promise<boolean> {
+  let deletedFromMysql = false;
+  try {
+    const pool = getPool();
+    const [res] = await pool.query<any>('DELETE FROM comments WHERE id = ? AND announcement_id = ?', [
+      commentId,
+      announcementId,
+    ]);
+    deletedFromMysql = res?.affectedRows > 0;
+    if (deletedFromMysql) {
+      await pool.query(
+        'UPDATE announcements SET comments_count = (SELECT COUNT(*) FROM comments WHERE announcement_id = ?) WHERE id = ?',
+        [announcementId, announcementId]
+      );
+    }
+  } catch (err: any) {
+    console.error('MySQL error in deleteComment:', err?.message || err);
+  }
+
+  // Also remove from persistent JSON storage
+  try {
+    const list = getJsonAnnouncements();
+    const post = list.find((a) => a.id === announcementId);
+    if (post && Array.isArray(post.comments)) {
+      const initialLen = post.comments.length;
+      post.comments = post.comments.filter((c: any) => c.id !== commentId);
+      post.commentsCount = post.comments.length;
+      if (post.comments.length !== initialLen) {
+        saveJsonAnnouncements(list);
+        return true;
+      }
+    }
+  } catch (err) {
+    console.error('JSON sync error in deleteComment:', err);
+  }
+
+  return deletedFromMysql;
+}

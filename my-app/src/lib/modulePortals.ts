@@ -51,7 +51,96 @@ export function clearDesignHandoff() {
   window.localStorage.removeItem(DESIGN_HANDOFF_KEY);
 }
 
-export function openCrmDashboard() {
+export function getActiveHallwayUser(): { email?: string; name?: string; department?: string; role?: string } | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem('hallway-auth');
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Checks if the current Hallway user has a verified CRM session that belongs to THEM.
+ * If there is a leftover CRM session from a different user, it is discarded.
+ */
+export function getValidCrmSession(activeUser?: { email?: string; name?: string } | null) {
+  if (typeof window === 'undefined') return null;
+  const user = activeUser || getActiveHallwayUser();
+  if (!user) return null;
+
+  const session = getCrmSessionSnapshot();
+  if (!session || !session.crm_token) return null;
+
+  // Verify that the stored CRM user matches the active Hallway user
+  const crmUserRaw = window.localStorage.getItem('hallway-crm-user');
+  let crmEmail = '';
+  let crmUsername = '';
+  let crmName = '';
+  if (crmUserRaw) {
+    try {
+      const parsed = JSON.parse(crmUserRaw);
+      crmEmail = (parsed.email || '').toLowerCase().trim();
+      crmUsername = (parsed.username || '').toLowerCase().trim();
+      crmName = (parsed.name || parsed.fullName || '').toLowerCase().trim();
+    } catch {
+      // ignore
+    }
+  }
+
+  const activeEmail = (user.email || '').toLowerCase().trim();
+  const activeName = (user.name || '').toLowerCase().trim();
+
+  const isMatch =
+    (activeEmail && (activeEmail === crmEmail || activeEmail === crmUsername)) ||
+    (activeName && (activeName === crmName || activeName === crmUsername));
+
+  if (!isMatch) {
+    // Foreign CRM session detected! Clean it up so it never leaks.
+    return null;
+  }
+
+  return session;
+}
+
+/**
+ * Checks if the current Hallway user has a verified Design session that belongs to THEM.
+ * If there is a leftover Design session from a different user, it is discarded.
+ */
+export function getValidDesignSession(activeUser?: { email?: string; name?: string } | null) {
+  if (typeof window === 'undefined') return null;
+  const user = activeUser || getActiveHallwayUser();
+  if (!user) return null;
+
+  try {
+    const raw = window.localStorage.getItem(DESIGN_HANDOFF_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw) as { user?: any; sessionId?: string };
+    if (!data?.sessionId || !data?.user) return null;
+
+    const designEmail = (data.user?.email || '').toLowerCase().trim();
+    const designName = (data.user?.name || '').toLowerCase().trim();
+    const activeEmail = (user.email || '').toLowerCase().trim();
+    const activeName = (user.name || '').toLowerCase().trim();
+
+    const isMatch =
+      (activeEmail && activeEmail === designEmail) ||
+      (activeName && activeName === designName);
+
+    if (!isMatch) {
+      // Foreign Design session detected!
+      return null;
+    }
+
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+export function openCrmDashboard(activeUser?: { email?: string; name?: string } | null) {
   const origin = crmFrontendUrl();
   if (!origin) {
     if (typeof window !== 'undefined') {
@@ -60,33 +149,28 @@ export function openCrmDashboard() {
     return;
   }
 
-  // Preferred CRM handoff: /auth/accept clears leftover CRM-origin session,
-  // writes Hallway crm_* keys, then routes by role (/Leads or /presales-leads).
-  // Fallback without session: open landing path directly (user may need to log in on CRM).
-  const session = getCrmSessionSnapshot();
+  const session = getValidCrmSession(activeUser);
   if (session) {
     window.location.assign(
       `${origin}/auth/accept#payload=${encodeURIComponent(JSON.stringify(session))}`
     );
     return;
   }
-  window.location.assign(`${origin}${landingPathByRole(getStoredCrmRole())}`);
+
+  // Without a verified user session matching this person, do NOT send them to CRM
+  // as it would load whatever leftover cookie is stored in their browser for another person.
+  return false;
 }
 
-export function openDesignDashboard() {
+export function openDesignDashboard(activeUser?: { email?: string; name?: string } | null) {
   const base = designDashboardUrl();
-  try {
-    const raw = window.localStorage.getItem(DESIGN_HANDOFF_KEY);
-    if (raw) {
-      const data = JSON.parse(raw) as { user?: unknown; sessionId?: string };
-      if (data?.sessionId && data?.user) {
-        const payload = encodeURIComponent(JSON.stringify(data));
-        window.location.assign(`${base}/auth/accept#payload=${payload}`);
-        return;
-      }
-    }
-  } catch {
-    // Fall through to the public Design Module URL.
+  const data = getValidDesignSession(activeUser);
+  if (data?.sessionId && data?.user) {
+    const payload = encodeURIComponent(JSON.stringify(data));
+    window.location.assign(`${base}/auth/accept#payload=${payload}`);
+    return true;
   }
-  window.location.assign(base);
+
+  // Without a verified user session matching this person, do NOT blindly navigate
+  return false;
 }

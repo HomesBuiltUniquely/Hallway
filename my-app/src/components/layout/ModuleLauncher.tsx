@@ -2,7 +2,16 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { openCrmDashboard, openDesignDashboard } from '../../lib/modulePortals';
+import { Lock, AlertCircle, X, Loader2, ArrowRight } from 'lucide-react';
+import { useApp } from '../../context/AppContext';
+import { loginToCrm, setCrmSession } from '../../lib/crmApi';
+import {
+  openCrmDashboard,
+  openDesignDashboard,
+  getValidCrmSession,
+  getValidDesignSession,
+  saveDesignHandoff,
+} from '../../lib/modulePortals';
 
 /** 4-tile launcher icon as in HOWS / CrmInceneration */
 function HowsHubLauncherIcon({ className }: { className?: string }) {
@@ -24,8 +33,16 @@ function HowsHubLauncherIcon({ className }: { className?: string }) {
 
 export default function ModuleLauncher() {
   const router = useRouter();
+  const { currentUser } = useApp();
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Module authentication prompt state
+  const [authModalModule, setAuthModalModule] = useState<'crm' | 'design' | null>(null);
+  const [authIdentifier, setAuthIdentifier] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   // Close on outside click or Escape key
   useEffect(() => {
@@ -51,20 +68,97 @@ export default function ModuleLauncher() {
     };
   }, [isOpen]);
 
+  const openAuthPrompt = (module: 'crm' | 'design') => {
+    setAuthModalModule(module);
+    setAuthIdentifier(currentUser.email || currentUser.name || '');
+    setAuthPassword('');
+    setAuthError(null);
+    setIsOpen(false);
+  };
+
   const handleCrmClick = () => {
     setIsOpen(false);
-    openCrmDashboard();
+    // Check if the current user already has verified CRM credentials
+    const validSession = getValidCrmSession(currentUser);
+    if (validSession) {
+      openCrmDashboard(currentUser);
+    } else {
+      // Current user (e.g. Abhishek, designer) does not have verified CRM access -> require authentication check
+      openAuthPrompt('crm');
+    }
   };
 
   const handleDesignClick = () => {
     setIsOpen(false);
-    openDesignDashboard();
+    // Check if the current user already has verified Design Studio credentials
+    const validSession = getValidDesignSession(currentUser);
+    if (validSession) {
+      openDesignDashboard(currentUser);
+    } else {
+      // Current user (e.g. Meghana, sales) does not have verified Design access -> require authentication check
+      openAuthPrompt('design');
+    }
   };
 
   const handleHrClick = () => {
     setIsOpen(false);
     const hrUrl = process.env.NEXT_PUBLIC_HR_PORTAL_URL || 'https://hubinterior.keka.com/';
     window.location.assign(hrUrl);
+  };
+
+  const handleAuthSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!authIdentifier.trim() || !authPassword) {
+      setAuthError('Username/email and password are required');
+      return;
+    }
+
+    setAuthLoading(true);
+    setAuthError(null);
+
+    if (authModalModule === 'crm') {
+      try {
+        const data = await loginToCrm(authIdentifier.trim(), authPassword);
+        if (data?.token && data?.user) {
+          setCrmSession(data.token, data.user);
+          setAuthModalModule(null);
+          openCrmDashboard(currentUser);
+          return;
+        }
+        setAuthError('Access Denied: Credentials do not match CRM data.');
+      } catch (err: any) {
+        setAuthError(
+          'Access Denied: Your credentials do not match CRM data. Only authorized CRM personnel can access this module.'
+        );
+      } finally {
+        setAuthLoading(false);
+      }
+    } else if (authModalModule === 'design') {
+      try {
+        const res = await fetch('/api/design-module/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: authIdentifier.trim(),
+            password: authPassword,
+          }),
+        });
+        const data = await res.json().catch(() => null);
+        if (res.ok && data?.sessionId && data?.user) {
+          saveDesignHandoff(data.user, data.sessionId);
+          setAuthModalModule(null);
+          openDesignDashboard(currentUser);
+          return;
+        }
+        setAuthError(
+          'Access Denied: Your credentials do not match Design Studio data. Only authorized designers can access this module.'
+        );
+      } catch (err: any) {
+        setAuthError('Access Denied: Could not verify Design credentials.');
+      } finally {
+        setAuthLoading(false);
+      }
+    }
   };
 
   const modules = [
@@ -139,6 +233,102 @@ export default function ModuleLauncher() {
                 </span>
               </button>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Module Authentication Dialog */}
+      {authModalModule && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="relative w-full max-w-md bg-white dark:bg-[#0D1829] rounded-3xl p-6 sm:p-7 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-5 animate-in zoom-in-95 duration-150">
+            {/* Close Button */}
+            <button
+              type="button"
+              onClick={() => setAuthModalModule(null)}
+              className="absolute top-5 right-5 p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            {/* Header */}
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-sky-100 dark:bg-sky-950/60 flex items-center justify-center text-sky-600 dark:text-sky-400">
+                  <Lock className="w-4 h-4" />
+                </div>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                  {authModalModule === 'crm' ? 'CRM Authorization' : 'Design Studio Authorization'}
+                </h3>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                You are currently logged in as <strong className="text-slate-700 dark:text-slate-300">{currentUser.name}</strong> ({currentUser.department}). To access the{' '}
+                {authModalModule === 'crm' ? 'CRM' : 'Design Studio'} module, please verify your credentials.
+              </p>
+            </div>
+
+            {/* Error Message */}
+            {authError && (
+              <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 rounded-2xl flex items-start gap-2.5 text-xs text-red-600 dark:text-red-400 font-medium">
+                <AlertCircle className="w-4 h-4 shrink-0 text-red-500 mt-0.5" />
+                <span>{authError}</span>
+              </div>
+            )}
+
+            {/* Form */}
+            <form onSubmit={handleAuthSubmit} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1 ml-0.5">
+                  {authModalModule === 'crm' ? 'CRM Username or Email' : 'Design Module Email'}
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={authIdentifier}
+                  onChange={(e) => {
+                    setAuthIdentifier(e.target.value);
+                    if (authError) setAuthError(null);
+                  }}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500"
+                  placeholder="username or abc@hubinterior.com"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1 ml-0.5">
+                  Password
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={authPassword}
+                  onChange={(e) => {
+                    setAuthPassword(e.target.value);
+                    if (authError) setAuthError(null);
+                  }}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500"
+                  placeholder="••••••••"
+                />
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setAuthModalModule(null)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={authLoading}
+                  className="px-4 py-2 bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  {authLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>Verify & Access</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

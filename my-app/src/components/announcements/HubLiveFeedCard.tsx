@@ -8,10 +8,12 @@ import {
   Heart,
   ChevronDown,
   ChevronUp,
+  Trash2,
 } from 'lucide-react';
 import { FeedPost } from '../../types/index';
 import { useApp } from '../../context/AppContext';
 import { cleanPostContent } from '../../lib/hallwayDisplay';
+import { canDeleteAnnouncement, canDeleteComment } from '../../lib/permissions';
 
 const AVAILABLE_REACTIONS = [
   { id: 'clap', emoji: '👏', label: 'Applause' },
@@ -24,7 +26,7 @@ const AVAILABLE_REACTIONS = [
 ];
 
 export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
-  const { currentUser, addReaction, addComment, likeComment } = useApp();
+  const { currentUser, addReaction, addComment, likeComment, deleteAnnouncement, deleteComment } = useApp();
   const [showComments, setShowComments] = useState(false);
   const [newCommentText, setNewCommentText] = useState('');
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
@@ -98,13 +100,31 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
 
         {/* Headline & Relative Timestamp */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-baseline justify-between gap-2">
+          <div className="flex items-center justify-between gap-2">
             <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white tracking-tight">
               {post.title}
             </h3>
-            <span className="text-[11px] font-medium text-slate-400 shrink-0 whitespace-nowrap">
-              {post.timestamp || 'Just now'}
-            </span>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-[11px] font-medium text-slate-400 whitespace-nowrap">
+                {post.timestamp || 'Just now'}
+              </span>
+              {canDeleteAnnouncement(post, currentUser) && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (window.confirm(`Are you sure you want to delete "${post.title}"?`)) {
+                      void deleteAnnouncement(post.id);
+                    }
+                  }}
+                  className="p-1 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors cursor-pointer"
+                  title="Delete announcement"
+                  aria-label="Delete announcement"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Post Narrative Copy */}
@@ -223,9 +243,25 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
                       <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
                         {comm.authorName}
                       </span>
-                      <span className="text-[10px] text-slate-400 shrink-0">
-                        {comm.timestamp}
-                      </span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="text-[10px] text-slate-400">
+                          {comm.timestamp}
+                        </span>
+                        {canDeleteComment(comm, currentUser) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (window.confirm('Delete this comment?')) {
+                                void deleteComment(post.id, comm.id);
+                              }
+                            }}
+                            className="p-0.5 text-slate-400 hover:text-red-500 rounded transition-colors cursor-pointer"
+                            title="Delete comment"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5 leading-relaxed">
                       {comm.content}

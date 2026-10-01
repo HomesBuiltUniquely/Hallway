@@ -13,7 +13,7 @@ export default function ModuleLaunch() {
     return (
       <button
         type="button"
-        onClick={openDesignDashboard}
+        onClick={() => openDesignDashboard(currentUser)}
         className="group w-full max-w-md flex items-center justify-between gap-3 rounded-2xl border border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/40 px-4 py-3.5 text-left shadow-xs hover:border-rose-400 dark:hover:border-rose-700 hover:shadow-md transition-all cursor-pointer"
       >
         <div className="flex items-center gap-3 min-w-0">
@@ -35,7 +35,7 @@ export default function ModuleLaunch() {
   return (
     <button
       type="button"
-      onClick={openCrmDashboard}
+      onClick={() => openCrmDashboard(currentUser)}
       className="group w-full max-w-md flex items-center justify-between gap-3 rounded-2xl border border-sky-200 dark:border-sky-900 bg-sky-50 dark:bg-sky-950/40 px-4 py-3.5 text-left shadow-xs hover:border-sky-400 dark:hover:border-sky-700 hover:shadow-md transition-all cursor-pointer"
     >
       <div className="flex items-center gap-3 min-w-0">

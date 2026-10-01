@@ -258,7 +258,15 @@ export async function proxyToCrm(request: Request, pathParts: string[]): Promise
   const preferToken = clientBearer(request);
   const key = `${method}:${path}${incoming.search}`;
   const now = Date.now();
-  const cacheable = method === 'GET' && !isHubAuthPath(path) && !preferToken;
+  const isHallwayPublicApi =
+    path.startsWith('v1/hallway/') ||
+    path.startsWith('api/hallway/') ||
+    path.includes('hallway/people') ||
+    path.includes('hallway/leaderboard') ||
+    path.includes('hallway/records');
+
+  const cacheable = method === 'GET' && !isHubAuthPath(path) && (!preferToken || isHallwayPublicApi);
+  const ttl = isHallwayPublicApi ? 300_000 : CACHE_TTL_MS;
 
   if (cacheable) {
     const cached = getCache.get(key);
@@ -276,7 +284,7 @@ export async function proxyToCrm(request: Request, pathParts: string[]): Promise
       return Response.json({ error: hubErrorMessage(out.body) }, { status: 503 });
     }
     if (cacheable && out.status === 200) {
-      getCache.set(key, { expiresAt: now + CACHE_TTL_MS, payload: out });
+      getCache.set(key, { expiresAt: now + ttl, payload: out });
     }
     return toResponse(out.status, out.contentType, out.body);
   } catch (err) {

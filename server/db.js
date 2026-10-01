@@ -348,6 +348,33 @@ async function toggleCommentLike(announcementId, commentId) {
   };
 }
 
+async function deleteAnnouncement(id) {
+  if (!pool) return false;
+  try {
+    await pool.query('DELETE FROM comments WHERE announcement_id = ?', [id]);
+    const [res] = await pool.query('DELETE FROM announcements WHERE id = ?', [id]);
+    return res.affectedRows > 0;
+  } catch (err) {
+    console.error('MySQL deleteAnnouncement error:', err.message);
+    return false;
+  }
+}
+
+async function deleteComment(announcementId, commentId) {
+  if (!pool) return false;
+  try {
+    const [res] = await pool.query('DELETE FROM comments WHERE id = ? AND announcement_id = ?', [commentId, announcementId]);
+    if (res.affectedRows > 0) {
+      await pool.query('UPDATE announcements SET comments_count = (SELECT COUNT(*) FROM comments WHERE announcement_id = ?) WHERE id = ?', [announcementId, announcementId]);
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.error('MySQL deleteComment error:', err.message);
+    return false;
+  }
+}
+
 module.exports = {
   initDb,
   getAnnouncements,
@@ -355,5 +382,7 @@ module.exports = {
   createAnnouncement,
   addComment,
   toggleReaction,
-  toggleCommentLike
+  toggleCommentLike,
+  deleteAnnouncement,
+  deleteComment
 };

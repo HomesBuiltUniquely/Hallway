@@ -264,6 +264,44 @@ app.post('/api/announcements/:id/comments/:commentId/like', async (req, res) => 
   res.json({ success: true, comment });
 });
 
+// DELETE /api/announcements/:id - delete an announcement
+app.delete('/api/announcements/:id', async (req, res) => {
+  try {
+    if (useMySql) {
+      await db.deleteAnnouncement(req.params.id);
+    }
+  } catch (err) {
+    console.error('MySQL delete error:', err.message);
+  }
+
+  const list = getJsonAnnouncements();
+  const filtered = list.filter((a) => a.id !== req.params.id);
+  saveJsonAnnouncements(filtered);
+
+  res.json({ success: true, message: 'Announcement deleted' });
+});
+
+// DELETE /api/announcements/:id/comments/:commentId - delete a comment
+app.delete('/api/announcements/:id/comments/:commentId', async (req, res) => {
+  try {
+    if (useMySql) {
+      await db.deleteComment(req.params.id, req.params.commentId);
+    }
+  } catch (err) {
+    console.error('MySQL comment delete error:', err.message);
+  }
+
+  const list = getJsonAnnouncements();
+  const post = list.find((a) => a.id === req.params.id);
+  if (post && Array.isArray(post.comments)) {
+    post.comments = post.comments.filter((c) => c.id !== req.params.commentId);
+    post.commentsCount = post.comments.length;
+    saveJsonAnnouncements(list);
+  }
+
+  res.json({ success: true, message: 'Comment deleted' });
+});
+
 async function startServer() {
   try {
     await db.initDb();

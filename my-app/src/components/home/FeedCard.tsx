@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Heart, MessageCircle, Send, Sparkles, Award, Smile } from 'lucide-react';
+import { Heart, MessageCircle, Send, Sparkles, Award, Smile, Trash2 } from 'lucide-react';
 import { FeedPost } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { formatRelativeTime, cleanPostContent } from '../../lib/hallwayDisplay';
+import { canDeleteAnnouncement, canDeleteComment } from '../../lib/permissions';
 
 const WHATSAPP_EMOJIS = [
   { key: 'thumbsUp', emoji: '👍', label: 'Like' },
@@ -16,7 +17,7 @@ const WHATSAPP_EMOJIS = [
 ] as const;
 
 export default function FeedCard({ post }: { post: FeedPost }) {
-  const { addReaction, addComment, likeComment, currentUser } = useApp();
+  const { addReaction, addComment, likeComment, deleteAnnouncement, deleteComment, currentUser } = useApp();
   const [showComments, setShowComments] = useState(false);
   const [commentInput, setCommentInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -106,9 +107,27 @@ export default function FeedCard({ post }: { post: FeedPost }) {
             </span>
           )}
         </div>
-        <span className="text-[11px] font-medium text-slate-400 shrink-0 whitespace-nowrap">
-          {formatRelativeTime(post.createdAt || post.timestamp)}
-        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-[11px] font-medium text-slate-400 whitespace-nowrap">
+            {formatRelativeTime(post.createdAt || post.timestamp)}
+          </span>
+          {canDeleteAnnouncement(post, currentUser) && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (window.confirm(`Are you sure you want to delete "${post.title}"?`)) {
+                  void deleteAnnouncement(post.id);
+                }
+              }}
+              className="p-1 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors cursor-pointer"
+              title="Delete announcement"
+              aria-label="Delete announcement"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Post Body Content */}
@@ -338,10 +357,25 @@ export default function FeedCard({ post }: { post: FeedPost }) {
                         <button
                           type="button"
                           onClick={() => setCommentInput(`@${comm.authorHandle || comm.authorName.toLowerCase()} `)}
-                          className="hover:text-slate-700 dark:hover:text-slate-200 font-semibold"
+                          className="hover:text-slate-700 dark:hover:text-slate-200 font-semibold cursor-pointer"
                         >
                           Reply
                         </button>
+                        {canDeleteComment(comm, currentUser) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (window.confirm('Delete this comment?')) {
+                                void deleteComment(post.id, comm.id);
+                              }
+                            }}
+                            className="hover:text-red-500 text-slate-400 font-semibold flex items-center gap-0.5 cursor-pointer transition-colors"
+                            title="Delete comment"
+                          >
+                            <Trash2 className="w-2.5 h-2.5" />
+                            <span>Delete</span>
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>

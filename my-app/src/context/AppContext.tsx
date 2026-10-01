@@ -104,6 +104,8 @@ interface AppContextType {
     quotaProgress?: FeedPost['quotaProgress'],
     author?: { name: string; avatar: string; team: string }
   ) => Promise<FeedPost | null>;
+  deleteAnnouncement: (postId: string) => Promise<boolean>;
+  deleteComment: (postId: string, commentId: string) => Promise<boolean>;
   actionItems: ActionItem[];
   toggleActionItem: (groupId: string, itemId: string) => void;
   crmLeads: CrmLeadItem[];
@@ -131,12 +133,6 @@ function userFromSession(
   role?: string,
   department: User['department'] = 'Sales'
 ): User {
-  if (department === 'Design' || email?.toLowerCase().includes('maya')) {
-    return { ...designerUserMock, email: email || designerUserMock.email, name: name || designerUserMock.name };
-  }
-  if (email?.toLowerCase().includes('ranjith')) {
-    return { ...alternateUserMock, email: email || alternateUserMock.email };
-  }
   const display = (name || email || 'User').trim();
   const initials = display
     .split(/[\s@.]+/)
@@ -144,6 +140,21 @@ function userFromSession(
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? '')
     .join('');
+
+  if (department === 'Design' || email?.toLowerCase().includes('maya')) {
+    return {
+      ...designerUserMock,
+      id: 'u-design-session',
+      name: display,
+      role: role || 'DESIGNER',
+      initials: initials || 'DS',
+      email: email || designerUserMock.email,
+      department: 'Design',
+    };
+  }
+  if (email?.toLowerCase().includes('ranjith')) {
+    return { ...alternateUserMock, email: email || alternateUserMock.email };
+  }
   return {
     id: 'u-session',
     name: display,
@@ -1059,6 +1070,59 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return newPost;
   };
 
+  const deleteAnnouncement = async (postId: string): Promise<boolean> => {
+    setFeedPosts((prev) => prev.filter((p) => p.id !== postId));
+    setAnnouncementPosts((prev) => prev.filter((p) => p.id !== postId));
+
+    try {
+      const res = await fetch(`${HALLWAY_LOCAL_API}/announcements/${postId}`, {
+        method: 'DELETE',
+      });
+      return res.ok;
+    } catch (err) {
+      console.error('Failed to delete announcement from server:', err);
+      return false;
+    }
+  };
+
+  const deleteComment = async (postId: string, commentId: string): Promise<boolean> => {
+    setFeedPosts((prev) =>
+      prev.map((post) => {
+        if (post.id !== postId) return post;
+        const filteredComments = (post.comments || []).filter((c) => c.id !== commentId);
+        return {
+          ...post,
+          comments: filteredComments,
+          commentsCount: Math.max(0, (post.commentsCount || filteredComments.length + 1) - 1),
+        };
+      })
+    );
+    setAnnouncementPosts((prev) =>
+      prev.map((post) => {
+        if (post.id !== postId) return post;
+        const filteredComments = (post.comments || []).filter((c) => c.id !== commentId);
+        return {
+          ...post,
+          comments: filteredComments,
+          commentsCount: Math.max(0, (post.commentsCount || filteredComments.length + 1) - 1),
+        };
+      })
+    );
+
+    try {
+      const res = await fetch(
+        `${HALLWAY_LOCAL_API}/announcements/${postId}/comments/${commentId}`,
+        {
+          method: 'DELETE',
+        }
+      );
+      return res.ok;
+    } catch (err) {
+      console.error('Failed to delete comment from server:', err);
+      return false;
+    }
+  };
+
   const toggleActionItem = (groupId: string, itemId: string) => {
     setActionItems((prev) =>
       prev.map((group) => {
@@ -1186,6 +1250,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         likeComment,
         refreshFeed,
         addNewPost,
+        deleteAnnouncement,
+        deleteComment,
         actionItems,
         toggleActionItem,
         crmLeads,

@@ -14,8 +14,8 @@ import {
   Loader2
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { CrmApiError, crmDisplayName, loginToCrm } from '../../lib/crmApi';
-import { saveDesignHandoff } from '../../lib/modulePortals';
+import { CrmApiError, crmDisplayName, loginToCrm, clearCrmSession } from '../../lib/crmApi';
+import { saveDesignHandoff, clearDesignHandoff } from '../../lib/modulePortals';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -65,6 +65,25 @@ export default function LoginPage() {
     try {
       const data = await loginToCrm(id, password);
       const user = data.user;
+
+      // Always clear any previous stale design handoff
+      clearDesignHandoff();
+
+      // Opportunistically check if user also has a Design Module account with same credentials (e.g. Susmita / Super Admin)
+      try {
+        const designCheckRes = await fetch('/api/design-module/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: user?.email || id, password }),
+        });
+        const designData = await designCheckRes.json().catch(() => null);
+        if (designCheckRes.ok && designData?.sessionId && designData?.user) {
+          saveDesignHandoff(designData.user, designData.sessionId);
+        }
+      } catch {
+        // User is CRM-only
+      }
+
       login(
         user?.email || user?.username || id,
         crmDisplayName(user) || id,
@@ -93,6 +112,8 @@ export default function LoginPage() {
       const data = await res.json().catch(() => null);
 
       if (res.ok && data?.sessionId && data?.user) {
+        // Purge any stale CRM sessions from previous users
+        clearCrmSession();
         saveDesignHandoff(data.user, data.sessionId);
         const designUser = data.user as { email?: string; name?: string; role?: string };
         login(
@@ -198,7 +219,7 @@ export default function LoginPage() {
                     if (errorMessage) setErrorMessage(null);
                   }}
                   className="w-full pl-10 pr-4 py-3 bg-slate-50/80 hover:bg-slate-50 dark:bg-slate-800/50 dark:hover:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80 rounded-2xl text-xs sm:text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:bg-white dark:focus:bg-slate-800 focus:border-red-500 focus:ring-4 focus:ring-red-500/15 transition-all font-sans"
-                  placeholder="e.g. ranjith or sales@hubinterior.com"
+                  placeholder="username or abc@hubinterior.com"
                 />
               </div>
             </div>

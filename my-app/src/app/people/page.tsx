@@ -25,10 +25,22 @@ function PeopleInner() {
   const { branchId, setBranchId, options } = useCorridorScope();
   const [search, setSearch] = useState('');
   const [role, setRole] = useState<HallwayPeopleRole | undefined>();
-  const { data, loading, error } = usePeople({ branchId, role });
+  const { data, loading, error } = usePeople({ branchId });
 
   const people = useMemo(() => {
-    const rows = data?.people || [];
+    let rows = data?.people || [];
+    if (role) {
+      rows = rows.filter((person) => {
+        const r = (person.role || '').toUpperCase();
+        if (role === 'SALES_MANAGER') {
+          return r.includes('MANAGER');
+        }
+        if (role === 'SALES_EXECUTIVE') {
+          return r.includes('EXECUTIVE') || (!r.includes('MANAGER') && !r.includes('ADMIN'));
+        }
+        return true;
+      });
+    }
     if (!search.trim()) return rows;
     const q = search.toLowerCase();
     return rows.filter(
@@ -39,7 +51,7 @@ function PeopleInner() {
         (person.email || '').toLowerCase().includes(q) ||
         (person.managerName || '').toLowerCase().includes(q)
     );
-  }, [data?.people, search]);
+  }, [data?.people, role, search]);
 
   const statsWindow = data?.statsWindow || '1y';
 
