@@ -161,6 +161,16 @@ function userFromSession(
       email: email || alternateUserMock.email,
     };
   }
+  if (email?.toLowerCase().includes('sachin') || name?.toLowerCase().includes('sachin')) {
+    return {
+      ...currentUserMock,
+      id: 'u-sachin',
+      name: display || 'Sachin Shekar',
+      role: role || 'ADMIN',
+      email: email || 'sachin@hubinterior.com',
+      department: 'Sales',
+    };
+  }
   return {
     id: 'u-session',
     name: display,

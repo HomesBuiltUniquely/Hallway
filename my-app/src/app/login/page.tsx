@@ -59,63 +59,43 @@ export default function LoginPage() {
     }
 
     setIsLoading(true);
-    let crmErr: any = null;
 
-    // 1. Try CRM Sales Login
-    try {
-      const data = await loginToCrm(id, password);
-      const user = data.user;
+    // 1. Kick off both Design Module and CRM authentications simultaneously in parallel
+    const designAuthPromise = fetch('/api/design-module/auth/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: id,
+        password: password,
+      }),
+    })
+      .then(async (res) => {
+        const data = await res.json().catch(() => null);
+        return { ok: res.ok, status: res.status, data };
+      })
+      .catch(() => null);
 
-      // Always clear any previous stale design handoff
-      clearDesignHandoff();
+    const crmAuthPromise = loginToCrm(id, password)
+      .then((data) => ({ ok: true as const, data, error: null }))
+      .catch((err) => ({ ok: false as const, data: null, error: err }));
 
-      // Opportunistically check if user also has a Design Module account with same credentials (e.g. Susmita / Super Admin)
-      try {
-        const designCheckRes = await fetch('/api/design-module/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: user?.email || id, password }),
-        });
-        const designData = await designCheckRes.json().catch(() => null);
-        if (designCheckRes.ok && designData?.sessionId && designData?.user) {
-          saveDesignHandoff(designData.user, designData.sessionId);
-        }
-      } catch {
-        // User is CRM-only
-      }
+    // 2. Fast-track check: If Design auth returns a dedicated Designer role, log in immediately
+    const designFirst = await Promise.race([
+      designAuthPromise,
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 500)),
+    ]);
 
-      login(
-        user?.email || user?.username || id,
-        crmDisplayName(user) || id,
-        user?.role || 'SALES',
-        'Sales'
-      );
-      router.replace('/');
-      return;
-    } catch (err: any) {
-      crmErr = err;
-    }
+    if (designFirst?.ok && designFirst.data?.sessionId && designFirst.data?.user) {
+      const designUser = designFirst.data.user as { email?: string; name?: string; role?: string };
+      const roleUpper = (designUser?.role || '').toUpperCase();
+      const isPureDesigner =
+        roleUpper.includes('DESIGN') && !roleUpper.includes('ADMIN') && !roleUpper.includes('SUPER');
 
-    // 2. Fallback / check Design Module login
-    try {
-      const res = await fetch('/api/design-module/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email: id,
-          password: password,
-        }),
-      });
-
-      const data = await res.json().catch(() => null);
-
-      if (res.ok && data?.sessionId && data?.user) {
-        // Purge any stale CRM sessions from previous users
+      if (isPureDesigner) {
         clearCrmSession();
-        saveDesignHandoff(data.user, data.sessionId);
-        const designUser = data.user as { email?: string; name?: string; role?: string };
+        saveDesignHandoff(designFirst.data.user, designFirst.data.sessionId);
         login(
           designUser.email || id,
           designUser.name || designUser.email || id,
@@ -125,12 +105,52 @@ export default function LoginPage() {
         router.replace('/');
         return;
       }
-    } catch {
-      // ignore design module network fallback error
     }
 
-    // If both failed, display error
+    // 3. Resolve both authentications concurrently
+    const [crmResult, fullDesignResult] = await Promise.all([
+      crmAuthPromise,
+      designAuthPromise,
+    ]);
+
+    // 4. If CRM login succeeded (Sales / Admin)
+    if (crmResult.ok && crmResult.data?.user) {
+      const user = crmResult.data.user;
+      clearDesignHandoff();
+
+      // If user also has Design Studio access (e.g. Super Admin / Admin), link it
+      if (fullDesignResult?.ok && fullDesignResult.data?.sessionId && fullDesignResult.data?.user) {
+        saveDesignHandoff(fullDesignResult.data.user, fullDesignResult.data.sessionId);
+      }
+
+      login(
+        user.email || user.username || id,
+        crmDisplayName(user) || id,
+        user.role || 'SALES',
+        'Sales'
+      );
+      router.replace('/');
+      return;
+    }
+
+    // 5. If CRM failed but Design succeeded
+    if (fullDesignResult?.ok && fullDesignResult.data?.sessionId && fullDesignResult.data?.user) {
+      clearCrmSession();
+      saveDesignHandoff(fullDesignResult.data.user, fullDesignResult.data.sessionId);
+      const designUser = fullDesignResult.data.user as { email?: string; name?: string; role?: string };
+      login(
+        designUser.email || id,
+        designUser.name || designUser.email || id,
+        designUser.role || 'DESIGN',
+        'Design'
+      );
+      router.replace('/');
+      return;
+    }
+
+    // 6. If both failed, display error
     setIsLoading(false);
+    const crmErr = crmResult.error;
     if (crmErr instanceof CrmApiError) {
       if (crmErr.status === 401 || crmErr.status === 400) {
         setErrorMessage(

@@ -23,10 +23,11 @@ export function isSuperAdmin(user?: { role?: string; name?: string; email?: stri
     return true;
   }
 
-  // 2. Identity-based matching (Ranjith, Susmita, Admin)
+  // 2. Identity-based matching (Ranjith, Susmita, Sachin Shekar, Admin)
   if (
     name.includes('ranjith') || email.includes('ranjith') ||
     name.includes('susmita') || email.includes('susmita') ||
+    name.includes('sachin') || email.includes('sachin') ||
     name.includes('admin') || email.includes('admin')
   ) {
     return true;
