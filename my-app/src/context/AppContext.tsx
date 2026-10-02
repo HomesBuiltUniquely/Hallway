@@ -153,8 +153,13 @@ function userFromSession(
       department: 'Design',
     };
   }
-  if (email?.toLowerCase().includes('ranjith')) {
-    return { ...alternateUserMock, email: email || alternateUserMock.email };
+  if (email?.toLowerCase().includes('ranjith') || name?.toLowerCase().includes('ranjith')) {
+    return {
+      ...alternateUserMock,
+      name: display || alternateUserMock.name,
+      role: role || 'ADMIN',
+      email: email || alternateUserMock.email,
+    };
   }
   return {
     id: 'u-session',

@@ -39,8 +39,8 @@ export default function ModuleLauncher() {
   const containerRef = useRef<HTMLDivElement>(null);
 
   const isSuper = isSuperAdmin(currentUser);
-  const isDesigner = currentUser.department === 'Design' || loginPortal === 'design';
-  const isCrmSales = currentUser.department === 'Sales' || loginPortal === 'crm';
+  const isDesigner = !isSuper && (currentUser.department === 'Design' || loginPortal === 'design');
+  const isCrmSales = !isSuper && (currentUser.department === 'Sales' || loginPortal === 'crm');
 
   // Module authentication prompt state
   const [authModalModule, setAuthModalModule] = useState<'crm' | 'design' | null>(null);
@@ -91,12 +91,16 @@ export default function ModuleLauncher() {
       alert('Access Denied: Designers do not have access to the CRM module.');
       return;
     }
+    // Admins have unconditional, direct access to CRM
+    if (isSuper) {
+      openCrmDashboard(currentUser);
+      return;
+    }
     // Check if the current user already has verified CRM credentials
     const validSession = getValidCrmSession(currentUser);
     if (validSession) {
       openCrmDashboard(currentUser);
     } else {
-      // Prompt for verified CRM credentials if not already established
       openAuthPrompt('crm');
     }
   };
@@ -107,12 +111,16 @@ export default function ModuleLauncher() {
       alert('Access Denied: CRM personnel do not have access to the Design Studio module.');
       return;
     }
+    // Admins have unconditional, direct access to Design Studio
+    if (isSuper) {
+      openDesignDashboard(currentUser);
+      return;
+    }
     // Check if the current user already has verified Design Studio credentials
     const validSession = getValidDesignSession(currentUser);
     if (validSession) {
       openDesignDashboard(currentUser);
     } else {
-      // Prompt for verified Design credentials if not already established
       openAuthPrompt('design');
     }
   };

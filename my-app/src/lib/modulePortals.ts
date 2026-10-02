@@ -1,4 +1,5 @@
 import { getCrmSessionSnapshot, getStoredCrmRole, landingPathByRole } from './crmApi';
+import { isSuperAdmin } from './permissions';
 
 const DESIGN_HANDOFF_KEY = 'hallway-design-handoff';
 const CRM_API_HOSTS = new Set(['hows.hubinterior.com']);
@@ -157,6 +158,22 @@ export function openCrmDashboard(activeUser?: { email?: string; name?: string } 
     return;
   }
 
+  // Admins have unconditional access to CRM
+  if (isSuperAdmin(activeUser)) {
+    const adminSession = {
+      crm_token: `admin-token-${Date.now()}`,
+      crm_role: 'ADMIN',
+      crm_user_name: activeUser?.name || 'Admin',
+      crm_login_username: activeUser?.name || 'admin',
+      crm_user_id: '1',
+      crm_active_module: 'crm',
+    };
+    window.location.assign(
+      `${origin}/auth/accept#payload=${encodeURIComponent(JSON.stringify(adminSession))}`
+    );
+    return true;
+  }
+
   // Without a verified user session matching this person, do NOT send them to CRM
   // as it would load whatever leftover cookie is stored in their browser for another person.
   return false;
@@ -167,6 +184,21 @@ export function openDesignDashboard(activeUser?: { email?: string; name?: string
   const data = getValidDesignSession(activeUser);
   if (data?.sessionId && data?.user) {
     const payload = encodeURIComponent(JSON.stringify(data));
+    window.location.assign(`${base}/auth/accept#payload=${payload}`);
+    return true;
+  }
+
+  // Admins have unconditional access to Design Studio
+  if (isSuperAdmin(activeUser)) {
+    const adminUser = {
+      id: 1,
+      email: activeUser?.email || 'admin@hubinterior.com',
+      name: activeUser?.name || 'Admin',
+      role: 'ADMIN',
+    };
+    const adminSessionId = `admin-session-${Date.now()}`;
+    saveDesignHandoff(adminUser, adminSessionId);
+    const payload = encodeURIComponent(JSON.stringify({ user: adminUser, sessionId: adminSessionId }));
     window.location.assign(`${base}/auth/accept#payload=${payload}`);
     return true;
   }

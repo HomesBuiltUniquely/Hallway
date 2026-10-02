@@ -1,11 +1,10 @@
 import { User, FeedPost } from '../types';
 
 /**
- * Checks if a user has Super Admin privileges.
+ * Checks if a user has Admin / Super Admin privileges.
  * Qualifies if:
- * 1. Role is SUPER_ADMIN or ADMIN (from CRM or Design).
- * 2. Name or email matches "susmita" (from CRM or Design, as requested by user).
- * 3. Name or email contains "admin" (e.g. admin@hows.internal).
+ * 1. Role contains ADMIN, SUPER, or LEAD (e.g. SUPER_ADMIN, ADMIN, CRM_ADMIN, SALES_ADMIN, CRM_LEAD, DESIGN_LEAD).
+ * 2. Name or email matches administrators (Ranjith, Susmita, Admin).
  */
 export function isSuperAdmin(user?: { role?: string; name?: string; email?: string } | null): boolean {
   if (!user) return false;
@@ -13,12 +12,30 @@ export function isSuperAdmin(user?: { role?: string; name?: string; email?: stri
   const name = (user.name || '').toLowerCase().trim();
   const email = (user.email || '').toLowerCase().trim();
 
-  if (role === 'SUPER_ADMIN' || role === 'ADMIN') return true;
-  if (name.includes('susmita') || email.includes('susmita')) return true;
-  if (name.includes('super admin') || email.startsWith('admin@')) return true;
+  // 1. Role-based matching
+  if (
+    role.includes('ADMIN') ||
+    role.includes('SUPER') ||
+    role === 'CRM_LEAD' ||
+    role === 'DESIGN_LEAD' ||
+    role.includes('LEAD')
+  ) {
+    return true;
+  }
+
+  // 2. Identity-based matching (Ranjith, Susmita, Admin)
+  if (
+    name.includes('ranjith') || email.includes('ranjith') ||
+    name.includes('susmita') || email.includes('susmita') ||
+    name.includes('admin') || email.includes('admin')
+  ) {
+    return true;
+  }
 
   return false;
 }
+
+export const isAdmin = isSuperAdmin;
 
 /**
  * Super admin can delete ANY announcement.

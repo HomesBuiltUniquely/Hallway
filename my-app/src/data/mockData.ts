@@ -26,7 +26,7 @@ export const currentUserMock: User = {
 export const alternateUserMock: User = {
   id: 'u2',
   name: 'Ranjith',
-  role: 'CRM_LEAD',
+  role: 'ADMIN',
   initials: 'RJ',
   avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
   email: 'ranjith@hows.internal',
