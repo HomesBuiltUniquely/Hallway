@@ -1,16 +1,18 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Megaphone, Plus, RefreshCw } from 'lucide-react';
+import { Megaphone, Plus, RefreshCw, Zap } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import DepartmentPills from '../../components/common/DepartmentPills';
 import HubLiveFeedCard from '../../components/announcements/HubLiveFeedCard';
 import NewPostModal from '../../components/home/NewPostModal';
+import SimulateDealModal from '../../components/announcements/SimulateDealModal';
 import { canCreateAnnouncement } from '../../lib/permissions';
 
 export default function AnnouncementsPage() {
   const { currentUser, announcementPosts, activeDepartment, searchQuery, setSearchQuery, refreshFeed } = useApp();
   const [isNewPostOpen, setIsNewPostOpen] = useState(false);
+  const [isSimulateOpen, setIsSimulateOpen] = useState(false);
   const [tagFilter, setTagFilter] = useState<'ALL' | 'DEALS' | 'ANNOUNCEMENTS' | 'PERFORMERS' | 'MILESTONES'>('ALL');
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -92,6 +94,16 @@ export default function AnnouncementsPage() {
 
         <div className="flex items-center gap-2">
           <button
+            onClick={() => setIsSimulateOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs shadow-emerald-900/20 cursor-pointer"
+            title="Simulate or broadcast a live CRM deal closure"
+          >
+            <Zap className="w-3.5 h-3.5 fill-amber-300 text-amber-300" />
+            <span className="hidden sm:inline">Simulate CRM Closure</span>
+            <span className="sm:hidden">Simulate</span>
+          </button>
+
+          <button
             onClick={handleRefresh}
             title="Refresh announcements from database"
             className="p-2 bg-white dark:bg-[#0D1829] border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-rose-600 rounded-xl transition-all shadow-xs cursor-pointer"
@@ -109,6 +121,30 @@ export default function AnnouncementsPage() {
             </button>
           )}
         </div>
+      </div>
+
+      {/* Live Dynamic CRM Pacing Ribbon */}
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 bg-gradient-to-r from-emerald-500/10 via-rose-500/5 to-violet-500/10 dark:from-emerald-950/30 dark:via-rose-950/20 dark:to-violet-950/30 border border-emerald-500/20 dark:border-emerald-800/40 rounded-xl text-xs">
+        <div className="flex items-center gap-2">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+          </span>
+          <span className="font-semibold text-slate-700 dark:text-slate-200">
+            Live Dynamic CRM Feed
+          </span>
+          <span className="text-slate-400 dark:text-slate-500">•</span>
+          <span className="text-slate-500 dark:text-slate-400">
+            Real-time business rules evaluating 14 Master PDF scenarios from active CRM deals & targets
+          </span>
+        </div>
+        <button
+          onClick={() => setIsSimulateOpen(true)}
+          className="font-bold text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 flex items-center gap-1 cursor-pointer transition-colors"
+        >
+          <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+          Test CRM Trigger &rarr;
+        </button>
       </div>
 
       {/* Department Tabs Bar matching Image 1 */}
@@ -169,6 +205,7 @@ export default function AnnouncementsPage() {
       )}
 
       <NewPostModal isOpen={isNewPostOpen} onClose={() => setIsNewPostOpen(false)} />
+      <SimulateDealModal isOpen={isSimulateOpen} onClose={() => setIsSimulateOpen(false)} />
     </div>
   );
 }

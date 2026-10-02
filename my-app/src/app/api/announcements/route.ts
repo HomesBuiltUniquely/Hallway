@@ -24,7 +24,8 @@ export async function POST(request: Request) {
     const { title, content, type, categoryColor, department, author, quotaProgress } = body;
 
     // RBAC: Verify author has authority to create announcements or performer spotlights
-    if (author && !canCreateAnnouncement(author)) {
+    // System/CRM deal closures (booking & quota milestones) or authorized staff are permitted
+    if (author && !canCreateAnnouncement(author) && type !== 'booking' && type !== 'quota') {
       return NextResponse.json(
         { error: 'Forbidden: Only administrators and department leads have authorization to broadcast announcements.' },
         { status: 403 }

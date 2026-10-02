@@ -1,5 +1,37 @@
 [
   {
+    "id": "post-1790950160406",
+    "type": "booking",
+    "categoryColor": "#10B981",
+    "title": "New Booking: ₹14.8L by Sarjapura Team!",
+    "timestamp": "Just Now",
+    "createdAt": "2026-10-02T14:09:20.000Z",
+    "author": {
+      "name": "Jayashree",
+      "avatar": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
+      "team": "Sarjapura Hub"
+    },
+    "content": "Jayashree just closed Project #5230. Another home joins HUB. Great work, team!",
+    "quotaProgress": null,
+    "reactions": {
+      "thumbsUp": 0,
+      "clap": 0,
+      "heart": 0,
+      "joy": 0,
+      "surprised": 0,
+      "pray": 0,
+      "userThumbsUp": false,
+      "userClap": false,
+      "userHeart": false,
+      "userJoy": false,
+      "userSurprised": false,
+      "userPray": false
+    },
+    "commentsCount": 0,
+    "department": "Sales",
+    "comments": []
+  },
+  {
     "id": "deal-yesterday-1",
     "type": "booking",
     "categoryColor": "#10B981",

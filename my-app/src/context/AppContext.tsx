@@ -17,8 +17,8 @@ import {
   crmLeadsMock,
   designProjectsMock
 } from '../data/mockData';
-import { fetchFeed, fetchTargets, clearCrmSession, fetchLeaderboard, fetchPeople } from '../lib/crmApi';
-import { generateCrmAnnouncements, formatInrToLakhsOrCrores } from '../lib/crmAnnouncementsGenerator';
+import { fetchFeed, fetchTargets, clearCrmSession, fetchLeaderboard, fetchPeople, fetchRecords } from '../lib/crmApi';
+import { generateCrmAnnouncements, formatInrToLakhsOrCrores, createDynamicCrmAnnouncement } from '../lib/crmAnnouncementsGenerator';
 import { clearDesignHandoff } from '../lib/modulePortals';
 import { isTodayOrYesterday, cleanPostContent, getYesterdayYmd, formatPersonName } from '../lib/hallwayDisplay';
 
@@ -122,6 +122,14 @@ interface AppContextType {
   setActiveTimeframe: (tf: 'Today' | 'MTD' | 'QTD') => void;
   activeLeaderboardView: 'Individual' | 'Team';
   setActiveLeaderboardView: (v: 'Individual' | 'Team') => void;
+  simulateDynamicDeal: (params: {
+    scenarioNumber: number;
+    repName: string;
+    branchName: string;
+    amount: string;
+    projectTag?: string;
+    customDetails?: string;
+  }) => Promise<FeedPost>;
 }
 
 const HALLWAY_SESSION_KEY = 'hallway-auth';
@@ -319,36 +327,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         .then((res) => res?.individuals || [])
         .catch(() => []);
 
-      // Non-blocking pre-warm for People & Operating Directory and sync verified profile details
-      fetchPeople('', {})
-        .then((res) => {
-          if (res?.people?.length && currentUser?.name) {
-            const rawTarget = (currentUser.email || currentUser.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-            const match = res.people.find((p) => {
-              const pCleanName = (p.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-              const pCleanEmail = (p.email || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-              return (
-                pCleanName === rawTarget ||
-                pCleanEmail === rawTarget ||
-                (pCleanEmail && rawTarget.includes(pCleanEmail)) ||
-                (pCleanName && rawTarget.includes(pCleanName))
-              );
-            });
-            if (match && match.name) {
-              const matchedFormatted = formatPersonName(match.name);
-              setCurrentUser((prev) => {
-                if (prev.name === matchedFormatted) return prev;
-                return {
-                  ...prev,
-                  name: matchedFormatted,
-                  avatar: match.avatar || prev.avatar,
-                  role: match.role || prev.role,
-                };
-              });
-            }
-          }
-        })
-        .catch(() => null);
+      const crmPeoplePromise = fetchPeople('', {})
+        .then((res) => res?.people || [])
+        .catch(() => []);
+
+      const crmRecordsPromise = fetchRecords('', '')
+        .then((res) => res?.individualRecords || [])
+        .catch(() => []);
 
       const branchTargetPromises = BRANCH_TARGET_CONFIGS.map(async (b) => {
         try {
@@ -364,13 +349,50 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
       });
 
-      const [announcementsData, crmItems, overallTargetsData, leaderboardData, ...branchTargetsArrays] = await Promise.all([
+      const [
+        announcementsData,
+        crmItems,
+        overallTargetsData,
+        leaderboardData,
+        crmPeopleData,
+        crmRecordsData,
+        ...branchTargetsArrays
+      ] = await Promise.all([
         announcementsPromise,
         crmFeedPromise,
         crmTargetsPromise,
         crmLeaderboardPromise,
+        crmPeoplePromise,
+        crmRecordsPromise,
         ...branchTargetPromises,
       ]);
+
+      // Sync verified profile details from active live CRM directory
+      if (Array.isArray(crmPeopleData) && crmPeopleData.length > 0 && currentUser?.name) {
+        const rawTarget = (currentUser.email || currentUser.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const match = crmPeopleData.find((p) => {
+          const pCleanName = (p.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+          const pCleanEmail = (p.email || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+          return (
+            pCleanName === rawTarget ||
+            pCleanEmail === rawTarget ||
+            (pCleanEmail && rawTarget.includes(pCleanEmail)) ||
+            (pCleanName && rawTarget.includes(pCleanName))
+          );
+        });
+        if (match && match.name) {
+          const matchedFormatted = formatPersonName(match.name);
+          setCurrentUser((prev) => {
+            if (prev.name === matchedFormatted) return prev;
+            return {
+              ...prev,
+              name: matchedFormatted,
+              avatar: match.avatar || prev.avatar,
+              role: match.role || prev.role,
+            };
+          });
+        }
+      }
 
       // 1. Target Data Processing:
       // a. Company-wide "All Hubs (Overall)" target data first
@@ -759,8 +781,36 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return getTime(b) - getTime(a);
       });
 
-      // Dashboard gets targets first (All Hubs -> sorted branches), then dashboard news
-      setFeedPosts([...targetPosts, ...dashboardNewsPosts]);
+      // Dynamic CRM Snippets Engine (All 14 CRM Scenarios from Master PDF)
+      const dynamicCrmSnippets = generateCrmAnnouncements({
+        crmFeedItems: Array.isArray(crmItems) ? crmItems : [],
+        overallTargets,
+        branchTargets,
+        topPerformers: Array.isArray(leaderboardData) ? leaderboardData : [],
+        people: Array.isArray(crmPeopleData) ? crmPeopleData : [],
+        records: Array.isArray(crmRecordsData) ? crmRecordsData : [],
+        existingPostsMap: currentPostsMap,
+      });
+
+      // Dashboard Feed gets targets first (All Hubs -> sorted branches), then broadcasts and dynamic CRM announcements
+      const mergedDashboardFeed: FeedPost[] = [...targetPosts];
+      const seenDashboardIds = new Set<string>(targetPosts.map((p) => p.id));
+
+      for (const p of dashboardNewsPosts) {
+        if (!seenDashboardIds.has(p.id)) {
+          mergedDashboardFeed.push(p);
+          seenDashboardIds.add(p.id);
+        }
+      }
+
+      for (const snippet of dynamicCrmSnippets) {
+        if (!seenDashboardIds.has(snippet.id)) {
+          mergedDashboardFeed.push(snippet);
+          seenDashboardIds.add(snippet.id);
+        }
+      }
+
+      setFeedPosts(mergedDashboardFeed);
 
       // 3. Announcements Page Feed (HUB Live Feed Snippets Engine)
       // Excludes repeating raw target cards (crm-target-*), and displays rich dynamic CRM announcement snippets!
@@ -795,15 +845,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           });
         }
       }
-
-      // Dynamic CRM Snippets Engine (Scenario 1, 2, 3, 4, 5, 6, 7, 9, 10, 16, 23)
-      const dynamicCrmSnippets = generateCrmAnnouncements({
-        crmFeedItems: Array.isArray(crmItems) ? crmItems : [],
-        overallTargets,
-        branchTargets,
-        topPerformers: Array.isArray(leaderboardData) ? leaderboardData : [],
-        existingPostsMap: currentPostsMap,
-      });
 
       // Merge broadcast announcements + CRM snippet engine
       const announcementPostsMap = new Map<string, FeedPost>();
@@ -1302,6 +1343,51 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const simulateDynamicDeal = async (params: {
+    scenarioNumber: number;
+    repName: string;
+    branchName: string;
+    amount: string;
+    projectTag?: string;
+    customDetails?: string;
+  }): Promise<FeedPost> => {
+    const post = createDynamicCrmAnnouncement({
+      scenarioNumber: params.scenarioNumber,
+      repName: params.repName,
+      branch: params.branchName,
+      amount: params.amount,
+      projectTag: params.projectTag,
+      customDetails: params.customDetails,
+    });
+
+    try {
+      const apiUrl = HALLWAY_LOCAL_API || '/api';
+      await fetch(`${apiUrl}/announcements`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: post.title,
+          content: post.content,
+          type: post.type,
+          department: 'Sales',
+          quotaProgress: post.quotaProgress,
+          author: {
+            ...post.author,
+            role: currentUser.role || 'CRM_LEAD',
+          },
+          iconEmoji: post.iconEmoji,
+          categoryColor: post.categoryColor,
+        }),
+      });
+    } catch (err) {
+      console.warn('Could not persist simulated deal to backend DB:', err);
+    }
+
+    setAnnouncementPosts((prev) => [post, ...prev.filter((p) => p.id !== post.id)]);
+    setFeedPosts((prev) => [post, ...prev.filter((p) => p.id !== post.id)]);
+    return post;
+  };
+
   const clearNotifications = () => {
     setNotificationsCount(0);
   };
@@ -1348,7 +1434,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         activeTimeframe,
         setActiveTimeframe,
         activeLeaderboardView,
-        setActiveLeaderboardView
+        setActiveLeaderboardView,
+        simulateDynamicDeal
       }}
     >
       {children}

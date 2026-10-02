@@ -17,7 +17,7 @@ export default function HomePage() {
   const [selectedFilter, setSelectedFilter] = useState<'ALL' | 'ANNOUNCEMENTS' | 'BOOKINGS' | 'TARGETS' | 'PERFORMERS'>('ALL');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isNewPostOpen, setIsNewPostOpen] = useState(false);
-  const [visibleCount, setVisibleCount] = useState(10);
+  const [visibleCount, setVisibleCount] = useState(16);
   const [greeting, setGreeting] = useState<string>(() => getTimeBasedGreeting());
 
   // Periodically refresh greeting if shift crosses morning/afternoon/evening boundaries
@@ -154,7 +154,7 @@ export default function HomePage() {
             {filteredPosts.length > visibleCount && (
               <button
                 type="button"
-                onClick={() => setVisibleCount((prev) => prev + 3)}
+                onClick={() => setVisibleCount((prev) => prev + 8)}
                 className="w-full py-3 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/90 dark:border-slate-800 rounded-2xl text-xs font-bold text-slate-600 dark:text-slate-300 transition-colors shadow-xs"
               >
                 Load earlier updates

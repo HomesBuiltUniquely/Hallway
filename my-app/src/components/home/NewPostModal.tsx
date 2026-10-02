@@ -1,11 +1,12 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Radio, Megaphone, Trophy, Loader2, UserCheck, Award, X } from 'lucide-react';
+import { Radio, Megaphone, Trophy, Loader2, UserCheck, Award, X, Sparkles, Check } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { FeedPost } from '../../types';
 import { getAllowedBroadcastDepartments } from '../../lib/permissions';
 import { usePeople } from '../../hooks/usePeople';
+import { CRM_ANNOUNCEMENT_TEMPLATES, CrmScenarioTemplate } from '../../lib/crmAnnouncementsGenerator';
 
 export default function NewPostModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const { addNewPost, currentUser } = useApp();
@@ -16,6 +17,7 @@ export default function NewPostModal({ isOpen, onClose }: { isOpen: boolean; onC
   const [type, setType] = useState<FeedPost['type']>('announcement');
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
+  const [selectedTemplateNum, setSelectedTemplateNum] = useState<number | null>(null);
 
   // Performer spotlight specific fields
   const [recognizedPerson, setRecognizedPerson] = useState('');
@@ -39,6 +41,17 @@ export default function NewPostModal({ isOpen, onClose }: { isOpen: boolean; onC
     const person = peopleList.find((p) => p.name === personName);
     if (person && !title) {
       setTitle(`🏆 Performer Spotlight: ${person.name} (${person.role || 'Team Member'})`);
+    }
+  };
+
+  const handleSelectTemplate = (tmpl: CrmScenarioTemplate) => {
+    setSelectedTemplateNum(tmpl.scenarioNumber);
+    setTitle(tmpl.headline);
+    setContent(tmpl.content);
+    setType(tmpl.type);
+    if (tmpl.type === 'performer') {
+      setRecognizedPerson(tmpl.defaultAuthor.name);
+      setMilestoneMetric(tmpl.sampleMetric || '');
     }
   };
 
@@ -71,6 +84,7 @@ export default function NewPostModal({ isOpen, onClose }: { isOpen: boolean; onC
 
       setTitle('');
       setContent('');
+      setSelectedTemplateNum(null);
       setRecognizedPerson('');
       setMilestoneMetric('');
       onClose();
@@ -83,7 +97,7 @@ export default function NewPostModal({ isOpen, onClose }: { isOpen: boolean; onC
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in">
-      <div className="bg-white dark:bg-[#0D1829] border border-slate-200 dark:border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
+      <div className="bg-white dark:bg-[#0D1829] border border-slate-200 dark:border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl max-h-[92vh] overflow-y-auto">
         {/* Header with Enterprise Live Broadcast Signal */}
         <div className="flex items-center justify-between pb-3.5 border-b border-slate-100 dark:border-slate-800/80 mb-4">
           <div className="flex items-center gap-3">
@@ -109,6 +123,54 @@ export default function NewPostModal({ isOpen, onClose }: { isOpen: boolean; onC
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Quick CRM Scenario Templates from Master PDF */}
+          <div className="p-3 bg-slate-50 dark:bg-slate-900/70 rounded-xl border border-slate-200/80 dark:border-slate-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300">
+                <Sparkles className="w-3.5 h-3.5 text-rose-500" />
+                <span>CRM Scenario Templates (PDF Scenarios)</span>
+              </div>
+              {selectedTemplateNum && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedTemplateNum(null);
+                    setTitle('');
+                    setContent('');
+                    setType('announcement');
+                    setRecognizedPerson('');
+                    setMilestoneMetric('');
+                  }}
+                  className="text-[10px] text-rose-600 hover:text-rose-700 font-semibold cursor-pointer"
+                >
+                  Clear Selection
+                </button>
+              )}
+            </div>
+
+            <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+              {CRM_ANNOUNCEMENT_TEMPLATES.map((tmpl) => {
+                const isSelected = selectedTemplateNum === tmpl.scenarioNumber;
+                return (
+                  <button
+                    key={tmpl.scenarioNumber}
+                    type="button"
+                    onClick={() => handleSelectTemplate(tmpl)}
+                    className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer shrink-0 border ${
+                      isSelected
+                        ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
+                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-rose-400'
+                    }`}
+                  >
+                    <span>{tmpl.iconEmoji}</span>
+                    <span>#{tmpl.scenarioNumber} {tmpl.scenarioName}</span>
+                    {isSelected && <Check className="w-3 h-3 ml-0.5" />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Category Selector with Enterprise Icons */}
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">

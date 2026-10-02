@@ -12,11 +12,14 @@ import {
   CheckCircle2,
   Info,
   Loader2,
-  ShieldAlert
+  ShieldAlert,
+  Sparkles,
+  Check
 } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
 import { FeedPost } from '../../../types';
 import { canCreateAnnouncement, getAllowedBroadcastDepartments } from '../../../lib/permissions';
+import { CRM_ANNOUNCEMENT_TEMPLATES, CrmScenarioTemplate } from '../../../lib/crmAnnouncementsGenerator';
 
 export default function BroadcastPage() {
   const router = useRouter();
@@ -31,6 +34,18 @@ export default function BroadcastPage() {
   const [authorTeam, setAuthorTeam] = useState(`${currentUser.department || 'HQ'} Hub`);
   const [isPublishing, setIsPublishing] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [selectedTemplateNum, setSelectedTemplateNum] = useState<number | null>(null);
+
+  const handleSelectTemplate = (tmpl: CrmScenarioTemplate) => {
+    setSelectedTemplateNum(tmpl.scenarioNumber);
+    setTitle(tmpl.headline);
+    setContent(tmpl.content);
+    setType(tmpl.type);
+    if (tmpl.defaultAuthor) {
+      setAuthorName(tmpl.defaultAuthor.name);
+      setAuthorTeam(tmpl.defaultAuthor.team);
+    }
+  };
 
   useEffect(() => {
     if (allowedDepts.length > 0 && !allowedDepts.includes(department)) {
@@ -166,6 +181,52 @@ export default function BroadcastPage() {
         {/* Left Form (7 Cols) */}
         <div className="lg:col-span-7 bg-white dark:bg-[#0D1829] border border-slate-200 dark:border-slate-800 rounded-2xl p-5 sm:p-6 shadow-sm">
           <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Quick CRM Scenario Templates from Master PDF */}
+            <div className="p-3.5 bg-slate-50 dark:bg-slate-900/70 rounded-xl border border-slate-200/80 dark:border-slate-800 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300">
+                  <Sparkles className="w-4 h-4 text-rose-500" />
+                  <span>CRM Scenario Templates (PDF Scenarios 1–25)</span>
+                </div>
+                {selectedTemplateNum && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedTemplateNum(null);
+                      setTitle('');
+                      setContent('');
+                      setType('announcement');
+                    }}
+                    className="text-[11px] text-rose-600 hover:text-rose-700 font-semibold cursor-pointer"
+                  >
+                    Clear Selection
+                  </button>
+                )}
+              </div>
+
+              <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+                {CRM_ANNOUNCEMENT_TEMPLATES.map((tmpl) => {
+                  const isSelected = selectedTemplateNum === tmpl.scenarioNumber;
+                  return (
+                    <button
+                      key={tmpl.scenarioNumber}
+                      type="button"
+                      onClick={() => handleSelectTemplate(tmpl)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer shrink-0 border ${
+                        isSelected
+                          ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
+                          : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-rose-400'
+                      }`}
+                    >
+                      <span>{tmpl.iconEmoji}</span>
+                      <span>#{tmpl.scenarioNumber} {tmpl.scenarioName}</span>
+                      {isSelected && <Check className="w-3.5 h-3.5 ml-0.5" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Category Selector */}
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2">
