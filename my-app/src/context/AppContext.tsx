@@ -1034,10 +1034,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       general: '#3B82F6'
     };
 
-    const author = customAuthor || {
-      name: currentUser.name,
-      avatar: currentUser.avatar,
-      team: currentUser.department + ' Hub'
+    const author = {
+      name: customAuthor?.name || currentUser.name,
+      avatar: customAuthor?.avatar || currentUser.avatar,
+      team: customAuthor?.team || `${currentUser.department || 'Sales'} Hub`,
+      role: (customAuthor as any)?.role || currentUser.role,
+      email: (customAuthor as any)?.email || currentUser.email,
     };
 
     const nowIso = new Date().toISOString();

@@ -38,6 +38,56 @@ export function isSuperAdmin(user?: { role?: string; name?: string; email?: stri
 export const isAdmin = isSuperAdmin;
 
 /**
+ * Determines whether a user has authority to broadcast announcements or performer spotlights.
+ * - Global Admins (Ranjith, Susmita, SUPER_ADMIN, ADMIN) -> Allowed
+ * - Department Leads / Managers (CRM_LEAD, DESIGN_LEAD, roles with LEAD, MANAGER, HEAD, HR) -> Allowed
+ * - General Contributors (Sales Executives, Designers, Site Engineers) -> Denied (Read & Engage only)
+ */
+export function canCreateAnnouncement(user?: { role?: string; name?: string; email?: string } | null): boolean {
+  if (!user) return false;
+  if (isSuperAdmin(user)) return true;
+
+  const role = (user.role || '').toUpperCase().replace(/[\s-]+/g, '_');
+  return (
+    role.includes('LEAD') ||
+    role.includes('MANAGER') ||
+    role.includes('HEAD') ||
+    role.includes('DIRECTOR') ||
+    role.includes('HR') ||
+    role.includes('FOUNDER') ||
+    role.includes('VP')
+  );
+}
+
+/**
+ * Returns allowed target departments for a user.
+ * - Global Admins can broadcast Company Wide or to any department.
+ * - Department Leads are scoped to their respective department.
+ */
+export function getAllowedBroadcastDepartments(
+  user?: { role?: string; name?: string; email?: string; department?: string } | null
+): string[] {
+  if (!user) return ['Sales'];
+  if (isSuperAdmin(user)) {
+    return ['Company Wide', 'Sales', 'Design', 'Operations', 'HR', 'Leadership'];
+  }
+  const role = (user.role || '').toUpperCase().replace(/[\s-]+/g, '_');
+  if (role.includes('HR')) {
+    return ['Company Wide', 'HR', 'Sales', 'Design', 'Operations'];
+  }
+  if (role.includes('DESIGN')) {
+    return ['Design'];
+  }
+  if (role.includes('CRM') || role.includes('SALES')) {
+    return ['Sales'];
+  }
+  if (user.department) {
+    return [user.department];
+  }
+  return ['Sales'];
+}
+
+/**
  * Super admin can delete ANY announcement.
  * Individuals can delete their own announcements.
  */

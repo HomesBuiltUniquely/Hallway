@@ -5,9 +5,10 @@ import Link from 'next/link';
 import { Megaphone, Plus, ArrowRight } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { formatRelativeTime } from '../../lib/hallwayDisplay';
+import { canCreateAnnouncement } from '../../lib/permissions';
 
 export default function WidgetLeadership() {
-  const { feedPosts } = useApp();
+  const { feedPosts, currentUser } = useApp();
 
   const leadershipPost = [...feedPosts]
     .filter((p) => p.type === 'announcement' || p.type === 'general')
@@ -35,13 +36,15 @@ export default function WidgetLeadership() {
           </span>
           <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
         </div>
-        <Link
-          href="/announcements/broadcast"
-          className="text-xs font-semibold text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 flex items-center gap-1 transition-colors"
-        >
-          <span>Broadcast</span>
-          <Plus className="w-3 h-3" />
-        </Link>
+        {canCreateAnnouncement(currentUser) && (
+          <Link
+            href="/announcements/broadcast"
+            className="text-xs font-semibold text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 flex items-center gap-1 transition-colors"
+          >
+            <span>Broadcast</span>
+            <Plus className="w-3 h-3" />
+          </Link>
+        )}
       </div>
 
       {leadershipPost ? (
@@ -84,16 +87,22 @@ export default function WidgetLeadership() {
               All Hub directors & team leads are focusing on mid-month gross booking and token collection velocity across corridors.
             </p>
           </div>
-          <div className="text-[11px] text-slate-400 flex items-center justify-between pt-1">
-            <span>Use Broadcast to publish updates</span>
-            <Link
-              href="/announcements/broadcast"
-              className="font-bold text-rose-600 dark:text-rose-400 hover:underline flex items-center gap-0.5"
-            >
-              <span>Post</span>
-              <ArrowRight className="w-2.5 h-2.5" />
-            </Link>
-          </div>
+          {canCreateAnnouncement(currentUser) ? (
+            <div className="text-[11px] text-slate-400 flex items-center justify-between pt-1">
+              <span>Use Broadcast to publish updates</span>
+              <Link
+                href="/announcements/broadcast"
+                className="font-bold text-rose-600 dark:text-rose-400 hover:underline flex items-center gap-0.5"
+              >
+                <span>Post</span>
+                <ArrowRight className="w-2.5 h-2.5" />
+              </Link>
+            </div>
+          ) : (
+            <div className="text-[11px] text-slate-400 pt-1">
+              <span>Official leadership directives & corridor memo</span>
+            </div>
+          )}
         </div>
       )}
     </div>

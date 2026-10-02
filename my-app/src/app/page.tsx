@@ -10,6 +10,7 @@ import WidgetActions from '../components/home/WidgetActions';
 import WidgetCampaign from '../components/home/WidgetCampaign';
 import WidgetLeadership from '../components/home/WidgetLeadership';
 import NewPostModal from '../components/home/NewPostModal';
+import { canCreateAnnouncement } from '../lib/permissions';
 
 export default function HomePage() {
   const { currentUser, feedPosts, searchQuery } = useApp();
@@ -52,13 +53,15 @@ export default function HomePage() {
           <span className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700">
             {new Date().toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}
           </span>
-          <button
-            onClick={() => setIsNewPostOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm shadow-rose-900/20"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Broadcast</span>
-          </button>
+          {canCreateAnnouncement(currentUser) && (
+            <button
+              onClick={() => setIsNewPostOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm shadow-rose-900/20 cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Broadcast</span>
+            </button>
+          )}
         </div>
       </div>
 

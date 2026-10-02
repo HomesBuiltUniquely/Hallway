@@ -6,9 +6,10 @@ import { useApp } from '../../context/AppContext';
 import DepartmentPills from '../../components/common/DepartmentPills';
 import HubLiveFeedCard from '../../components/announcements/HubLiveFeedCard';
 import NewPostModal from '../../components/home/NewPostModal';
+import { canCreateAnnouncement } from '../../lib/permissions';
 
 export default function AnnouncementsPage() {
-  const { announcementPosts, activeDepartment, searchQuery, setSearchQuery, refreshFeed } = useApp();
+  const { currentUser, announcementPosts, activeDepartment, searchQuery, setSearchQuery, refreshFeed } = useApp();
   const [isNewPostOpen, setIsNewPostOpen] = useState(false);
   const [tagFilter, setTagFilter] = useState<'ALL' | 'DEALS' | 'ANNOUNCEMENTS' | 'PERFORMERS' | 'MILESTONES'>('ALL');
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -98,13 +99,15 @@ export default function AnnouncementsPage() {
             <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-rose-600' : ''}`} />
           </button>
 
-          <button
-            onClick={() => setIsNewPostOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm shadow-rose-900/20 cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Broadcast</span>
-          </button>
+          {canCreateAnnouncement(currentUser) && (
+            <button
+              onClick={() => setIsNewPostOpen(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm shadow-rose-900/20 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Broadcast</span>
+            </button>
+          )}
         </div>
       </div>
 

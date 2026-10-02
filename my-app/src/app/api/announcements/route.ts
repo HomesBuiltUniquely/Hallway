@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getAnnouncements, createAnnouncement } from '@/lib/db';
+import { canCreateAnnouncement } from '@/lib/permissions';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -21,6 +22,14 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { title, content, type, categoryColor, department, author, quotaProgress } = body;
+
+    // RBAC: Verify author has authority to create announcements or performer spotlights
+    if (author && !canCreateAnnouncement(author)) {
+      return NextResponse.json(
+        { error: 'Forbidden: Only administrators and department leads have authorization to broadcast announcements.' },
+        { status: 403 }
+      );
+    }
 
     if (!title || !title.trim() || !content || !content.trim()) {
       return NextResponse.json(

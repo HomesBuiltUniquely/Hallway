@@ -1,55 +1,94 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
+  Radio,
   Megaphone,
+  Trophy,
   ArrowLeft,
-  Sparkles,
   Send,
-  Building2,
-  UserCheck,
   CheckCircle2,
-  Award,
-  DollarSign,
   Info,
-  Loader2
+  Loader2,
+  ShieldAlert
 } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
 import { FeedPost } from '../../../types';
+import { canCreateAnnouncement, getAllowedBroadcastDepartments } from '../../../lib/permissions';
 
 export default function BroadcastPage() {
   const router = useRouter();
   const { addNewPost, currentUser } = useApp();
 
+  const allowedDepts = getAllowedBroadcastDepartments(currentUser);
+  const [department, setDepartment] = useState<string>(allowedDepts[0] || 'Sales');
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [type, setType] = useState<FeedPost['type']>('announcement');
-  const [department, setDepartment] = useState<string>(currentUser.department || 'Sales');
   const [authorName, setAuthorName] = useState(currentUser.name || 'Leadership Office');
   const [authorTeam, setAuthorTeam] = useState(`${currentUser.department || 'HQ'} Hub`);
   const [isPublishing, setIsPublishing] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (allowedDepts.length > 0 && !allowedDepts.includes(department)) {
+      setDepartment(allowedDepts[0]);
+    }
+    if (currentUser?.name) {
+      setAuthorName(currentUser.name);
+      setAuthorTeam(`${currentUser.department || 'HQ'} Hub`);
+    }
+  }, [currentUser]);
+
+  // Enterprise RBAC Guard: If standard employee attempts direct URL visit
+  if (!canCreateAnnouncement(currentUser)) {
+    return (
+      <div className="max-w-xl mx-auto py-20 px-4 text-center space-y-4">
+        <div className="w-14 h-14 mx-auto rounded-2xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200/80 dark:border-amber-800/80 flex items-center justify-center shadow-xs">
+          <ShieldAlert className="w-7 h-7" />
+        </div>
+        <h2 className="text-xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+          Broadcast Permissions Required
+        </h2>
+        <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed max-w-md mx-auto">
+          Corridor broadcasts and performer spotlights are restricted to Administrators and Department Leads. Standard accounts participate via comments and reactions on the live feed.
+        </p>
+        <div className="pt-2">
+          <Link
+            href="/announcements"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-bold transition-all shadow-sm hover:opacity-90 cursor-pointer"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Return to Announcements Feed</span>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   const categories = [
     {
       id: 'announcement',
-      label: '📢 Corridor Broadcast',
+      label: 'Official Announcement',
+      icon: Megaphone,
       color: '#EF4444',
-      desc: 'Official company-wide announcements, leadership memos, and townhall notices.'
+      desc: 'Company directives, executive memos, town hall notices, and branch operations.'
     },
     {
       id: 'performer',
-      label: '🟡 Performer Award',
+      label: 'Performer Spotlight',
+      icon: Trophy,
       color: '#F59E0B',
-      desc: 'Recognizing top performers, velocity leaders, and outstanding team members.'
+      desc: 'Recognizing top deal closers, conversion velocity milestones, and MVP team awards.'
     },
     {
       id: 'general',
-      label: '🔵 General Update',
+      label: 'Corridor Directive',
+      icon: Radio,
       color: '#3B82F6',
-      desc: 'General team notices, schedule updates, or collaborative notes.'
+      desc: 'Operational schedules, departmental notices, or collaborative directives.'
     }
   ];
 
@@ -94,21 +133,21 @@ export default function BroadcastPage() {
         <div>
           <Link
             href="/announcements"
-            className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 transition-colors mb-2"
+            className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 transition-colors mb-2 cursor-pointer"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
             <span>Back to Announcements</span>
           </Link>
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200/60 dark:border-rose-900/40">
-              <Megaphone className="w-6 h-6" />
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200/60 dark:border-rose-900/40 shrink-0">
+              <Radio className="w-6 h-6 animate-pulse" />
             </div>
             <div>
               <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
                 Publish Corridor Broadcast
               </h1>
               <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-                Compose news, team shoutouts, quota milestones, and official executive announcements.
+                Official executive announcements, department directives, and top performer spotlights.
               </p>
             </div>
           </div>
@@ -132,30 +171,37 @@ export default function BroadcastPage() {
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2">
                 1. Select Broadcast Category
               </label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {categories.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => setType(c.id as FeedPost['type'])}
-                    className={`p-3 rounded-xl border text-left transition-all ${
-                      type === c.id
-                        ? 'border-rose-500 bg-rose-50/60 dark:bg-rose-950/30 text-slate-900 dark:text-white ring-2 ring-rose-500/20'
-                        : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-600 dark:text-slate-400'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between font-bold text-xs">
-                      <span>{c.label}</span>
-                      <span
-                        className="w-2.5 h-2.5 rounded-full shrink-0"
-                        style={{ backgroundColor: c.color }}
-                      />
-                    </div>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-snug">
-                      {c.desc}
-                    </p>
-                  </button>
-                ))}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {categories.map((c) => {
+                  const Icon = c.icon;
+                  const isSelected = type === c.id;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => setType(c.id as FeedPost['type'])}
+                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                        isSelected
+                          ? 'border-rose-500 bg-rose-50/60 dark:bg-rose-950/30 text-slate-900 dark:text-white ring-2 ring-rose-500/20 shadow-xs'
+                          : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-600 dark:text-slate-400'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between font-bold text-xs mb-1.5">
+                        <div className="flex items-center gap-1.5">
+                          <Icon className="w-4 h-4 shrink-0" style={{ color: c.color }} />
+                          <span className="truncate">{c.label}</span>
+                        </div>
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{ backgroundColor: c.color }}
+                        />
+                      </div>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-snug line-clamp-2">
+                        {c.desc}
+                      </p>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -168,7 +214,11 @@ export default function BroadcastPage() {
                 type="text"
                 required
                 maxLength={255}
-                placeholder="e.g. Q3 All-Hands Executive Townhall Scheduled"
+                placeholder={
+                  type === 'performer'
+                    ? 'e.g. 🏆 MVP Closer: Meghana Achieved 120% Quota Milestone'
+                    : 'e.g. 📢 Q3 All-Hands Executive Townhall Scheduled'
+                }
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500 transition-all font-medium"
@@ -192,13 +242,11 @@ export default function BroadcastPage() {
                   }}
                   className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
                 >
-                  <option value="Sales">Sales</option>
-                  <option value="Design">Design</option>
-                  <option value="Leadership">Leadership</option>
-                  <option value="Operations">Operations</option>
-                  <option value="HR">HR</option>
-                  <option value="Finance">Finance</option>
-                  <option value="Company Wide">Company Wide</option>
+                  {allowedDepts.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -223,7 +271,11 @@ export default function BroadcastPage() {
               <textarea
                 required
                 rows={5}
-                placeholder="Write the full broadcast news, milestones, key takeaways, action items, or celebration message..."
+                placeholder={
+                  type === 'performer'
+                    ? 'Highlight this performer’s contribution, speed of closing, design excellence, or special project turnaround...'
+                    : 'Write the full broadcast news, milestones, key takeaways, action items, or celebration message...'
+                }
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
                 className="w-full px-3.5 py-3 bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500 transition-all leading-relaxed"
@@ -234,7 +286,7 @@ export default function BroadcastPage() {
             <div className="pt-2 flex items-center justify-between border-t border-slate-100 dark:border-slate-800">
               <Link
                 href="/announcements"
-                className="px-4 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+                className="px-4 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors cursor-pointer"
               >
                 Cancel
               </Link>
@@ -242,7 +294,7 @@ export default function BroadcastPage() {
               <button
                 type="submit"
                 disabled={isPublishing || !title.trim() || !content.trim()}
-                className="flex items-center gap-2 px-6 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-rose-900/20"
+                className="flex items-center gap-2 px-6 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-rose-900/20 cursor-pointer"
               >
                 {isPublishing ? (
                   <>
@@ -263,7 +315,7 @@ export default function BroadcastPage() {
         {/* Right Column: Real-time Live Card Preview (5 Cols) */}
         <div className="lg:col-span-5 space-y-4">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            <Sparkles className="w-4 h-4 text-rose-500" />
+            <Radio className="w-4 h-4 text-rose-500 animate-pulse" />
             <span>Live Timeline Preview</span>
           </div>
 

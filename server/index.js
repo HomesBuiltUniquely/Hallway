@@ -98,8 +98,38 @@ app.get('/api/announcements/:id', async (req, res) => {
 });
 
 // POST /api/announcements - create new announcement
+function canCreateAnnouncement(user) {
+  if (!user) return false;
+  const role = (user.role || '').toUpperCase().replace(/[\s-]+/g, '_');
+  const name = (user.name || '').toLowerCase().trim();
+  const email = (user.email || '').toLowerCase().trim();
+
+  if (
+    role.includes('ADMIN') ||
+    role.includes('SUPER') ||
+    role.includes('LEAD') ||
+    role.includes('MANAGER') ||
+    role.includes('HEAD') ||
+    role.includes('HR') ||
+    role.includes('DIRECTOR')
+  ) {
+    return true;
+  }
+  if (
+    name.includes('ranjith') || email.includes('ranjith') ||
+    name.includes('susmita') || email.includes('susmita') ||
+    name.includes('admin') || email.includes('admin')
+  ) {
+    return true;
+  }
+  return false;
+}
+
 app.post('/api/announcements', async (req, res) => {
   const { title, content, type, department, author } = req.body;
+  if (author && !canCreateAnnouncement(author)) {
+    return res.status(403).json({ error: 'Unauthorized: Only administrators and department leads can broadcast announcements.' });
+  }
   if (!title || !content) {
     return res.status(400).json({ error: 'Title and content are required' });
   }
