@@ -15,10 +15,12 @@ function getStoredPeopleCache(key: string): HallwayPeopleResponse | null {
   }
   if (typeof window !== 'undefined') {
     try {
-      const raw = window.sessionStorage.getItem(`hallway_people_${key}`);
+      const raw =
+        window.localStorage.getItem(`hallway_people_${key}`) ||
+        window.sessionStorage.getItem(`hallway_people_${key}`);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed?.data && Date.now() - (parsed.timestamp || 0) < CLIENT_CACHE_TTL_MS * 2) {
+        if (parsed?.data) {
           peopleMemoryCache.set(key, parsed);
           return parsed.data;
         }
@@ -35,7 +37,9 @@ function setStoredPeopleCache(key: string, data: HallwayPeopleResponse) {
   peopleMemoryCache.set(key, entry);
   if (typeof window !== 'undefined') {
     try {
-      window.sessionStorage.setItem(`hallway_people_${key}`, JSON.stringify(entry));
+      const serialized = JSON.stringify(entry);
+      window.localStorage.setItem(`hallway_people_${key}`, serialized);
+      window.sessionStorage.setItem(`hallway_people_${key}`, serialized);
     } catch {
       // ignore
     }
@@ -46,8 +50,8 @@ export function usePeople(filters: HallwayPeopleParams = {}) {
   const branchKey = (filters.branchId ?? '').trim().toUpperCase();
   const cacheKey = branchKey || 'ALL';
 
-  // Synchronous cache read for instantaneous 0ms display on repeat navigation
-  const cachedData = getStoredPeopleCache(cacheKey);
+  // Synchronous cache read: checks specific key, then falls back to master 'ALL' cache
+  const cachedData = getStoredPeopleCache(cacheKey) || getStoredPeopleCache('ALL');
 
   const [data, setData] = useState<HallwayPeopleResponse | null>(cachedData);
   const [loading, setLoading] = useState<boolean>(!cachedData);

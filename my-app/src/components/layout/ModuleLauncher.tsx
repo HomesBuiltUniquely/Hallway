@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Lock, AlertCircle, X, Loader2, ArrowRight } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { loginToCrm, setCrmSession } from '../../lib/crmApi';
+import { isSuperAdmin } from '../../lib/permissions';
 import {
   openCrmDashboard,
   openDesignDashboard,
@@ -33,9 +34,13 @@ function HowsHubLauncherIcon({ className }: { className?: string }) {
 
 export default function ModuleLauncher() {
   const router = useRouter();
-  const { currentUser } = useApp();
+  const { currentUser, loginPortal } = useApp();
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const isSuper = isSuperAdmin(currentUser);
+  const isDesigner = currentUser.department === 'Design' || loginPortal === 'design';
+  const isCrmSales = currentUser.department === 'Sales' || loginPortal === 'crm';
 
   // Module authentication prompt state
   const [authModalModule, setAuthModalModule] = useState<'crm' | 'design' | null>(null);
@@ -69,6 +74,10 @@ export default function ModuleLauncher() {
   }, [isOpen]);
 
   const openAuthPrompt = (module: 'crm' | 'design') => {
+    if (!isSuper) {
+      if (module === 'crm' && isDesigner) return;
+      if (module === 'design' && isCrmSales) return;
+    }
     setAuthModalModule(module);
     setAuthIdentifier(currentUser.email || currentUser.name || '');
     setAuthPassword('');
@@ -78,24 +87,32 @@ export default function ModuleLauncher() {
 
   const handleCrmClick = () => {
     setIsOpen(false);
+    if (!isSuper && isDesigner) {
+      alert('Access Denied: Designers do not have access to the CRM module.');
+      return;
+    }
     // Check if the current user already has verified CRM credentials
     const validSession = getValidCrmSession(currentUser);
     if (validSession) {
       openCrmDashboard(currentUser);
     } else {
-      // Current user (e.g. Abhishek, designer) does not have verified CRM access -> require authentication check
+      // Prompt for verified CRM credentials if not already established
       openAuthPrompt('crm');
     }
   };
 
   const handleDesignClick = () => {
     setIsOpen(false);
+    if (!isSuper && isCrmSales) {
+      alert('Access Denied: CRM personnel do not have access to the Design Studio module.');
+      return;
+    }
     // Check if the current user already has verified Design Studio credentials
     const validSession = getValidDesignSession(currentUser);
     if (validSession) {
       openDesignDashboard(currentUser);
     } else {
-      // Current user (e.g. Meghana, sales) does not have verified Design access -> require authentication check
+      // Prompt for verified Design credentials if not already established
       openAuthPrompt('design');
     }
   };
@@ -161,7 +178,7 @@ export default function ModuleLauncher() {
     }
   };
 
-  const modules = [
+  const allModules = [
     {
       id: 'crm',
       label: 'CRM',
@@ -184,6 +201,18 @@ export default function ModuleLauncher() {
       tooltip: 'HR Portal (Keka)',
     },
   ];
+
+  // Strict cross-module isolation:
+  // CRM / Sales users see CRM + HR (Design is completely hidden)
+  // Design users see Design + HR (CRM is completely hidden)
+  // Super Admins see all modules
+  const modules = allModules.filter((m) => {
+    if (m.id === 'hr') return true;
+    if (isSuper) return true;
+    if (isCrmSales && m.id === 'design') return false;
+    if (isDesigner && m.id === 'crm') return false;
+    return true;
+  });
 
   return (
     <div className="relative" ref={containerRef}>

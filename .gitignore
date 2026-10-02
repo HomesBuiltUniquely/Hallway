@@ -8,6 +8,7 @@ node_modules/
 out/
 build/
 dist/
+.cache/
 
 # Logs
 logs

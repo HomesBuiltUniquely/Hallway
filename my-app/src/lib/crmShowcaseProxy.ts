@@ -1,7 +1,13 @@
+import fs from 'fs';
+import path from 'path';
+
 const DEFAULT_CRM = 'https://hows.hubinterior.com';
 const UPSTREAM_MS = 60_000;
 const LOGIN_MS = 8_000;
 const CACHE_TTL_MS = 60_000;
+
+const CACHE_DIR = path.join(process.cwd(), '.cache');
+const DISK_CACHE_FILE = path.join(CACHE_DIR, 'crm_showcase_cache.json');
 
 const CRM_BASE = (
   process.env.CRM_API_PROXY_TARGET ||
@@ -16,6 +22,75 @@ let tokenInflight: Promise<string> | null = null;
 type UpstreamPayload = { status: number; contentType: string | null; body: ArrayBuffer };
 const getInflight = new Map<string, Promise<UpstreamPayload>>();
 const getCache = new Map<string, { expiresAt: number; payload: UpstreamPayload }>();
+
+const SEED_PEOPLE_JSON = JSON.stringify({
+  statsWindow: '1y',
+  people: [
+    { id: 138, name: 'Aman Nirmal', role: 'Sales Executive', branchId: 'SARJAPUR', managerId: 192, managerName: 'arjun hub', email: 'aman@hubinterior.com', active: true, avatar: null, department: 'Sales', revenueFormatted: '₹89.23L', conversionRate: 2.9, statsWindow: '1y' },
+    { id: 192, name: 'arjun hub', role: 'Sales Manager', branchId: 'SARJAPUR', managerId: 11, managerName: null, email: 'arjunvc@hubinterior.com', active: true, avatar: null, department: 'Sales', revenueFormatted: '₹0', conversionRate: 0.0, statsWindow: '1y' },
+    { id: 187, name: 'Danush Rao', role: 'Sales Executive', branchId: 'HBR', managerId: 13, managerName: 'Kulwanth P', email: 'Danush@hubinterior.com', active: true, avatar: null, department: 'Sales', revenueFormatted: '₹95.49L', conversionRate: 1.8, statsWindow: '1y' },
+    { id: 18, name: 'Jayashree', role: 'Sales Executive', branchId: 'SARJAPUR', managerId: 192, managerName: 'arjun hub', email: 'jayashree@hubinterior.com', active: true, avatar: null, department: 'Sales', revenueFormatted: '₹74.08L', conversionRate: 1.9, statsWindow: '1y' },
+    { id: 13, name: 'Kulwanth P', role: 'Sales Manager', branchId: 'HBR', managerId: 11, managerName: null, email: 'kulwanth@hubinterior.com', active: true, avatar: null, department: 'Sales', revenueFormatted: '₹0', conversionRate: 0.0, statsWindow: '1y' },
+    { id: 143, name: 'marfani hub', role: 'Sales Manager', branchId: 'JP_NAGAR', managerId: 11, managerName: null, email: 'marfani@hubinterior.com', active: true, avatar: null, department: 'Sales', revenueFormatted: '₹0', conversionRate: 0.0, statsWindow: '1y' },
+    { id: 23, name: 'Meghana', role: 'Sales Executive', branchId: 'HBR', managerId: 13, managerName: 'Kulwanth P', email: 'meghana@hubinterior.com', active: true, avatar: null, department: 'Sales', revenueFormatted: '₹1.79 Cr', conversionRate: 4.4, statsWindow: '1y' },
+    { id: 196, name: 'Mohammed Bilal', role: 'Sales Executive', branchId: 'JP_NAGAR', managerId: 143, managerName: 'marfani hub', email: 'mohammed@hubinterior.com', active: true, avatar: null, department: 'Sales', revenueFormatted: '₹34.80L', conversionRate: 1.6, statsWindow: '1y' },
+    { id: 197, name: 'Priti Dutta', role: 'Sales Executive', branchId: 'JP_NAGAR', managerId: 143, managerName: 'marfani hub', email: 'priti@hubinterior.com', active: true, avatar: null, department: 'Sales', revenueFormatted: '₹0', conversionRate: 0.0, statsWindow: '1y' },
+    { id: 12, name: 'Razi', role: 'Sales Manager', branchId: 'SARJAPUR', managerId: 11, managerName: null, email: 'razi@hubinterior.com', active: true, avatar: null, department: 'Sales', revenueFormatted: '₹5.84L', conversionRate: 0.6, statsWindow: '1y' },
+    { id: 194, name: 'Razi Md (Inactive)', role: 'Sales Executive', branchId: 'SARJAPUR', managerId: 12, managerName: 'Razi', email: 'razi1@hubinterior.com', active: false, avatar: null, department: 'Sales', revenueFormatted: '₹0', conversionRate: 0.0, statsWindow: '1y' },
+    { id: 195, name: 'Shaddisha Chari', role: 'Sales Executive', branchId: 'JP_NAGAR', managerId: 143, managerName: 'marfani hub', email: 'shaddisha@hubinterior.com', active: true, avatar: null, department: 'Sales', revenueFormatted: '₹22.22L', conversionRate: 1.7, statsWindow: '1y' },
+    { id: 172, name: 'Shalny (Inactive)', role: 'Sales Executive', branchId: 'HBR', managerId: 13, managerName: 'Kulwanth P', email: 'shalny@hubinterior.com', active: false, avatar: null, department: 'Sales', revenueFormatted: '₹54,553', conversionRate: 3.6, statsWindow: '1y' },
+    { id: 176, name: 'Somashekar_V', role: 'Sales Executive', branchId: 'HBR', managerId: 13, managerName: 'Kulwanth P', email: 'somashekara@hubinterior.com', active: true, avatar: null, department: 'Sales', revenueFormatted: '₹10.44L', conversionRate: 0.6, statsWindow: '1y' },
+  ],
+});
+
+function getDiskCache(): Record<string, { expiresAt: number; status: number; contentType: string | null; bodyBase64: string }> {
+  try {
+    if (!fs.existsSync(DISK_CACHE_FILE)) return {};
+    const content = fs.readFileSync(DISK_CACHE_FILE, 'utf-8');
+    return JSON.parse(content);
+  } catch {
+    return {};
+  }
+}
+
+function saveDiskCacheEntry(key: string, expiresAt: number, payload: UpstreamPayload) {
+  try {
+    if (!fs.existsSync(CACHE_DIR)) {
+      fs.mkdirSync(CACHE_DIR, { recursive: true });
+    }
+    const current = getDiskCache();
+    const base64 = Buffer.from(payload.body).toString('base64');
+    current[key] = {
+      expiresAt,
+      status: payload.status,
+      contentType: payload.contentType,
+      bodyBase64: base64,
+    };
+    fs.writeFileSync(DISK_CACHE_FILE, JSON.stringify(current, null, 2), 'utf-8');
+  } catch (err) {
+    console.warn('Failed to persist crm cache to disk:', err);
+  }
+}
+
+function loadDiskCacheEntry(key: string): { expiresAt: number; payload: UpstreamPayload } | null {
+  try {
+    const current = getDiskCache();
+    const entry = current[key];
+    if (!entry) return null;
+    const buf = Buffer.from(entry.bodyBase64, 'base64');
+    const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+    return {
+      expiresAt: entry.expiresAt,
+      payload: {
+        status: entry.status,
+        contentType: entry.contentType,
+        body: ab,
+      },
+    };
+  } catch {
+    return null;
+  }
+}
 
 function showcaseToken() {
   const userId = (process.env.CRM_SHOWCASE_USER_ID || '1').trim() || '1';
@@ -267,11 +342,63 @@ export async function proxyToCrm(request: Request, pathParts: string[]): Promise
 
   const cacheable = method === 'GET' && !isHubAuthPath(path) && (!preferToken || isHallwayPublicApi);
   const ttl = isHallwayPublicApi ? 300_000 : CACHE_TTL_MS;
+  const isPeopleApi = path.includes('hallway/people');
 
   if (cacheable) {
-    const cached = getCache.get(key);
-    if (cached && cached.expiresAt > now) {
+    let cached = getCache.get(key);
+    if (!cached) {
+      const diskEntry = loadDiskCacheEntry(key);
+      if (diskEntry) {
+        cached = diskEntry;
+        getCache.set(key, cached);
+      }
+    }
+
+    if (cached) {
+      // 1. Fresh cache: return immediately (<1ms)
+      if (cached.expiresAt > now) {
+        return toResponse(cached.payload.status, cached.payload.contentType, cached.payload.body);
+      }
+
+      // 2. Stale cache: trigger background revalidation without blocking client (Stale-While-Revalidate)
+      void (async () => {
+        try {
+          const fresh = await fetchWithFallback(path, incoming.search, method, body, preferToken);
+          if (fresh.status === 200) {
+            const nextExpires = Date.now() + ttl;
+            getCache.set(key, { expiresAt: nextExpires, payload: fresh });
+            saveDiskCacheEntry(key, nextExpires, fresh);
+          }
+        } catch (err) {
+          console.warn('Background revalidation failed for', key, err);
+        }
+      })();
+
+      // Return stale cache immediately (<1ms) so user never waits 20s
       return toResponse(cached.payload.status, cached.payload.contentType, cached.payload.body);
+    }
+
+    // 3. Cold start for People Directory: return pre-bundled seed snapshot in 0ms and revalidate in background
+    if (isPeopleApi) {
+      const seedBuf = Buffer.from(SEED_PEOPLE_JSON, 'utf-8');
+      const seedAb = seedBuf.buffer.slice(seedBuf.byteOffset, seedBuf.byteOffset + seedBuf.byteLength);
+      const seedPayload: UpstreamPayload = { status: 200, contentType: 'application/json', body: seedAb };
+      const seedExpiry = now + ttl;
+      getCache.set(key, { expiresAt: seedExpiry, payload: seedPayload });
+      saveDiskCacheEntry(key, seedExpiry, seedPayload);
+
+      void (async () => {
+        try {
+          const fresh = await fetchWithFallback(path, incoming.search, method, body, preferToken);
+          if (fresh.status === 200) {
+            const nextExpires = Date.now() + ttl;
+            getCache.set(key, { expiresAt: nextExpires, payload: fresh });
+            saveDiskCacheEntry(key, nextExpires, fresh);
+          }
+        } catch {}
+      })();
+
+      return toResponse(200, 'application/json', seedAb);
     }
   }
 
@@ -284,7 +411,9 @@ export async function proxyToCrm(request: Request, pathParts: string[]): Promise
       return Response.json({ error: hubErrorMessage(out.body) }, { status: 503 });
     }
     if (cacheable && out.status === 200) {
-      getCache.set(key, { expiresAt: now + ttl, payload: out });
+      const nextExpires = now + ttl;
+      getCache.set(key, { expiresAt: nextExpires, payload: out });
+      saveDiskCacheEntry(key, nextExpires, out);
     }
     return toResponse(out.status, out.contentType, out.body);
   } catch (err) {

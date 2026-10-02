@@ -17,7 +17,7 @@ import {
   crmLeadsMock,
   designProjectsMock
 } from '../data/mockData';
-import { fetchFeed, fetchTargets, clearCrmSession, fetchLeaderboard } from '../lib/crmApi';
+import { fetchFeed, fetchTargets, clearCrmSession, fetchLeaderboard, fetchPeople } from '../lib/crmApi';
 import { generateCrmAnnouncements, formatInrToLakhsOrCrores } from '../lib/crmAnnouncementsGenerator';
 import { clearDesignHandoff } from '../lib/modulePortals';
 import { isTodayOrYesterday, cleanPostContent, getYesterdayYmd } from '../lib/hallwayDisplay';
@@ -280,6 +280,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const crmLeaderboardPromise = fetchLeaderboard('', { period: 'mtd' })
         .then((res) => res?.individuals || [])
         .catch(() => []);
+
+      // Non-blocking pre-warm for People & Operating Directory so navigation is instantaneous
+      fetchPeople('', {})
+        .catch(() => null);
 
       const branchTargetPromises = BRANCH_TARGET_CONFIGS.map(async (b) => {
         try {

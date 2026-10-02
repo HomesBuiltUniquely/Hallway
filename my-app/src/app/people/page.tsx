@@ -25,10 +25,25 @@ function PeopleInner() {
   const { branchId, setBranchId, options } = useCorridorScope();
   const [search, setSearch] = useState('');
   const [role, setRole] = useState<HallwayPeopleRole | undefined>();
-  const { data, loading, error } = usePeople({ branchId });
+  // Load master directory once; filter branch, role, and search instantly in memory
+  const { data, loading, error } = usePeople();
 
   const people = useMemo(() => {
     let rows = data?.people || [];
+
+    // Instant 0ms branch corridor filtering
+    if (branchId && branchId.trim().toUpperCase() !== 'ALL') {
+      const target = branchId.trim().toUpperCase();
+      rows = rows.filter((person) => {
+        const b = (person.branchId || '').trim().toUpperCase();
+        if (target === 'SARJAPUR' || target === 'SARJAPURA') {
+          return b === 'SARJAPUR' || b === 'SARJAPURA';
+        }
+        return b === target;
+      });
+    }
+
+    // Instant 0ms role filtering
     if (role) {
       rows = rows.filter((person) => {
         const r = (person.role || '').toUpperCase();
@@ -41,6 +56,8 @@ function PeopleInner() {
         return true;
       });
     }
+
+    // Instant 0ms search filtering
     if (!search.trim()) return rows;
     const q = search.toLowerCase();
     return rows.filter(
@@ -51,7 +68,7 @@ function PeopleInner() {
         (person.email || '').toLowerCase().includes(q) ||
         (person.managerName || '').toLowerCase().includes(q)
     );
-  }, [data?.people, role, search]);
+  }, [data?.people, branchId, role, search]);
 
   const statsWindow = data?.statsWindow || '1y';
 
