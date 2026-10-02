@@ -109,4 +109,65 @@ export function cleanPostContent(text?: string | null): string {
     .trim();
 }
 
+/**
+ * Cleanly formats a raw username, email, or handle into a proper human display name.
+ * e.g. "sachin_shekar" -> "Sachin Shekar"
+ *      "somashekar_v" -> "Somashekar V"
+ *      "sachin.shekar@hubinterior.com" -> "Sachin Shekar"
+ *      "ranjith" -> "Ranjith"
+ */
+export function formatPersonName(raw?: string | null): string {
+  if (!raw) return 'User';
+  let clean = raw.trim();
+
+  // Strip email domain if provided: e.g. sachin_shekar@hubinterior.com -> sachin_shekar
+  if (clean.includes('@')) {
+    clean = clean.split('@')[0];
+  }
+
+  // Replace underscores, dots, and hyphens with spaces: sachin_shekar -> sachin shekar
+  clean = clean.replace(/[_\.\-]+/g, ' ').trim();
+
+  // Title-case each word: "sachin shekar" -> "Sachin Shekar"
+  return (
+    clean
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ') || 'User'
+  );
+}
+
+/**
+ * Returns a warm first name or friendly name for dashboard greetings.
+ * e.g. "sachin_shekar" -> "Sachin"
+ *      "Sachin Shekar" -> "Sachin"
+ *      "Ranjith" -> "Ranjith"
+ *      "Super Admin" -> "Admin"
+ */
+export function getGreetingName(raw?: string | null): string {
+  const formatted = formatPersonName(raw);
+  if (!formatted || formatted.toLowerCase() === 'user') return 'there';
+  if (formatted.toLowerCase().includes('admin')) return 'Admin';
+  const first = formatted.split(' ')[0];
+  return first || formatted;
+}
+
+/**
+ * Computes the time-of-day greeting based on the current local hour.
+ * - 04:00 to 11:59: "Good morning"
+ * - 12:00 to 16:59: "Good afternoon"
+ * - 17:00 to 03:59: "Good evening"
+ */
+export function getTimeBasedGreeting(date = new Date()): string {
+  const hour = date.getHours();
+  if (hour >= 4 && hour < 12) {
+    return 'Good morning';
+  }
+  if (hour >= 12 && hour < 17) {
+    return 'Good afternoon';
+  }
+  return 'Good evening';
+}
+
 

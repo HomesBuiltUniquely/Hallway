@@ -20,7 +20,7 @@ import {
 import { fetchFeed, fetchTargets, clearCrmSession, fetchLeaderboard, fetchPeople } from '../lib/crmApi';
 import { generateCrmAnnouncements, formatInrToLakhsOrCrores } from '../lib/crmAnnouncementsGenerator';
 import { clearDesignHandoff } from '../lib/modulePortals';
-import { isTodayOrYesterday, cleanPostContent, getYesterdayYmd } from '../lib/hallwayDisplay';
+import { isTodayOrYesterday, cleanPostContent, getYesterdayYmd, formatPersonName } from '../lib/hallwayDisplay';
 
 function mergeReactions(serverReactions?: any, localReactions?: any) {
   const blank = {
@@ -134,9 +134,9 @@ function userFromSession(
   role?: string,
   department: User['department'] = 'Sales'
 ): User {
-  const display = (name || email || 'User').trim();
+  const display = formatPersonName(name || email || 'User');
   const initials = display
-    .split(/[\s@.]+/)
+    .split(/\s+/)
     .filter(Boolean)
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? '')
@@ -309,8 +309,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         .then((res) => res?.individuals || [])
         .catch(() => []);
 
-      // Non-blocking pre-warm for People & Operating Directory so navigation is instantaneous
+      // Non-blocking pre-warm for People & Operating Directory and sync verified profile details
       fetchPeople('', {})
+        .then((res) => {
+          if (res?.people?.length && currentUser?.name) {
+            const rawTarget = (currentUser.email || currentUser.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            const match = res.people.find((p) => {
+              const pCleanName = (p.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+              const pCleanEmail = (p.email || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+              return (
+                pCleanName === rawTarget ||
+                pCleanEmail === rawTarget ||
+                (pCleanEmail && rawTarget.includes(pCleanEmail)) ||
+                (pCleanName && rawTarget.includes(pCleanName))
+              );
+            });
+            if (match && match.name) {
+              const matchedFormatted = formatPersonName(match.name);
+              setCurrentUser((prev) => {
+                if (prev.name === matchedFormatted) return prev;
+                return {
+                  ...prev,
+                  name: matchedFormatted,
+                  avatar: match.avatar || prev.avatar,
+                  role: match.role || prev.role,
+                };
+              });
+            }
+          }
+        })
         .catch(() => null);
 
       const branchTargetPromises = BRANCH_TARGET_CONFIGS.map(async (b) => {

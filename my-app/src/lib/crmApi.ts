@@ -22,6 +22,7 @@ import type {
   HallwayTargetsResponse,
   HallwayTodayEventsResponse,
 } from '../types/hallway';
+import { formatPersonName } from './hallwayDisplay';
 
 const TOKEN_KEY = 'hallway-crm-token';
 const USER_KEY = 'hallway-crm-user';
@@ -156,7 +157,8 @@ export function landingPathByRole(role?: string | null): string {
 }
 
 export function crmDisplayName(user?: CrmLoginUser | null): string {
-  return (user?.name || user?.fullName || user?.username || '').trim();
+  const raw = (user?.name || user?.fullName || user?.username || '').trim();
+  return formatPersonName(raw);
 }
 
 export function getCrmSessionSnapshot() {

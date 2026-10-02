@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Filter, Plus, ChevronDown, Sparkles } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { isTodayOrYesterday } from '../lib/hallwayDisplay';
+import { isTodayOrYesterday, getTimeBasedGreeting, getGreetingName } from '../lib/hallwayDisplay';
 import FeedCard from '../components/home/FeedCard';
 import WidgetToday from '../components/home/WidgetToday';
 import WidgetActions from '../components/home/WidgetActions';
@@ -18,6 +18,16 @@ export default function HomePage() {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isNewPostOpen, setIsNewPostOpen] = useState(false);
   const [visibleCount, setVisibleCount] = useState(10);
+  const [greeting, setGreeting] = useState<string>(() => getTimeBasedGreeting());
+
+  // Periodically refresh greeting if shift crosses morning/afternoon/evening boundaries
+  useEffect(() => {
+    setGreeting(getTimeBasedGreeting());
+    const timer = setInterval(() => {
+      setGreeting(getTimeBasedGreeting());
+    }, 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Filter posts (only today's news and 1-day before news)
   const filteredPosts = feedPosts.filter((post) => {
@@ -43,7 +53,7 @@ export default function HomePage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-2 border-b border-slate-200/80 dark:border-slate-800">
         <div>
           <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-            Good morning, {currentUser.name}. Here's what's happening across HUB today.
+            {greeting}, {getGreetingName(currentUser.name)}. Here's what's happening across HUB today.
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
             Real-time feed of deal closures, conversion velocity, and team milestones.
