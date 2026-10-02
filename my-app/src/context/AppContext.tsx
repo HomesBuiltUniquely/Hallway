@@ -125,6 +125,7 @@ interface AppContextType {
 }
 
 const HALLWAY_SESSION_KEY = 'hallway-auth';
+const SESSION_EXPIRY_MS = 8 * 60 * 60 * 1000; // 8 hours shift expiry
 const HALLWAY_LOCAL_API = (process.env.NEXT_PUBLIC_API_URL || '/api').replace(/\/$/, '');
 
 function userFromSession(
@@ -241,21 +242,43 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Restore Hallway session before showing corridors
   useEffect(() => {
     try {
-      const raw = window.localStorage.getItem(HALLWAY_SESSION_KEY);
-      if (raw) {
-        const saved = JSON.parse(raw) as {
-          email?: string;
-          name?: string;
-          role?: string;
-          department?: User['department'];
-          portal?: 'crm' | 'design';
-        };
-        setCurrentUser(userFromSession(saved.email, saved.name, saved.role, saved.department));
-        setLoginPortal(saved.portal || (saved.department === 'Design' ? 'design' : 'crm'));
-        setIsAuthenticated(true);
+      if (typeof window !== 'undefined') {
+        // Purge legacy persistent localStorage sessions to prevent unauthenticated direct entry
+        window.localStorage.removeItem(HALLWAY_SESSION_KEY);
+        window.localStorage.removeItem('hallway_session');
+
+        const raw = window.sessionStorage.getItem(HALLWAY_SESSION_KEY);
+        if (raw) {
+          const saved = JSON.parse(raw) as {
+            email?: string;
+            name?: string;
+            role?: string;
+            department?: User['department'];
+            portal?: 'crm' | 'design';
+            timestamp?: number;
+          };
+
+          const isExpired = saved.timestamp
+            ? Date.now() - saved.timestamp > SESSION_EXPIRY_MS
+            : false;
+
+          if (!isExpired && (saved.email || saved.name)) {
+            setCurrentUser(userFromSession(saved.email, saved.name, saved.role, saved.department));
+            setLoginPortal(saved.portal || (saved.department === 'Design' ? 'design' : 'crm'));
+            setIsAuthenticated(true);
+          } else {
+            window.sessionStorage.removeItem(HALLWAY_SESSION_KEY);
+            setIsAuthenticated(false);
+          }
+        } else {
+          setIsAuthenticated(false);
+        }
       }
     } catch {
-      window.localStorage.removeItem(HALLWAY_SESSION_KEY);
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.removeItem(HALLWAY_SESSION_KEY);
+      }
+      setIsAuthenticated(false);
     } finally {
       setAuthReady(true);
     }
@@ -1176,16 +1199,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setLoginPortal(portal);
     setIsAuthenticated(true);
     try {
-      window.localStorage.setItem(
-        HALLWAY_SESSION_KEY,
-        JSON.stringify({
-          email: nextUser.email,
-          name: nextUser.name,
-          role: nextUser.role,
-          department: nextUser.department,
-          portal,
-        })
-      );
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.setItem(
+          HALLWAY_SESSION_KEY,
+          JSON.stringify({
+            email: nextUser.email,
+            name: nextUser.name,
+            role: nextUser.role,
+            department: nextUser.department,
+            portal,
+            timestamp: Date.now(),
+          })
+        );
+        // Ensure localStorage is cleared of persistent sessions
+        window.localStorage.removeItem(HALLWAY_SESSION_KEY);
+        window.localStorage.removeItem('hallway_session');
+      }
     } catch {
       // ignore
     }
@@ -1196,7 +1225,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setLoginPortal('crm');
     setCurrentUser(currentUserMock);
     try {
-      window.localStorage.removeItem(HALLWAY_SESSION_KEY);
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.removeItem(HALLWAY_SESSION_KEY);
+        window.localStorage.removeItem(HALLWAY_SESSION_KEY);
+        window.localStorage.removeItem('hallway_session');
+      }
     } catch {
       // ignore
     }
