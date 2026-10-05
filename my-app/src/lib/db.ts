@@ -179,7 +179,7 @@ export async function getAnnouncements() {
         createdAt: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
         author: {
           name: row.author_name || 'Leadership',
-          avatar: row.author_avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+          avatar: row.author_avatar || '',
           team: row.author_team || `${row.department || 'Sales'} Hub`,
         },
         content: row.content,
@@ -252,7 +252,7 @@ export async function getAnnouncementById(id: string) {
         createdAt: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
         author: {
           name: row.author_name || 'Leadership',
-          avatar: row.author_avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+          avatar: row.author_avatar || '',
           team: row.author_team || `${row.department || 'Sales'} Hub`,
         },
         content: row.content,
@@ -307,7 +307,7 @@ export async function createAnnouncement(data: CreateAnnouncementInput) {
   const type = data.type || 'announcement';
   const categoryColor = data.categoryColor || CATEGORY_COLORS[type] || '#3B82F6';
   const authorName = data.author?.name || 'Leadership';
-  const authorAvatar = data.author?.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80';
+  const authorAvatar = data.author?.avatar || '';
   const authorTeam = data.author?.team || `${data.department || 'HQ'} Hub`;
   const department = data.department || 'Sales';
   const reactions = { ...DEFAULT_REACTIONS };
@@ -409,7 +409,7 @@ export async function ensureAnnouncementExists(
     const authorAvatar =
       defaults?.author?.avatar ||
       defaults?.authorAvatar ||
-      'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80';
+      '';
     const authorTeam = defaults?.author?.team || defaults?.authorTeam || 'Sales Hub';
     const content = defaults?.content || 'Live event synced from CRM.';
     const department = defaults?.department || 'Sales';
@@ -466,7 +466,7 @@ export function ensureJsonAnnouncement(
     const authorAvatar =
       defaults?.author?.avatar ||
       defaults?.authorAvatar ||
-      'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80';
+      '';
     const authorTeam = defaults?.author?.team || defaults?.authorTeam || 'Sales Hub';
 
     post = {
@@ -529,7 +529,7 @@ export async function addComment(
         announcementId,
         name,
         handle,
-        commentData.authorAvatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+        commentData.authorAvatar || '',
         commentData.authorRole || 'CRM Lead',
         commentData.content.trim(),
         'Just now',
@@ -563,7 +563,7 @@ export async function addComment(
       id: commentId,
       authorName: name,
       authorHandle: handle,
-      authorAvatar: commentData.authorAvatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+      authorAvatar: commentData.authorAvatar || '',
       authorRole: commentData.authorRole || 'CRM Lead',
       content: commentData.content.trim(),
       timestamp: 'Just now',

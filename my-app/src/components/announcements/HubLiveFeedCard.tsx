@@ -14,6 +14,7 @@ import { FeedPost } from '../../types/index';
 import { useApp } from '../../context/AppContext';
 import { cleanPostContent } from '../../lib/hallwayDisplay';
 import { canDeleteAnnouncement, canDeleteComment } from '../../lib/permissions';
+import UserAvatar from '../common/UserAvatar';
 
 const AVAILABLE_REACTIONS = [
   { id: 'clap', emoji: '👏', label: 'Applause' },
@@ -233,10 +234,11 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
                   key={comm.id}
                   className="flex items-start gap-2.5 bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800/70"
                 >
-                  <img
-                    src={comm.authorAvatar}
-                    alt={comm.authorName}
-                    className="w-7 h-7 rounded-full object-cover shrink-0 mt-0.5"
+                  <UserAvatar
+                    name={comm.authorName}
+                    avatar={comm.authorAvatar}
+                    size={28}
+                    className="mt-0.5"
                   />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
@@ -285,10 +287,10 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
 
           {/* New Comment Input Box */}
           <form onSubmit={handleCommentSubmit} className="flex items-center gap-2">
-            <img
-              src={currentUser.avatar}
-              alt={currentUser.name}
-              className="w-7 h-7 rounded-full object-cover shrink-0"
+            <UserAvatar
+              name={currentUser.name}
+              avatar={currentUser.avatar}
+              size={28}
             />
             <input
               type="text"

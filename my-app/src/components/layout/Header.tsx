@@ -7,6 +7,7 @@ import { useApp } from '../../context/AppContext';
 import { leaderboardMembersMock, individualRecordsMock } from '../../data/mockData';
 import LoginAuthIcon from '../common/LoginAuthIcon';
 import ModuleLauncher from './ModuleLauncher';
+import UserAvatar from '../common/UserAvatar';
 
 export default function Header() {
   const pathname = usePathname();
@@ -243,7 +244,7 @@ export default function Header() {
                           className="flex items-center justify-between p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 cursor-pointer transition-colors"
                         >
                           <div className="flex items-center gap-2.5 min-w-0">
-                            <img src={m.avatar} alt={m.name} className="w-6 h-6 rounded-full object-cover shrink-0" />
+                            <UserAvatar name={m.name} avatar={m.avatar} size={24} />
                             <div className="min-w-0">
                               <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
                                 {m.name}

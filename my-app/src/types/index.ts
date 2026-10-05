@@ -162,3 +162,14 @@ export interface DesignProject {
   progress: number;
   deadline: string;
 }
+
+export interface ActiveCampaign {
+  id: string;
+  title: string;
+  branchName: string;
+  description: string;
+  voucherCode: string;
+  discountPercent: string;
+  targetDate: string; // ISO date string for countdown timer
+  isActive: boolean;
+}

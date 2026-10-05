@@ -6,6 +6,7 @@ import { FeedPost } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { formatRelativeTime, cleanPostContent } from '../../lib/hallwayDisplay';
 import { canDeleteAnnouncement, canDeleteComment } from '../../lib/permissions';
+import UserAvatar from '../common/UserAvatar';
 
 const WHATSAPP_EMOJIS = [
   { key: 'thumbsUp', emoji: '👍', label: 'Like' },
@@ -277,10 +278,10 @@ export default function FeedCard({ post }: { post: FeedPost }) {
           {/* Instagram-Style Comment Input Box */}
           <form onSubmit={handleSendComment} className="space-y-2">
             <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700/80 rounded-2xl px-3 py-2 focus-within:ring-2 focus-within:ring-sky-500/40 focus-within:border-sky-500 transition-all">
-              <img
-                src={currentUser.avatar}
-                alt={currentUser.name}
-                className="w-6 h-6 rounded-full object-cover ring-1 ring-slate-300 dark:ring-slate-600 shrink-0"
+              <UserAvatar
+                name={currentUser.name}
+                avatar={currentUser.avatar}
+                size={24}
               />
               <input
                 type="text"
@@ -325,10 +326,11 @@ export default function FeedCard({ post }: { post: FeedPost }) {
                   className="flex items-start justify-between gap-3 p-2.5 rounded-xl hover:bg-slate-50/90 dark:hover:bg-slate-800/40 transition-colors group"
                 >
                   <div className="flex items-start gap-2.5 min-w-0">
-                    <img
-                      src={comm.authorAvatar}
-                      alt={comm.authorName}
-                      className="w-7 h-7 rounded-full object-cover ring-1 ring-slate-200 dark:ring-slate-700 shrink-0 mt-0.5"
+                    <UserAvatar
+                      name={comm.authorName}
+                      avatar={comm.authorAvatar}
+                      size={28}
+                      className="mt-0.5"
                     />
                     <div className="text-xs leading-relaxed min-w-0">
                       <div className="flex flex-wrap items-baseline gap-1.5">

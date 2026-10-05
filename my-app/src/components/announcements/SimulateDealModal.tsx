@@ -144,7 +144,7 @@ export default function SimulateDealModal({ isOpen, onClose }: SimulateDealModal
               >
                 {CRM_ANNOUNCEMENT_TEMPLATES.map((tmpl) => (
                   <option key={tmpl.scenarioNumber} value={tmpl.scenarioNumber}>
-                    {tmpl.iconEmoji} #{tmpl.scenarioNumber} {tmpl.scenarioName} ({tmpl.departmentTag})
+                    {tmpl.iconEmoji} {tmpl.scenarioName} ({tmpl.departmentTag})
                   </option>
                 ))}
               </select>
