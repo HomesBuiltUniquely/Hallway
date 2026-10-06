@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { Search, Bell, X, Megaphone, Users, Award, Briefcase, Sun, Moon, PanelLeft } from 'lucide-react';
+import { Search, Bell, X, Megaphone, Users, Award, Briefcase, Sun, Moon, PanelLeft, LogOut } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { leaderboardMembersMock, individualRecordsMock } from '../../data/mockData';
 import LoginAuthIcon from '../common/LoginAuthIcon';
@@ -25,16 +25,20 @@ export default function Header() {
     theme,
     toggleTheme,
     logout,
+    currentUser,
   } = useApp();
 
   const isExpanded = !sidebarCollapsed || isSidebarHovered;
 
   const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
+  const notifRef = useRef<HTMLDivElement>(null);
+  const profileRef = useRef<HTMLDivElement>(null);
 
-  // Keyboard shortcut: Cmd+K / Ctrl+K
+  // Keyboard shortcut: Cmd+K / Ctrl+K and Escape
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -43,6 +47,8 @@ export default function Header() {
         setIsSearchFocused(true);
       } else if (e.key === 'Escape') {
         setIsSearchFocused(false);
+        setIsNotifOpen(false);
+        setIsProfileOpen(false);
         searchInputRef.current?.blur();
       }
     };
@@ -50,11 +56,18 @@ export default function Header() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Close search dropdown on click outside
+  // Close search and dropdowns on click outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (searchContainerRef.current && !searchContainerRef.current.contains(target)) {
         setIsSearchFocused(false);
+      }
+      if (notifRef.current && !notifRef.current.contains(target)) {
+        setIsNotifOpen(false);
+      }
+      if (profileRef.current && !profileRef.current.contains(target)) {
+        setIsProfileOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -350,11 +363,12 @@ export default function Header() {
         </button>
 
         {/* Notifications Bell */}
-        <div className="relative">
+        <div ref={notifRef} className="relative">
           <button
             type="button"
             onClick={() => {
               setIsNotifOpen(!isNotifOpen);
+              setIsProfileOpen(false);
               if (notificationsCount > 0) clearNotifications();
             }}
             className="w-9 h-9 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition-colors relative border border-slate-200 dark:border-slate-700/60 flex items-center justify-center cursor-pointer shadow-xs"
@@ -382,18 +396,84 @@ export default function Header() {
           )}
         </div>
 
-        {/* Sign out */}
-        <button
-          type="button"
-          onClick={() => {
-            logout();
-            router.push('/login');
-          }}
-          className="w-9 h-9 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border border-slate-200 dark:border-slate-700/60 flex items-center justify-center cursor-pointer shadow-xs group relative overflow-hidden"
-          title="Sign out"
-        >
-          <LoginAuthIcon size={22} className="transition-transform group-hover:scale-105" />
-        </button>
+        {/* Active User Avatar / Identity Profile Popover (Option A) */}
+        <div ref={profileRef} className="relative">
+          <button
+            type="button"
+            onClick={() => {
+              setIsProfileOpen(!isProfileOpen);
+              setIsNotifOpen(false);
+            }}
+            className={`w-9 h-9 rounded-xl border flex items-center justify-center shadow-xs cursor-pointer transition-all ${
+              isProfileOpen
+                ? 'border-sky-500 ring-2 ring-sky-500/20 bg-sky-50/50 dark:bg-sky-950/30'
+                : 'border-slate-200 dark:border-slate-700/60 bg-white dark:bg-slate-850 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+            title={`Account: ${currentUser?.name || 'User'}`}
+            aria-expanded={isProfileOpen}
+            aria-haspopup="true"
+          >
+            <LoginAuthIcon size={22} />
+          </button>
+
+          {/* User Profile Popover Card */}
+          {isProfileOpen && (
+            <div className="absolute right-0 mt-2 w-72 bg-white dark:bg-[#0D1829] rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-4 z-50 animate-in fade-in zoom-in-95 duration-150">
+              {/* Profile Details */}
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 border border-slate-200 dark:border-slate-700/60">
+                  <LoginAuthIcon size={26} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                    {currentUser?.name || 'Authorized User'}
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                    {currentUser?.email || 'user@hubinterior.com'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Badges / Status */}
+              <div className="flex flex-wrap items-center gap-1.5 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/80">
+                {currentUser?.role && (
+                  <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-md bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 border border-sky-200 dark:border-sky-800/50">
+                    {currentUser.role}
+                  </span>
+                )}
+                {currentUser?.department && (
+                  <span className="px-2 py-0.5 text-[10px] font-semibold rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                    {currentUser.department}
+                  </span>
+                )}
+                <span className="ml-auto flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Active
+                </span>
+              </div>
+
+              {/* Divider */}
+              <div className="my-3 border-t border-slate-100 dark:border-slate-800" />
+
+              {/* Sign out Action Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsProfileOpen(false);
+                  logout();
+                  router.push('/login');
+                }}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer group border border-transparent hover:border-rose-200 dark:hover:border-rose-900/40"
+              >
+                <div className="flex items-center gap-2">
+                  <LogOut className="w-4 h-4 text-rose-500 group-hover:translate-x-0.5 transition-transform" />
+                  <span>Sign out</span>
+                </div>
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal">End session</span>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </header>
   );

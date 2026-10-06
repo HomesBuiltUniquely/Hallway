@@ -1,5 +1,5 @@
 import { getCrmSessionSnapshot, getStoredCrmRole, landingPathByRole } from './crmApi';
-import { isSuperAdmin } from './permissions';
+import { isSuperAdmin, isRestrictedFromDesign } from './permissions';
 
 const DESIGN_HANDOFF_KEY = 'hallway-design-handoff';
 const CRM_API_HOSTS = new Set(['hows.hubinterior.com']);
@@ -180,6 +180,12 @@ export function openCrmDashboard(activeUser?: { email?: string; name?: string } 
 }
 
 export function openDesignDashboard(activeUser?: { email?: string; name?: string } | null) {
+  if (isRestrictedFromDesign(activeUser)) {
+    if (typeof window !== 'undefined') {
+      alert('Access Denied: You do not have access to the Design Studio module.');
+    }
+    return false;
+  }
   const base = designDashboardUrl();
   const data = getValidDesignSession(activeUser);
   if (data?.sessionId && data?.user) {

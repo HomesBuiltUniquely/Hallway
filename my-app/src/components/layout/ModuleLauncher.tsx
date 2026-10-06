@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Lock, AlertCircle, X, Loader2, ArrowRight } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { loginToCrm, setCrmSession } from '../../lib/crmApi';
-import { isSuperAdmin } from '../../lib/permissions';
+import { isSuperAdmin, isRestrictedFromDesign } from '../../lib/permissions';
 import {
   openCrmDashboard,
   openDesignDashboard,
@@ -74,6 +74,7 @@ export default function ModuleLauncher() {
   }, [isOpen]);
 
   const openAuthPrompt = (module: 'crm' | 'design') => {
+    if (module === 'design' && isRestrictedFromDesign(currentUser)) return;
     if (!isSuper) {
       if (module === 'crm' && isDesigner) return;
       if (module === 'design' && isCrmSales) return;
@@ -107,6 +108,10 @@ export default function ModuleLauncher() {
 
   const handleDesignClick = () => {
     setIsOpen(false);
+    if (isRestrictedFromDesign(currentUser)) {
+      alert('Access Denied: You do not have access to the Design Studio module.');
+      return;
+    }
     if (!isSuper && isCrmSales) {
       alert('Access Denied: CRM personnel do not have access to the Design Studio module.');
       return;
@@ -211,11 +216,12 @@ export default function ModuleLauncher() {
   ];
 
   // Strict cross-module isolation:
-  // CRM / Sales users see CRM + HR (Design is completely hidden)
-  // Design users see Design + HR (CRM is completely hidden)
-  // Super Admins see all modules
+  // - Admin and Sachin have Design access explicitly removed (CRM + HR only)
+  // - CRM / Sales users see CRM + HR (Design is completely hidden)
+  // - Design users see Design + HR (CRM is completely hidden)
   const modules = allModules.filter((m) => {
     if (m.id === 'hr') return true;
+    if (m.id === 'design' && isRestrictedFromDesign(currentUser)) return false;
     if (isSuper) return true;
     if (isCrmSales && m.id === 'design') return false;
     if (isDesigner && m.id === 'crm') return false;

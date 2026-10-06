@@ -4,14 +4,14 @@ import React from 'react';
 import { Briefcase, Palette, ArrowUpRight } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { openCrmDashboard, openDesignDashboard } from '../../lib/modulePortals';
-import { isSuperAdmin } from '../../lib/permissions';
+import { isSuperAdmin, isRestrictedFromDesign } from '../../lib/permissions';
 
 export default function ModuleLaunch() {
   const { currentUser, loginPortal } = useApp();
   const isSuper = isSuperAdmin(currentUser);
   const isDesigner = !isSuper && (loginPortal === 'design' || currentUser.department === 'Design');
 
-  if (isSuper) {
+  if (isSuper && !isRestrictedFromDesign(currentUser)) {
     return (
       <div className="flex flex-col sm:flex-row gap-3 w-full max-w-2xl">
         <button

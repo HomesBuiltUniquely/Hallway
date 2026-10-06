@@ -134,3 +134,25 @@ export function canDeleteComment(
     (uHandle && cHandle && uHandle === cHandle)
   );
 }
+
+/**
+ * Explicitly restricts Admin and Sachin from accessing the Design module.
+ */
+export function isRestrictedFromDesign(
+  user?: { role?: string; name?: string; email?: string; department?: string; username?: string } | null
+): boolean {
+  if (!user) return false;
+  const name = (user.name || '').toLowerCase().trim();
+  const email = (user.email || '').toLowerCase().trim();
+  const username = ((user as any)?.username || '').toLowerCase().trim();
+
+  return (
+    name.includes('admin') ||
+    email.includes('admin') ||
+    username.includes('admin') ||
+    name.includes('sachin') ||
+    email.includes('sachin') ||
+    username.includes('sachin')
+  );
+}
+
