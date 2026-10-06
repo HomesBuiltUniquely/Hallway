@@ -1,17 +1,17 @@
 [
   {
-    "id": "post-1790950160406",
-    "type": "booking",
-    "categoryColor": "#10B981",
-    "title": "New Booking: ₹14.8L by Sarjapura Team!",
+    "id": "post-1791212833176",
+    "type": "announcement",
+    "categoryColor": "#EF4444",
+    "title": "🏡 Welcoming Indiranagar: A Beautiful New Chapter for the HUB Family!",
     "timestamp": "Just Now",
-    "createdAt": "2026-10-02T14:09:20.000Z",
+    "createdAt": "2026-10-05T15:07:13.000Z",
     "author": {
-      "name": "Jayashree",
-      "avatar": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
-      "team": "Sarjapura Hub"
+      "name": "Admin",
+      "avatar": "",
+      "team": "Sales Hub"
     },
-    "content": "Jayashree just closed Project #5230. Another home joins HUB. Great work, team!",
+    "content": "We are thrilled to officially open our doors in the vibrant heart of Indiranagar! This new Experience Centre isn't just a new location—it’s a warm, welcoming space where families will come together to see their dream homes come to life. \nA heartfelt welcome and best wishes to our passionate Indiranagar team stepping onto the floor today. Let’s create lasting memories, design stunning spaces, and celebrate every new home that joins HUB. Welcome to the family, Team Indiranagar!",
     "quotaProgress": null,
     "reactions": {
       "thumbsUp": 0,
@@ -28,82 +28,7 @@
       "userPray": false
     },
     "commentsCount": 0,
-    "department": "Sales",
-    "comments": []
-  },
-  {
-    "id": "deal-yesterday-1",
-    "type": "booking",
-    "categoryColor": "#10B981",
-    "title": "Gross booking · ₹90,259 · Jayashree",
-    "timestamp": "Yesterday",
-    "createdAt": "2026-09-23T17:45:00.000Z",
-    "author": {
-      "name": "Jayashree",
-      "avatar": "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80",
-      "team": "Sarjapura"
-    },
-    "content": "Sreeraj Alakkassery · handled by Jayashree",
-    "reactions": {
-      "thumbsUp": 0,
-      "clap": 0,
-      "heart": 0,
-      "joy": 0,
-      "surprised": 0,
-      "pray": 0
-    },
-    "commentsCount": 0,
-    "department": "Sales",
-    "comments": []
-  },
-  {
-    "id": "deal-yesterday-2",
-    "type": "booking",
-    "categoryColor": "#10B981",
-    "title": "Gross booking · ₹54,329 · Jayashree",
-    "timestamp": "Yesterday",
-    "createdAt": "2026-09-23T15:20:00.000Z",
-    "author": {
-      "name": "Jayashree",
-      "avatar": "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80",
-      "team": "Sarjapura"
-    },
-    "content": "Nagaraju Nalam · handled by Jayashree",
-    "reactions": {
-      "thumbsUp": 0,
-      "clap": 0,
-      "heart": 0,
-      "joy": 0,
-      "surprised": 0,
-      "pray": 0
-    },
-    "commentsCount": 0,
-    "department": "Sales",
-    "comments": []
-  },
-  {
-    "id": "deal-yesterday-3",
-    "type": "booking",
-    "categoryColor": "#10B981",
-    "title": "Gross booking · ₹18,717 · Akhil Issac",
-    "timestamp": "Yesterday",
-    "createdAt": "2026-09-23T12:10:00.000Z",
-    "author": {
-      "name": "Akhil Issac",
-      "avatar": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80",
-      "team": "HBR"
-    },
-    "content": "Thesnim · handled by Akhil Issac",
-    "reactions": {
-      "thumbsUp": 0,
-      "clap": 0,
-      "heart": 0,
-      "joy": 0,
-      "surprised": 0,
-      "pray": 0
-    },
-    "commentsCount": 0,
-    "department": "Sales",
+    "department": "Company Wide",
     "comments": []
   }
 ]

@@ -6,6 +6,7 @@ import { Megaphone, Plus, ArrowRight } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { formatRelativeTime } from '../../lib/hallwayDisplay';
 import { canCreateAnnouncement } from '../../lib/permissions';
+import UserAvatar from '../common/UserAvatar';
 
 export default function WidgetLeadership() {
   const { feedPosts, currentUser } = useApp();
@@ -50,13 +51,10 @@ export default function WidgetLeadership() {
       {leadershipPost ? (
         <div className="space-y-2.5">
           <div className="flex items-center gap-2.5">
-            <img
-              src={
-                leadershipPost.author?.avatar ||
-                'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80'
-              }
-              alt={leadershipPost.author?.name || 'Leadership'}
-              className="w-7 h-7 rounded-full object-cover border border-slate-200 dark:border-slate-700"
+            <UserAvatar
+              name={leadershipPost.author?.name || 'Leadership'}
+              avatar={leadershipPost.author?.avatar}
+              size={28}
             />
             <div className="min-w-0">
               <p className="text-xs font-bold text-slate-900 dark:text-white truncate">

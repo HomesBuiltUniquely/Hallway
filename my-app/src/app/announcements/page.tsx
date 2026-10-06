@@ -1,18 +1,15 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Megaphone, Plus, RefreshCw, Zap } from 'lucide-react';
+import { Megaphone, Plus, RefreshCw } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import DepartmentPills from '../../components/common/DepartmentPills';
 import HubLiveFeedCard from '../../components/announcements/HubLiveFeedCard';
 import NewPostModal from '../../components/home/NewPostModal';
-import SimulateDealModal from '../../components/announcements/SimulateDealModal';
 import { canCreateAnnouncement } from '../../lib/permissions';
 
 export default function AnnouncementsPage() {
-  const { currentUser, announcementPosts, activeDepartment, searchQuery, setSearchQuery, refreshFeed } = useApp();
+  const { currentUser, announcementPosts, searchQuery, setSearchQuery, refreshFeed } = useApp();
   const [isNewPostOpen, setIsNewPostOpen] = useState(false);
-  const [isSimulateOpen, setIsSimulateOpen] = useState(false);
   const [tagFilter, setTagFilter] = useState<'ALL' | 'DEALS' | 'ANNOUNCEMENTS' | 'PERFORMERS' | 'MILESTONES'>('ALL');
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -26,17 +23,40 @@ export default function AnnouncementsPage() {
     setTimeout(() => setIsRefreshing(false), 500);
   };
 
-  // Filter posts for HUB Live Feed (Excluding repeating raw target pacing cards, showing all rich CRM dynamic snippets)
-  const filteredAnnouncements = (announcementPosts || []).filter((post) => {
-    // Strictly prevent repeating raw target pacing cards already on dashboard
-    if (post.id.startsWith('crm-target-')) return false;
+  // Base eligible posts (Excludes repeating raw target pacing cards already on dashboard)
+  const eligibleAnnouncements = (announcementPosts || []).filter(
+    (post) => !post.id.startsWith('crm-target-')
+  );
 
-    // Filter by department if a specific department is selected
-    if (activeDepartment && activeDepartment !== 'All Departments') {
-      const postDept = post.department || 'Sales';
-      if (postDept.toLowerCase() !== activeDepartment.toLowerCase()) return false;
+  // Dynamic Category Counts
+  const tabCounts = {
+    ALL: eligibleAnnouncements.length,
+    ANNOUNCEMENTS: eligibleAnnouncements.filter((p) => p.type === 'announcement' || p.type === 'general').length,
+    DEALS: eligibleAnnouncements.filter((p) => p.type === 'booking').length,
+    PERFORMERS: eligibleAnnouncements.filter((p) => p.type === 'performer').length,
+    MILESTONES: eligibleAnnouncements.filter((p) => p.type === 'quota').length,
+  };
+
+  const allTabs = [
+    { id: 'ALL' as const, label: 'All Updates', count: tabCounts.ALL },
+    { id: 'ANNOUNCEMENTS' as const, label: 'Company Broadcasts', count: tabCounts.ANNOUNCEMENTS },
+    { id: 'DEALS' as const, label: 'Deals & Bookings', count: tabCounts.DEALS },
+    { id: 'PERFORMERS' as const, label: 'Top Performers', count: tabCounts.PERFORMERS },
+    { id: 'MILESTONES' as const, label: 'Milestones & Targets', count: tabCounts.MILESTONES },
+  ];
+
+  // Dynamic Tab Visibility: Only display category tabs that currently have updates.
+  // 'ALL' is always visible. If a category (e.g. Milestones or Broadcasts) has 0 cards, hide its pill completely so users never see a blank dead-end screen!
+  const visibleTabs = allTabs.filter((tab) => tab.id === 'ALL' || tab.count > 0);
+
+  // Auto-reset tag filter if current selection has 0 items
+  useEffect(() => {
+    if (tagFilter !== 'ALL' && tabCounts[tagFilter] === 0) {
+      setTagFilter('ALL');
     }
+  }, [tagFilter, tabCounts.ANNOUNCEMENTS, tabCounts.DEALS, tabCounts.PERFORMERS, tabCounts.MILESTONES]);
 
+  const filteredAnnouncements = eligibleAnnouncements.filter((post) => {
     if (tagFilter === 'DEALS' && post.type !== 'booking') return false;
     if (tagFilter === 'ANNOUNCEMENTS' && post.type !== 'announcement' && post.type !== 'general') return false;
     if (tagFilter === 'PERFORMERS' && post.type !== 'performer') return false;
@@ -54,14 +74,8 @@ export default function AnnouncementsPage() {
     return true;
   });
 
-  // Ensure newly broadcasted announcements appear strictly first, followed by newest dynamic CRM feed items
+  // Pure chronological sorting: newest updates strictly first
   const sortedAnnouncements = [...filteredAnnouncements].sort((a, b) => {
-    const isBroadcastA = a.id?.startsWith('post-');
-    const isBroadcastB = b.id?.startsWith('post-');
-
-    if (isBroadcastA && !isBroadcastB) return -1;
-    if (!isBroadcastA && isBroadcastB) return 1;
-
     const getTime = (p: typeof a) => {
       if (p.createdAt) {
         const t = new Date(p.createdAt).getTime();
@@ -94,16 +108,6 @@ export default function AnnouncementsPage() {
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setIsSimulateOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs shadow-emerald-900/20 cursor-pointer"
-            title="Simulate or broadcast a live CRM deal closure"
-          >
-            <Zap className="w-3.5 h-3.5 fill-amber-300 text-amber-300" />
-            <span className="hidden sm:inline">Simulate CRM Closure</span>
-            <span className="sm:hidden">Simulate</span>
-          </button>
-
-          <button
             onClick={handleRefresh}
             title="Refresh announcements from database"
             className="p-2 bg-white dark:bg-[#0D1829] border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-rose-600 rounded-xl transition-all shadow-xs cursor-pointer"
@@ -123,51 +127,17 @@ export default function AnnouncementsPage() {
         </div>
       </div>
 
-      {/* Live Dynamic CRM Pacing Ribbon */}
-      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 bg-gradient-to-r from-emerald-500/10 via-rose-500/5 to-violet-500/10 dark:from-emerald-950/30 dark:via-rose-950/20 dark:to-violet-950/30 border border-emerald-500/20 dark:border-emerald-800/40 rounded-xl text-xs">
-        <div className="flex items-center gap-2">
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-          </span>
-          <span className="font-semibold text-slate-700 dark:text-slate-200">
-            Live Dynamic CRM Feed
-          </span>
-          <span className="text-slate-400 dark:text-slate-500">•</span>
-          <span className="text-slate-500 dark:text-slate-400">
-            Real-time business rules evaluating 14 Master PDF scenarios from active CRM deals & targets
-          </span>
-        </div>
-        <button
-          onClick={() => setIsSimulateOpen(true)}
-          className="font-bold text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 flex items-center gap-1 cursor-pointer transition-colors"
-        >
-          <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-          Test CRM Trigger &rarr;
-        </button>
-      </div>
-
-      {/* Department Tabs Bar matching Image 1 */}
-      <DepartmentPills />
-
-      {/* Filter and In-Page Search Bar */}
+      {/* Unified Enterprise Category Bar with Dynamic Tab Visibility */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        {/* Filter Pills */}
         <div className="flex items-center flex-wrap gap-2">
-          {[
-            { id: 'ALL', label: 'All Updates' },
-            { id: 'DEALS', label: '💰 Deals & Bookings' },
-            { id: 'ANNOUNCEMENTS', label: '📢 Corridor Broadcasts' },
-            { id: 'PERFORMERS', label: '🏆 MVP & Performers' },
-            { id: 'MILESTONES', label: '🎯 Targets & Milestones' },
-          ].map((tab) => (
+          {visibleTabs.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setTagFilter(tab.id as any)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              onClick={() => setTagFilter(tab.id)}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 tagFilter === tab.id
-                  ? 'bg-rose-600 text-white shadow-xs'
-                  : 'bg-white dark:bg-[#0D1829] border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  ? 'bg-rose-600 text-white shadow-xs font-bold'
+                  : 'bg-white dark:bg-[#0D1829] border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60'
               }`}
             >
               {tab.label}
@@ -189,7 +159,7 @@ export default function AnnouncementsPage() {
         )}
       </div>
 
-      {/* 2-Column Responsive Feed Cards Grid matching Image 3 */}
+      {/* 2-Column Responsive Feed Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         {sortedAnnouncements.map((post) => (
           <HubLiveFeedCard key={post.id} post={post} />
@@ -199,13 +169,14 @@ export default function AnnouncementsPage() {
       {sortedAnnouncements.length === 0 && (
         <div className="text-center py-16 bg-white dark:bg-[#0D1829] rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
           <p className="text-sm font-semibold text-slate-500">
-            No updates matching current filter or search query.
+            {tagFilter === 'ANNOUNCEMENTS'
+              ? 'No active company broadcasts. Official executive announcements published by leadership will appear here.'
+              : 'No updates matching current filter or search query.'}
           </p>
         </div>
       )}
 
       <NewPostModal isOpen={isNewPostOpen} onClose={() => setIsNewPostOpen(false)} />
-      <SimulateDealModal isOpen={isSimulateOpen} onClose={() => setIsSimulateOpen(false)} />
     </div>
   );
 }

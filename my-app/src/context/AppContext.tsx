@@ -6,7 +6,8 @@ import {
   FeedPost,
   ActionItem,
   CrmLeadItem,
-  DesignProject
+  DesignProject,
+  ActiveCampaign
 } from '../types';
 import {
   currentUserMock,
@@ -130,6 +131,8 @@ interface AppContextType {
     projectTag?: string;
     customDetails?: string;
   }) => Promise<FeedPost>;
+  activeCampaign: ActiveCampaign;
+  updateActiveCampaign: (campaign: Partial<ActiveCampaign>) => void;
 }
 
 const HALLWAY_SESSION_KEY = 'hallway-auth';
@@ -206,18 +209,8 @@ const BRANCH_TARGET_CONFIGS = [
   { id: 'HBR', name: 'HBR Layout', team: 'HBR Layout Hub' },
 ];
 
-function resolveCrmAvatar(name?: string): string {
-  if (!name) return 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80';
-  const lower = name.toLowerCase();
-  if (lower.includes('meghana')) return 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80';
-  if (lower.includes('shaddisha')) return 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80';
-  if (lower.includes('aman')) return 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80';
-  if (lower.includes('sharanya')) return 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150&auto=format&fit=crop&q=80';
-  if (lower.includes('danush')) return 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80';
-  if (lower.includes('jayashree')) return 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80';
-  if (lower.includes('somashekar')) return 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80';
-  if (lower.includes('bilal')) return 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150&auto=format&fit=crop&q=80';
-  return 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80';
+function resolveCrmAvatar(_name?: string): string {
+  return '';
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -332,8 +325,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         .catch(() => []);
 
       const crmRecordsPromise = fetchRecords('', '')
-        .then((res) => res?.individualRecords || [])
-        .catch(() => []);
+        .then((res) => res || { individualRecords: [], teamRecords: [] })
+        .catch(() => ({ individualRecords: [], teamRecords: [] }));
 
       const branchTargetPromises = BRANCH_TARGET_CONFIGS.map(async (b) => {
         try {
@@ -536,8 +529,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               target.branchName && target.branchId !== 'all'
                 ? `${target.branchName} Operations`
                 : 'Hub Operations',
-            avatar:
-              'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+            avatar: '',
             team: target.team || 'Operations HQ',
           },
           content,
@@ -557,277 +549,63 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         seenIds.add(id);
       }
 
-      // 2. Latest News items:
-      const newsPosts: FeedPost[] = [];
+      // Dashboard Feed strictly contains the 4 Monthly Target cards (All Hubs -> sorted branches descending by %)
+      setFeedPosts(targetPosts);
 
-      // a. Broadcast announcements (filtered to today and 1 day before)
-      if (Array.isArray(announcementsData)) {
-        for (const post of announcementsData) {
-          if (!seenIds.has(post.id)) {
-            if (
-              post.id?.startsWith('crm-token-') ||
-              post.id?.startsWith('crm-event-') ||
-              post.title?.toLowerCase().startsWith('new token') ||
-              post.title?.toLowerCase().includes('client consultation') ||
-              post.title?.toLowerCase().includes('virtual meeting') ||
-              post.title?.toLowerCase().includes('showroom visit') ||
-              post.id === 'announcement-yesterday-1' ||
-              post.id === 'performer-yesterday-1' ||
-              post.title?.toLowerCase().includes('townhall scheduled') ||
-              post.title?.toLowerCase().includes('sarah jenkins')
-            ) {
-              continue;
-            }
-            if (!isTodayOrYesterday(post.createdAt, post.timestamp)) {
-              continue;
-            }
-            const existingLocal = currentPostsMap.get(post.id);
-            const reactions = mergeReactions(post.reactions, existingLocal?.reactions);
-            const comments = mergeComments(post.comments, existingLocal?.comments);
-            const commentsCount = Math.max(post.comments?.length || post.commentsCount || 0, comments.length, existingLocal?.commentsCount || 0);
-
-            newsPosts.push({
-              ...post,
-              content: cleanPostContent(post.content),
-              reactions,
-              commentsCount,
-              comments,
-            });
-            seenIds.add(post.id);
-          }
-        }
-      }
-
-      // 2. Dashboard News items (Live CRM bookings today/yesterday + yesterday's seed + broadcasts)
-      const dashboardNewsPosts: FeedPost[] = [];
-
-      // a. Broadcast announcements (filtered to today and 1 day before)
-      if (Array.isArray(announcementsData)) {
-        for (const post of announcementsData) {
-          if (!seenIds.has(post.id)) {
-            if (
-              post.id?.startsWith('crm-token-') ||
-              post.id?.startsWith('crm-event-') ||
-              post.title?.toLowerCase().startsWith('new token') ||
-              post.title?.toLowerCase().includes('client consultation') ||
-              post.title?.toLowerCase().includes('virtual meeting') ||
-              post.title?.toLowerCase().includes('showroom visit') ||
-              post.id === 'announcement-yesterday-1' ||
-              post.id === 'performer-yesterday-1' ||
-              post.title?.toLowerCase().includes('townhall scheduled') ||
-              post.title?.toLowerCase().includes('sarah jenkins')
-            ) {
-              continue;
-            }
-            if (!isTodayOrYesterday(post.createdAt, post.timestamp)) {
-              continue;
-            }
-            const existingLocal = currentPostsMap.get(post.id);
-            const reactions = mergeReactions(post.reactions, existingLocal?.reactions);
-            const comments = mergeComments(post.comments, existingLocal?.comments);
-            const commentsCount = Math.max(post.comments?.length || post.commentsCount || 0, comments.length, existingLocal?.commentsCount || 0);
-
-            dashboardNewsPosts.push({
-              ...post,
-              content: cleanPostContent(post.content),
-              reactions,
-              commentsCount,
-              comments,
-            });
-            seenIds.add(post.id);
-          }
-        }
-      }
-
-      // b. Real Live CRM Closed Deal Bookings for Dashboard (formatted as standard gross booking)
-      if (Array.isArray(crmItems) && crmItems.length > 0) {
-        for (const item of crmItems) {
-          if (
-            item.type === 'token' ||
-            item.id?.startsWith('token-') ||
-            item.title?.toLowerCase().includes('token')
-          ) {
-            continue;
-          }
-
-          if (!isTodayOrYesterday(item.createdAt, item.timestamp)) {
-            continue;
-          }
-
-          const id = `crm-${item.id}`;
-          if (seenIds.has(id)) continue;
-          const existing = announcementsMap.get(id);
-          const existingLocal = currentPostsMap.get(id);
-          const reactions = mergeReactions(existing?.reactions, existingLocal?.reactions);
-          const comments = mergeComments(existing?.comments, existingLocal?.comments);
-          const commentsCount = Math.max(existing?.commentsCount || 0, comments.length, existingLocal?.commentsCount || 0);
-
-          const authorName = item.author?.name || 'Sales Executive';
-          const authorTeam = formatBranchName(item.author?.team);
-          const avatar = item.author?.avatar || resolveCrmAvatar(authorName);
-
-          dashboardNewsPosts.push({
-            id,
-            type: item.type === 'quota' ? 'quota' : item.type === 'performer' ? 'performer' : 'booking',
-            categoryColor:
-              item.type === 'quota'
-                ? '#8B5CF6'
-                : item.type === 'performer'
-                ? '#F59E0B'
-                : '#10B981',
-            title: item.title ? item.title.replace(/^New booking/i, 'Gross booking') : item.title,
-            timestamp: item.timestamp || 'Recent deal',
-            createdAt: item.createdAt || new Date().toISOString(),
-            author: {
-              name: authorName,
-              avatar,
-              team: authorTeam,
-            },
-            content: cleanPostContent(item.content),
-            reactions,
-            commentsCount,
-            comments,
-            department: (item.department as any) || 'Sales',
-          });
-          seenIds.add(id);
-        }
-      }
-
-      // c. Yesterday's dynamic CRM gross bookings seed for Dashboard
-      const yesterdayDateStr = getYesterdayYmd();
-      const yesterdayNewsSeed = [
-        {
-          id: 'deal-yesterday-1',
-          type: 'booking' as const,
-          categoryColor: '#10B981',
-          title: 'Gross booking · ₹90,259 · Jayashree',
-          timestamp: 'Yesterday',
-          createdAt: `${yesterdayDateStr}T17:45:00.000Z`,
-          author: {
-            name: 'Jayashree',
-            avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
-            team: 'Sarjapura',
-          },
-          content: 'Sreeraj Alakkassery · handled by Jayashree',
-          department: 'Sales' as const,
-        },
-        {
-          id: 'deal-yesterday-2',
-          type: 'booking' as const,
-          categoryColor: '#10B981',
-          title: 'Gross booking · ₹54,329 · Jayashree',
-          timestamp: 'Yesterday',
-          createdAt: `${yesterdayDateStr}T15:20:00.000Z`,
-          author: {
-            name: 'Jayashree',
-            avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
-            team: 'Sarjapura',
-          },
-          content: 'Nagaraju Nalam · handled by Jayashree',
-          department: 'Sales' as const,
-        },
-        {
-          id: 'deal-yesterday-3',
-          type: 'booking' as const,
-          categoryColor: '#10B981',
-          title: 'Gross booking · ₹18,717 · Akhil Issac',
-          timestamp: 'Yesterday',
-          createdAt: `${yesterdayDateStr}T12:10:00.000Z`,
-          author: {
-            name: 'Akhil Issac',
-            avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
-            team: 'HBR',
-          },
-          content: 'Thesnim · handled by Akhil Issac',
-          department: 'Sales' as const,
-        },
-      ];
-
-      for (const item of yesterdayNewsSeed) {
-        if (!seenIds.has(item.id)) {
-          const existing = announcementsMap.get(item.id);
-          const existingLocal = currentPostsMap.get(item.id);
-          const reactions = mergeReactions(existing?.reactions, existingLocal?.reactions);
-          const comments = mergeComments(existing?.comments, existingLocal?.comments);
-          const commentsCount = Math.max(existing?.commentsCount || 0, comments.length, existingLocal?.commentsCount || 0);
-
-          dashboardNewsPosts.push({
-            ...item,
-            reactions,
-            commentsCount,
-            comments,
-          });
-          seenIds.add(item.id);
-        }
-      }
-
-      // Sort dashboard news posts strictly in descending order
-      dashboardNewsPosts.sort((a, b) => {
-        const getTime = (p: FeedPost) => {
-          if (p.createdAt) {
-            const t = new Date(p.createdAt).getTime();
-            if (!isNaN(t)) return t;
-          }
-          if (p.timestamp) {
-            const t = new Date(p.timestamp).getTime();
-            if (!isNaN(t)) return t;
-          }
-          if (p.id?.startsWith('post-')) {
-            const num = Number(p.id.replace('post-', ''));
-            if (!isNaN(num)) return num;
-          }
-          return 0;
-        };
-        return getTime(b) - getTime(a);
-      });
-
-      // Dynamic CRM Snippets Engine (All 14 CRM Scenarios from Master PDF)
+      // Dynamic CRM Snippets Engine (All 13 Dynamic Enterprise CRM Scenarios)
       const dynamicCrmSnippets = generateCrmAnnouncements({
         crmFeedItems: Array.isArray(crmItems) ? crmItems : [],
         overallTargets,
         branchTargets,
         topPerformers: Array.isArray(leaderboardData) ? leaderboardData : [],
         people: Array.isArray(crmPeopleData) ? crmPeopleData : [],
-        records: Array.isArray(crmRecordsData) ? crmRecordsData : [],
+        records: Array.isArray(crmRecordsData) ? crmRecordsData : ((crmRecordsData as any)?.individualRecords || []),
+        teamRecords: (crmRecordsData as any)?.teamRecords || [],
         existingPostsMap: currentPostsMap,
       });
 
-      // Dashboard Feed gets targets first (All Hubs -> sorted branches), then broadcasts and dynamic CRM announcements
-      const mergedDashboardFeed: FeedPost[] = [...targetPosts];
-      const seenDashboardIds = new Set<string>(targetPosts.map((p) => p.id));
-
-      for (const p of dashboardNewsPosts) {
-        if (!seenDashboardIds.has(p.id)) {
-          mergedDashboardFeed.push(p);
-          seenDashboardIds.add(p.id);
-        }
-      }
-
-      for (const snippet of dynamicCrmSnippets) {
-        if (!seenDashboardIds.has(snippet.id)) {
-          mergedDashboardFeed.push(snippet);
-          seenDashboardIds.add(snippet.id);
-        }
-      }
-
-      setFeedPosts(mergedDashboardFeed);
-
       // 3. Announcements Page Feed (HUB Live Feed Snippets Engine)
-      // Excludes repeating raw target cards (crm-target-*), and displays rich dynamic CRM announcement snippets!
+      // Excludes repeating raw target cards (crm-target-*) and legacy mock bookings, displaying rich dynamic CRM announcement snippets!
       const announcementBroadcasts: FeedPost[] = [];
       if (Array.isArray(announcementsData)) {
         for (const post of announcementsData) {
+          const pId = String(post.id || '').toLowerCase();
+          const pTitle = String(post.title || '').toLowerCase();
+          const pContent = String(post.content || '').toLowerCase();
+
+          // Reject legacy dummy/mock posts
           if (
-            post.id?.startsWith('crm-token-') ||
-            post.id?.startsWith('crm-event-') ||
-            post.title?.toLowerCase().startsWith('new token') ||
-            post.title?.toLowerCase().includes('client consultation') ||
-            post.title?.toLowerCase().includes('virtual meeting') ||
-            post.title?.toLowerCase().includes('showroom visit') ||
-            post.id === 'announcement-yesterday-1' ||
-            post.id === 'performer-yesterday-1' ||
-            post.title?.toLowerCase().includes('townhall scheduled') ||
-            post.title?.toLowerCase().includes('sarah jenkins')
+            pId === 'post-1' ||
+            pId === 'post-2' ||
+            pId === 'post-3' ||
+            pId === 'post-1789470715315' ||
+            pId === 'post-1790950160406' ||
+            pId === 'announcement-yesterday-1' ||
+            pId === 'performer-yesterday-1' ||
+            pId === 'crm-announcement-official-corridor-broadcast' ||
+            pId.startsWith('crm-token-') ||
+            pId.startsWith('crm-event-') ||
+            pId.startsWith('deal-yesterday-') ||
+            pId.startsWith('crm-target-') ||
+            pTitle === 'hello' ||
+            pContent === 'hello hub' ||
+            pTitle.includes('sarah jenkins') ||
+            pContent.includes('sarah jenkins') ||
+            pContent.includes('deal #4828') ||
+            pContent.includes('sarjapura phase 2') ||
+            pTitle.includes('jp nagar hit 80%') ||
+            pContent.includes('on track to smash this month') ||
+            pTitle.startsWith('new token') ||
+            pTitle.includes('client consultation') ||
+            pTitle.includes('virtual meeting') ||
+            pTitle.includes('quarterly operating corridor') ||
+            pTitle.includes('townhall scheduled') ||
+            pTitle.includes('gross booking · ₹90,259') ||
+            pTitle.includes('gross booking · ₹54,329') ||
+            pTitle.includes('gross booking · ₹18,717') ||
+            pContent.includes('sreeraj alakkassery') ||
+            pContent.includes('nagaraju nalam') ||
+            pContent.includes('thesnim')
           ) {
             continue;
           }
@@ -858,12 +636,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
 
       const combinedAnnouncements = Array.from(announcementPostsMap.values()).sort((a, b) => {
-        // Broadcasts (created via modal) take top priority
-        const isBroadcastA = a.id?.startsWith('post-');
-        const isBroadcastB = b.id?.startsWith('post-');
-        if (isBroadcastA && !isBroadcastB) return -1;
-        if (!isBroadcastA && isBroadcastB) return 1;
-
         const tA = new Date(a.createdAt || 0).getTime();
         const tB = new Date(b.createdAt || 0).getTime();
         return tB - tA;
@@ -877,7 +649,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // Initial load, periodic background polling (every 25s), and tab focus re-sync
   useEffect(() => {
-    if (!isAuthenticated) return;
     void refreshFeed();
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
@@ -896,7 +667,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [isAuthenticated]);
+  }, []);
 
   const toggleTheme = () => {
     setTheme((prev) => {
@@ -1388,6 +1159,45 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return post;
   };
 
+  const [activeCampaign, setActiveCampaign] = useState<ActiveCampaign>({
+    id: 'camp-indiranagar-launch',
+    title: 'Indiranagar Launch Boost',
+    branchName: 'Indiranagar Branch',
+    description: 'Exclusive limited-time discount for all new client deals closed in the new Indiranagar branch before Sunday night.',
+    voucherCode: 'INDIRA10',
+    discountPercent: '10% OFF',
+    targetDate: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000 + 12 * 60 * 60 * 1000).toISOString(),
+    isActive: true,
+  });
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('hallway_active_campaign');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed && parsed.title) {
+            setActiveCampaign(parsed);
+          }
+        } catch {
+          // fallback to default
+        }
+      }
+    }
+  }, []);
+
+  const updateActiveCampaign = (updated: Partial<ActiveCampaign>) => {
+    setActiveCampaign((prev) => {
+      const next = { ...prev, ...updated };
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('hallway_active_campaign', JSON.stringify(next));
+        } catch {}
+      }
+      return next;
+    });
+  };
+
   const clearNotifications = () => {
     setNotificationsCount(0);
   };
@@ -1435,7 +1245,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setActiveTimeframe,
         activeLeaderboardView,
         setActiveLeaderboardView,
-        simulateDynamicDeal
+        simulateDynamicDeal,
+        activeCampaign,
+        updateActiveCampaign
       }}
     >
       {children}

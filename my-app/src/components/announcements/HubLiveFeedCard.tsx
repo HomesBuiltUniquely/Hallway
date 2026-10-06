@@ -12,8 +12,9 @@ import {
 } from 'lucide-react';
 import { FeedPost } from '../../types/index';
 import { useApp } from '../../context/AppContext';
-import { cleanPostContent } from '../../lib/hallwayDisplay';
+import { cleanPostContent, formatRelativeTime } from '../../lib/hallwayDisplay';
 import { canDeleteAnnouncement, canDeleteComment } from '../../lib/permissions';
+import UserAvatar from '../common/UserAvatar';
 
 const AVAILABLE_REACTIONS = [
   { id: 'clap', emoji: '👏', label: 'Applause' },
@@ -77,6 +78,15 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
   const commentsList = post.comments || [];
   const commentsCount = Math.max(commentsList.length, post.commentsCount || 0);
 
+  // Clean headline: strip any duplicate emoji matching the card's icon badge
+  const displayTitle = React.useMemo(() => {
+    let t = post.title || '';
+    if (iconEmoji && t.startsWith(iconEmoji)) {
+      t = t.slice(iconEmoji.length).trim();
+    }
+    return t.replace(/^(?:🚀|🔨|💰|🎯|🏆|🏅|🎖️|⚡|🔥)\s*/u, '').trim();
+  }, [post.title, iconEmoji]);
+
   return (
     <div
       className="bg-white dark:bg-[#0D1829] border border-slate-200/90 dark:border-slate-800/90 rounded-2xl p-5 shadow-xs hover:shadow-md transition-all duration-200 relative overflow-hidden"
@@ -102,11 +112,11 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white tracking-tight">
-              {post.title}
+              {displayTitle}
             </h3>
             <div className="flex items-center gap-2 shrink-0">
               <span className="text-[11px] font-medium text-slate-400 whitespace-nowrap">
-                {post.timestamp || 'Just now'}
+                {formatRelativeTime(post.createdAt || post.timestamp)}
               </span>
               {canDeleteAnnouncement(post, currentUser) && (
                 <button
@@ -233,10 +243,11 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
                   key={comm.id}
                   className="flex items-start gap-2.5 bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800/70"
                 >
-                  <img
-                    src={comm.authorAvatar}
-                    alt={comm.authorName}
-                    className="w-7 h-7 rounded-full object-cover shrink-0 mt-0.5"
+                  <UserAvatar
+                    name={comm.authorName}
+                    avatar={comm.authorAvatar}
+                    size={28}
+                    className="mt-0.5"
                   />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
@@ -285,10 +296,10 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
 
           {/* New Comment Input Box */}
           <form onSubmit={handleCommentSubmit} className="flex items-center gap-2">
-            <img
-              src={currentUser.avatar}
-              alt={currentUser.name}
-              className="w-7 h-7 rounded-full object-cover shrink-0"
+            <UserAvatar
+              name={currentUser.name}
+              avatar={currentUser.avatar}
+              size={28}
             />
             <input
               type="text"

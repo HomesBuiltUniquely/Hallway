@@ -3,25 +3,33 @@ import fs from 'fs';
 import path from 'path';
 
 const DB_CONFIG = {
-  host: process.env.DB_HOST || 'localhost',
+  host: process.env.DB_HOST || 'database-1.cl002gu0o5ft.ap-south-2.rds.amazonaws.com',
   port: parseInt(process.env.DB_PORT || '3306', 10),
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || 'root@00',
+  user: process.env.DB_USER || 'admin',
+  password: process.env.DB_PASSWORD || 'Hubinterior2019',
   database: process.env.DB_NAME || 'hallway_db',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
-  connectTimeout: 5000,
+  connectTimeout: 15000,
+  ssl: undefined,
 };
 
 // Global pool to avoid exhaustion in Next.js hot reload
 declare global {
   // eslint-disable-next-line no-var
   var _hallwayDbPool: Pool | undefined;
+  // eslint-disable-next-line no-var
+  var _hallwayDbHost: string | undefined;
 }
 
 export function getPool(): Pool {
-  if (!global._hallwayDbPool) {
+  const currentHost = process.env.DB_HOST || 'database-1.cl002gu0o5ft.ap-south-2.rds.amazonaws.com';
+  if (!global._hallwayDbPool || global._hallwayDbHost !== currentHost) {
+    if (global._hallwayDbPool) {
+      global._hallwayDbPool.end().catch(() => {});
+    }
+    global._hallwayDbHost = currentHost;
     global._hallwayDbPool = mysql.createPool(DB_CONFIG);
   }
   return global._hallwayDbPool;
@@ -179,7 +187,7 @@ export async function getAnnouncements() {
         createdAt: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
         author: {
           name: row.author_name || 'Leadership',
-          avatar: row.author_avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+          avatar: row.author_avatar || '',
           team: row.author_team || `${row.department || 'Sales'} Hub`,
         },
         content: row.content,
@@ -252,7 +260,7 @@ export async function getAnnouncementById(id: string) {
         createdAt: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
         author: {
           name: row.author_name || 'Leadership',
-          avatar: row.author_avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+          avatar: row.author_avatar || '',
           team: row.author_team || `${row.department || 'Sales'} Hub`,
         },
         content: row.content,
@@ -307,7 +315,7 @@ export async function createAnnouncement(data: CreateAnnouncementInput) {
   const type = data.type || 'announcement';
   const categoryColor = data.categoryColor || CATEGORY_COLORS[type] || '#3B82F6';
   const authorName = data.author?.name || 'Leadership';
-  const authorAvatar = data.author?.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80';
+  const authorAvatar = data.author?.avatar || '';
   const authorTeam = data.author?.team || `${data.department || 'HQ'} Hub`;
   const department = data.department || 'Sales';
   const reactions = { ...DEFAULT_REACTIONS };
@@ -409,7 +417,7 @@ export async function ensureAnnouncementExists(
     const authorAvatar =
       defaults?.author?.avatar ||
       defaults?.authorAvatar ||
-      'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80';
+      '';
     const authorTeam = defaults?.author?.team || defaults?.authorTeam || 'Sales Hub';
     const content = defaults?.content || 'Live event synced from CRM.';
     const department = defaults?.department || 'Sales';
@@ -466,7 +474,7 @@ export function ensureJsonAnnouncement(
     const authorAvatar =
       defaults?.author?.avatar ||
       defaults?.authorAvatar ||
-      'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80';
+      '';
     const authorTeam = defaults?.author?.team || defaults?.authorTeam || 'Sales Hub';
 
     post = {
@@ -529,7 +537,7 @@ export async function addComment(
         announcementId,
         name,
         handle,
-        commentData.authorAvatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+        commentData.authorAvatar || '',
         commentData.authorRole || 'CRM Lead',
         commentData.content.trim(),
         'Just now',
@@ -563,7 +571,7 @@ export async function addComment(
       id: commentId,
       authorName: name,
       authorHandle: handle,
-      authorAvatar: commentData.authorAvatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+      authorAvatar: commentData.authorAvatar || '',
       authorRole: commentData.authorRole || 'CRM Lead',
       content: commentData.content.trim(),
       timestamp: 'Just now',

@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { CrmApiError } from '../../lib/crmApi';
+import UserAvatar from '../common/UserAvatar';
 
 export function corridorErrorMessage(error: unknown): string | null {
   if (!error) return null;
@@ -51,32 +52,7 @@ export function PersonAvatar({
   src?: string | null;
   size?: number;
 }) {
-  const initials = name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? '')
-    .join('');
-
-  if (src) {
-    return (
-      <img
-        src={src}
-        alt={name}
-        style={{ width: size, height: size }}
-        className="rounded-full object-cover ring-1 ring-slate-200 dark:ring-slate-700"
-      />
-    );
-  }
-
-  return (
-    <div
-      style={{ width: size, height: size, fontSize: size * 0.32 }}
-      className="rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-200 font-bold inline-flex items-center justify-center ring-1 ring-slate-200 dark:ring-slate-700"
-    >
-      {initials || '—'}
-    </div>
-  );
+  return <UserAvatar name={name} avatar={src} size={size} />;
 }
 
 export function displayRate(value: number | string | null | undefined): string {

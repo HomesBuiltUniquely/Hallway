@@ -1,4 +1,4 @@
-export type LeaderboardPeriod = 'today' | 'mtd' | 'qtd';
+export type LeaderboardPeriod = 'today' | 'mtd' | 'qtd' | 'all_time';
 export type HallwayTrend = 'up' | 'down' | 'flat' | 'steady';
 export type HallwayPeopleRole = 'SALES_MANAGER' | 'SALES_EXECUTIVE';
 
@@ -17,7 +17,7 @@ export interface HallwayMetricDefinitions {
 }
 
 export interface HallwayLeaderboardIndividual {
-  rank: number;
+  rank: number | null;
   id: string;
   userId?: number;
   name: string;
@@ -32,7 +32,7 @@ export interface HallwayLeaderboardIndividual {
 }
 
 export interface HallwayLeaderboardTeam {
-  rank: number;
+  rank: number | null;
   id: string;
   salesManagerId?: number;
   teamName: string;
@@ -223,6 +223,19 @@ export interface HallwayFeedItem {
   createdAt?: string;
   author?: HallwayFeedAuthor;
   department?: string;
+  rawBooking?: {
+    bookingId: string;
+    leadId?: string | number;
+    quoteAmount?: number;
+    amountReceived?: number;
+    isFirstBooking?: boolean;
+    isRenovation?: boolean;
+    isOnTheSpot?: boolean;
+    isLargeBooking?: boolean;
+    customerName?: string;
+    branchName?: string;
+    createdAt?: string;
+  };
 }
 
 export interface HallwayFeedResponse {

@@ -18,10 +18,17 @@ import { useApp } from '../../context/AppContext';
 import { progressWidth } from '../../lib/hallwayDisplay';
 
 const PERIODS: { label: string; value: LeaderboardPeriod }[] = [
-  { label: 'Today', value: 'today' },
   { label: 'MTD', value: 'mtd' },
   { label: 'QTD', value: 'qtd' },
+  { label: 'All-Time', value: 'all_time' },
 ];
+
+const PERIOD_SUBTITLES: Record<LeaderboardPeriod, string> = {
+  today: "Today's corridor leaders driving active deal closures and immediate momentum.",
+  mtd: "This month's pace-setters driving active corridor velocity and booking impact.",
+  qtd: "Quarterly champions setting the benchmark for conversion velocity and deal size.",
+  all_time: "HUB Hall of Fame: Celebrating all-time record holders and elite producers.",
+};
 
 const DEPARTMENTS = [
   'All Departments',
@@ -41,7 +48,7 @@ function TrendMark({ trend }: { trend?: HallwayTrend }) {
 function LeaderboardsInner() {
   const { activeDepartment, setActiveDepartment } = useApp();
   const { branchId, setBranchId, salesManagerId, setSalesManagerId, options } = useCorridorScope();
-  const [period, setPeriod] = useState<LeaderboardPeriod>('mtd');
+  const [period, setPeriod] = useState<LeaderboardPeriod>('all_time');
   const [view, setView] = useState<'Individual' | 'Team'>('Individual');
   const [localSearch, setLocalSearch] = useState('');
   const [showFullRosterModal, setShowFullRosterModal] = useState(false);
@@ -50,6 +57,17 @@ function LeaderboardsInner() {
 
   const individuals = useMemo(() => {
     let rows = data?.individuals || [];
+
+    // Filter test accounts, Shalny, and inactive users
+    const testRegex = /\btest\b/i;
+    rows = rows.filter((row) => {
+      const name = String(row.name || '');
+      if (testRegex.test(name) || name.toLowerCase().includes('shalny') || name.toLowerCase().includes('inactive')) {
+        return false;
+      }
+      return true;
+    });
+
     if (activeDepartment && activeDepartment !== 'All Departments') {
       rows = rows.filter((row) => {
         if (!row.department) {
@@ -66,18 +84,48 @@ function LeaderboardsInner() {
           (row.role || '').toLowerCase().includes(q)
       );
     }
-    // Strictly rank by highest gross booking value (revenue) descending
-    const sorted = [...rows].sort(
-      (a, b) => (Number(b.revenue) || 0) - (Number(a.revenue) || 0)
-    );
-    return sorted.map((member, idx) => ({
-      ...member,
-      rank: idx + 1,
-    }));
+
+    // Sort strictly by highest gross booking value (revenue) descending, then bookings count
+    const sorted = [...rows].sort((a, b) => {
+      const revA = Number(a.revenue) || 0;
+      const revB = Number(b.revenue) || 0;
+      if (revB !== revA) return revB - revA;
+      return (Number(b.bookings) || 0) - (Number(a.bookings) || 0);
+    });
+
+    // Only assign numbered podium ranks (1, 2, 3...) to members with positive revenue or bookings.
+    // If a member has 0 revenue and 0 bookings, rank is null (displayed as '-').
+    let currentRank = 1;
+    return sorted.map((member) => {
+      const hasBooking = (Number(member.revenue) || 0) > 0 || (Number(member.bookings) || 0) > 0;
+      return {
+        ...member,
+        rank: hasBooking ? currentRank++ : null,
+      };
+    });
   }, [data?.individuals, localSearch, activeDepartment]);
 
   const teams = useMemo(() => {
     let rows = data?.teams || [];
+
+    // Filter test teams & inactive squads
+    const testRegex = /\btest\b/i;
+    rows = rows.filter((row) => {
+      const teamName = String(row.teamName || '');
+      const leadName = String(row.leadName || '');
+      if (
+        testRegex.test(teamName) ||
+        testRegex.test(leadName) ||
+        teamName.toLowerCase().includes('inactive') ||
+        leadName.toLowerCase().includes('inactive') ||
+        teamName.toLowerCase().includes('razi') ||
+        leadName.toLowerCase().includes('razi')
+      ) {
+        return false;
+      }
+      return true;
+    });
+
     if (activeDepartment && activeDepartment !== 'All Departments') {
       rows = rows.filter((row) => {
         if (!row.department) {
@@ -94,15 +142,29 @@ function LeaderboardsInner() {
           (row.leadName || '').toLowerCase().includes(q)
       );
     }
-    // Strictly rank by highest team gross booking value descending
-    const sorted = [...rows].sort(
-      (a, b) => (Number(b.totalRevenueInr) || 0) - (Number(a.totalRevenueInr) || 0)
-    );
-    return sorted.map((team, idx) => ({
-      ...team,
-      rank: idx + 1,
-    }));
+
+    // Sort strictly by highest team gross booking value descending, then dealsClosed
+    const sorted = [...rows].sort((a, b) => {
+      const revA = Number(a.totalRevenueInr) || 0;
+      const revB = Number(b.totalRevenueInr) || 0;
+      if (revB !== revA) return revB - revA;
+      return (Number(b.dealsClosed) || 0) - (Number(a.dealsClosed) || 0);
+    });
+
+    // Only assign numbered podium ranks to teams with positive revenue or deals closed
+    let currentRank = 1;
+    return sorted.map((team) => {
+      const hasDeals = (Number(team.totalRevenueInr) || 0) > 0 || (Number(team.dealsClosed) || 0) > 0;
+      return {
+        ...team,
+        rank: hasDeals ? currentRank++ : null,
+      };
+    });
   }, [data?.teams, localSearch, activeDepartment]);
+
+  // Keep Top 5 only across MTD, QTD, and All-Time
+  const topIndividuals = useMemo(() => individuals.slice(0, 5), [individuals]);
+  const topTeams = useMemo(() => teams.slice(0, 5), [teams]);
 
   return (
     <div className="space-y-6 font-sans">
@@ -150,7 +212,7 @@ function LeaderboardsInner() {
               </h2>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Top performers ranked by highest gross booking value and conversion efficiency.
+              {PERIOD_SUBTITLES[period] || PERIOD_SUBTITLES.all_time}
             </p>
           </div>
 
@@ -202,7 +264,7 @@ function LeaderboardsInner() {
         {loading ? (
           <CorridorSkeleton rows={5} />
         ) : view === 'Individual' ? (
-          individuals.length === 0 ? (
+          topIndividuals.length === 0 ? (
             <EmptyState
               title="No individual standings yet"
               description="Live sales velocity ranks will appear here when CRM returns people for this period."
@@ -220,13 +282,15 @@ function LeaderboardsInner() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-medium">
-                  {individuals.slice(0, 5).map((member) => {
+                  {topIndividuals.map((member) => {
                     const rankStyles =
-                      {
-                        1: 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300',
-                        2: 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300',
-                        3: 'bg-amber-100/60 dark:bg-amber-950/40 text-amber-800 dark:text-amber-400 border border-amber-400/50',
-                      }[member.rank] || 'bg-slate-100 dark:bg-slate-800 text-slate-600';
+                      member.rank === 1
+                        ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300'
+                        : member.rank === 2
+                          ? 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300'
+                          : member.rank === 3
+                            ? 'bg-amber-100/60 dark:bg-amber-950/40 text-amber-800 dark:text-amber-400 border border-amber-400/50'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400';
 
                     return (
                       <tr
@@ -237,7 +301,7 @@ function LeaderboardsInner() {
                           <span
                             className={`w-6 h-6 rounded-full inline-flex items-center justify-center font-bold text-xs ${rankStyles}`}
                           >
-                            {member.rank}
+                            {member.rank ?? '-'}
                           </span>
                         </td>
                         <td className="py-4">
@@ -295,7 +359,7 @@ function LeaderboardsInner() {
               </table>
             </div>
           )
-        ) : teams.length === 0 ? (
+        ) : topTeams.length === 0 ? (
           <EmptyState
             title="No team standings yet"
             description="Squad velocity ranks will appear here when CRM returns teams for this period."
@@ -313,46 +377,69 @@ function LeaderboardsInner() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-medium">
-                {teams.slice(0, 5).map((team) => (
-                  <tr key={team.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
-                    <td className="py-4 pl-2">
-                      <span className="w-6 h-6 rounded-full inline-flex items-center justify-center font-bold text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                        {team.rank}
-                      </span>
-                    </td>
-                    <td className="py-4">
-                      <div className="flex items-center gap-3">
-                        <PersonAvatar name={team.teamName} src={team.avatar} size={36} />
-                        <div>
-                          <p className="font-bold text-slate-900 dark:text-white text-sm">{team.teamName}</p>
-                          {team.leadName && (
-                            <p className="text-[11px] text-slate-400 font-normal">Led by {team.leadName}</p>
-                          )}
+                {topTeams.map((team) => {
+                  const teamRankStyles =
+                    team.rank === 1
+                      ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300'
+                      : team.rank === 2
+                        ? 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300'
+                        : team.rank === 3
+                          ? 'bg-amber-100/60 dark:bg-amber-950/40 text-amber-800 dark:text-amber-400 border border-amber-400/50'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400';
+
+                  return (
+                    <tr key={team.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
+                      <td className="py-4 pl-2">
+                        <span
+                          className={`w-6 h-6 rounded-full inline-flex items-center justify-center font-bold text-xs ${teamRankStyles}`}
+                        >
+                          {team.rank ?? '-'}
+                        </span>
+                      </td>
+                      <td className="py-4">
+                        <div className="flex items-center gap-3">
+                          <PersonAvatar name={team.teamName} src={team.avatar} size={36} />
+                          <div>
+                            <div className="flex items-center gap-1.5">
+                              <p className="font-bold text-slate-900 dark:text-white text-sm">{team.teamName}</p>
+                              {team.rank === 1 && (
+                                <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                              )}
+                            </div>
+                            {team.leadName && (
+                              <p className="text-[11px] text-slate-400 font-normal">Led by {team.leadName}</p>
+                            )}
+                          </div>
+                          <TrendMark trend={team.trend} />
                         </div>
-                        <TrendMark trend={team.trend} />
-                      </div>
-                    </td>
-                    <td className="py-4 text-right font-mono font-bold text-slate-900 dark:text-white text-sm">
-                      {team.totalRevenue}
-                    </td>
-                    <td className="py-4 text-center font-bold text-slate-700 dark:text-slate-300">
-                      {team.dealsClosed}
-                    </td>
-                    <td className="py-4 pr-2 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                      {displayRate(team.winRate)}
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="py-4 text-right font-mono font-bold text-slate-900 dark:text-white text-sm">
+                        {team.totalRevenue}
+                      </td>
+                      <td className="py-4 text-center font-bold text-slate-700 dark:text-slate-300">
+                        {team.dealsClosed}
+                      </td>
+                      <td className="py-4 pr-2 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                        {displayRate(team.winRate)}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
 
-        <div className="pt-2 text-center border-t border-slate-100 dark:border-slate-800">
+        <div className="pt-2 flex items-center justify-between border-t border-slate-100 dark:border-slate-800 text-xs text-slate-500">
+          <span>
+            {view === 'Individual'
+              ? `Showing top ${topIndividuals.length} sales executives`
+              : `Showing top ${topTeams.length} sales squads`}
+          </span>
           <button
             type="button"
             onClick={() => setShowFullRosterModal(true)}
-            className="text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 inline-flex items-center gap-1 transition-colors"
+            className="font-bold text-slate-600 dark:text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 inline-flex items-center gap-1 transition-colors"
           >
             <span>View Full Roster</span>
             <ChevronRight className="w-3.5 h-3.5" />
@@ -385,7 +472,7 @@ function LeaderboardsInner() {
                     className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 text-xs"
                   >
                     <div className="flex items-center gap-3">
-                      <span className="font-bold text-slate-400 w-4">{member.rank}</span>
+                      <span className="font-bold text-slate-400 w-4">{member.rank ?? '-'}</span>
                       <PersonAvatar name={member.name} src={member.avatar} size={32} />
                       <div>
                         <p className="font-bold text-slate-900 dark:text-white">{member.name}</p>
