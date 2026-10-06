@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { FeedPost } from '../../types/index';
 import { useApp } from '../../context/AppContext';
-import { cleanPostContent } from '../../lib/hallwayDisplay';
+import { cleanPostContent, formatRelativeTime } from '../../lib/hallwayDisplay';
 import { canDeleteAnnouncement, canDeleteComment } from '../../lib/permissions';
 import UserAvatar from '../common/UserAvatar';
 
@@ -78,6 +78,15 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
   const commentsList = post.comments || [];
   const commentsCount = Math.max(commentsList.length, post.commentsCount || 0);
 
+  // Clean headline: strip any duplicate emoji matching the card's icon badge
+  const displayTitle = React.useMemo(() => {
+    let t = post.title || '';
+    if (iconEmoji && t.startsWith(iconEmoji)) {
+      t = t.slice(iconEmoji.length).trim();
+    }
+    return t.replace(/^(?:🚀|🔨|💰|🎯|🏆|🏅|🎖️|⚡|🔥)\s*/u, '').trim();
+  }, [post.title, iconEmoji]);
+
   return (
     <div
       className="bg-white dark:bg-[#0D1829] border border-slate-200/90 dark:border-slate-800/90 rounded-2xl p-5 shadow-xs hover:shadow-md transition-all duration-200 relative overflow-hidden"
@@ -103,11 +112,11 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white tracking-tight">
-              {post.title}
+              {displayTitle}
             </h3>
             <div className="flex items-center gap-2 shrink-0">
               <span className="text-[11px] font-medium text-slate-400 whitespace-nowrap">
-                {post.timestamp || 'Just now'}
+                {formatRelativeTime(post.createdAt || post.timestamp)}
               </span>
               {canDeleteAnnouncement(post, currentUser) && (
                 <button

@@ -569,27 +569,43 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const announcementBroadcasts: FeedPost[] = [];
       if (Array.isArray(announcementsData)) {
         for (const post of announcementsData) {
+          const pId = String(post.id || '').toLowerCase();
+          const pTitle = String(post.title || '').toLowerCase();
+          const pContent = String(post.content || '').toLowerCase();
+
+          // Reject legacy dummy/mock posts
           if (
-            post.id?.startsWith('crm-token-') ||
-            post.id?.startsWith('crm-event-') ||
-            post.id?.startsWith('deal-yesterday-') ||
-            post.id?.startsWith('crm-target-') ||
-            post.id === 'post-1790950160406' ||
-            post.id === 'announcement-yesterday-1' ||
-            post.id === 'performer-yesterday-1' ||
-            post.title?.toLowerCase().startsWith('new token') ||
-            post.title?.toLowerCase().includes('client consultation') ||
-            post.title?.toLowerCase().includes('virtual meeting') ||
-            post.id === 'crm-announcement-official-corridor-broadcast' ||
-            post.title?.toLowerCase().includes('quarterly operating corridor') ||
-            post.title?.toLowerCase().includes('townhall scheduled') ||
-            post.title?.toLowerCase().includes('sarah jenkins') ||
-            post.title?.toLowerCase().includes('gross booking · ₹90,259') ||
-            post.title?.toLowerCase().includes('gross booking · ₹54,329') ||
-            post.title?.toLowerCase().includes('gross booking · ₹18,717') ||
-            post.content?.toLowerCase().includes('sreeraj alakkassery') ||
-            post.content?.toLowerCase().includes('nagaraju nalam') ||
-            post.content?.toLowerCase().includes('thesnim')
+            pId === 'post-1' ||
+            pId === 'post-2' ||
+            pId === 'post-3' ||
+            pId === 'post-1789470715315' ||
+            pId === 'post-1790950160406' ||
+            pId === 'announcement-yesterday-1' ||
+            pId === 'performer-yesterday-1' ||
+            pId === 'crm-announcement-official-corridor-broadcast' ||
+            pId.startsWith('crm-token-') ||
+            pId.startsWith('crm-event-') ||
+            pId.startsWith('deal-yesterday-') ||
+            pId.startsWith('crm-target-') ||
+            pTitle === 'hello' ||
+            pContent === 'hello hub' ||
+            pTitle.includes('sarah jenkins') ||
+            pContent.includes('sarah jenkins') ||
+            pContent.includes('deal #4828') ||
+            pContent.includes('sarjapura phase 2') ||
+            pTitle.includes('jp nagar hit 80%') ||
+            pContent.includes('on track to smash this month') ||
+            pTitle.startsWith('new token') ||
+            pTitle.includes('client consultation') ||
+            pTitle.includes('virtual meeting') ||
+            pTitle.includes('quarterly operating corridor') ||
+            pTitle.includes('townhall scheduled') ||
+            pTitle.includes('gross booking · ₹90,259') ||
+            pTitle.includes('gross booking · ₹54,329') ||
+            pTitle.includes('gross booking · ₹18,717') ||
+            pContent.includes('sreeraj alakkassery') ||
+            pContent.includes('nagaraju nalam') ||
+            pContent.includes('thesnim')
           ) {
             continue;
           }
@@ -620,12 +636,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
 
       const combinedAnnouncements = Array.from(announcementPostsMap.values()).sort((a, b) => {
-        // Broadcasts (created via modal) take top priority
-        const isBroadcastA = a.id?.startsWith('post-');
-        const isBroadcastB = b.id?.startsWith('post-');
-        if (isBroadcastA && !isBroadcastB) return -1;
-        if (!isBroadcastA && isBroadcastB) return 1;
-
         const tA = new Date(a.createdAt || 0).getTime();
         const tB = new Date(b.createdAt || 0).getTime();
         return tB - tA;

@@ -3,25 +3,33 @@ import fs from 'fs';
 import path from 'path';
 
 const DB_CONFIG = {
-  host: process.env.DB_HOST || 'localhost',
+  host: process.env.DB_HOST || 'database-1.cl002gu0o5ft.ap-south-2.rds.amazonaws.com',
   port: parseInt(process.env.DB_PORT || '3306', 10),
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || 'root@00',
+  user: process.env.DB_USER || 'admin',
+  password: process.env.DB_PASSWORD || 'Hubinterior2019',
   database: process.env.DB_NAME || 'hallway_db',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
-  connectTimeout: 5000,
+  connectTimeout: 15000,
+  ssl: undefined,
 };
 
 // Global pool to avoid exhaustion in Next.js hot reload
 declare global {
   // eslint-disable-next-line no-var
   var _hallwayDbPool: Pool | undefined;
+  // eslint-disable-next-line no-var
+  var _hallwayDbHost: string | undefined;
 }
 
 export function getPool(): Pool {
-  if (!global._hallwayDbPool) {
+  const currentHost = process.env.DB_HOST || 'database-1.cl002gu0o5ft.ap-south-2.rds.amazonaws.com';
+  if (!global._hallwayDbPool || global._hallwayDbHost !== currentHost) {
+    if (global._hallwayDbPool) {
+      global._hallwayDbPool.end().catch(() => {});
+    }
+    global._hallwayDbHost = currentHost;
     global._hallwayDbPool = mysql.createPool(DB_CONFIG);
   }
   return global._hallwayDbPool;

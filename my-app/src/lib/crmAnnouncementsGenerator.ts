@@ -46,49 +46,49 @@ export const CRM_ANNOUNCEMENT_TEMPLATES: CrmScenarioTemplate[] = [
     scenarioNumber: 1,
     scenarioName: 'New Booking',
     departmentTag: 'CRM',
-    headline: 'New Booking: ₹8.46L by HBR Team!',
-    content: 'Danush Rao just closed Project #HBR-1842. Another home joins HUB. Great work, team!',
+    headline: 'New Booking: ₹8.4L by Sarjapura Team!',
+    content: 'Rahul just closed Project #4928. Another home joins HUB. Great work, team!',
     type: 'booking',
     categoryColor: '#10B981',
     iconEmoji: '💰',
     defaultAuthor: {
-      name: 'Danush Rao',
-      team: 'HBR Hub',
+      name: 'Rahul',
+      team: 'Sarjapura Hub',
       avatar: '',
     },
-    sampleMetric: '₹8.46L Closure',
+    sampleMetric: '₹8.4L Booking',
   },
   {
     scenarioNumber: 2,
     scenarioName: 'Large Booking',
     departmentTag: 'CRM',
-    headline: 'High-Value Closure: ₹14.67L in Sarjapur!',
-    content: 'Jayashree brought home a ₹14.67L interior closure for Project #SAR-1657. Moving the scoreboard for Sarjapur!',
+    headline: 'Big One Closed: ₹24.6L!',
+    content: 'Aman just brought home a ₹24.6L interior project. That’s how you move the scoreboard.',
     type: 'booking',
     categoryColor: '#059669',
     iconEmoji: '🔥',
     defaultAuthor: {
-      name: 'Jayashree',
+      name: 'Aman Nirmal',
       team: 'Sarjapura Hub',
       avatar: '',
     },
-    sampleMetric: '₹14.67L Contract Quote',
+    sampleMetric: '₹24.6L High-Value Deal',
   },
   {
     scenarioNumber: 3,
     scenarioName: 'First Booking of Employee',
     departmentTag: 'CRM',
-    headline: 'Spot Closure: ₹9.16L by Priti Dutta!',
-    content: 'The customer walked in and booked today. Priti Dutta closed her maiden booking for ₹9.16L at JP Nagar Hub! Project #JP-2399.',
+    headline: 'First One on the Board!',
+    content: 'Rayan has closed his first HUB booking. The first of many. Congratulations!',
     type: 'booking',
     categoryColor: '#0D9488',
     iconEmoji: '🚀',
     defaultAuthor: {
-      name: 'Priti Dutta',
+      name: 'Rayan',
       team: 'JP Nagar Hub',
       avatar: '',
     },
-    sampleMetric: 'Maiden Spot Closure',
+    sampleMetric: 'Maiden Booking',
   },
   {
     scenarioNumber: 4,
@@ -110,30 +110,30 @@ export const CRM_ANNOUNCEMENT_TEMPLATES: CrmScenarioTemplate[] = [
     scenarioNumber: 5,
     scenarioName: 'EC Target Milestone',
     departmentTag: 'CRM',
-    headline: 'JP Nagar Leads Branch Target Pacing (5.1%)',
-    content: 'Team JP Nagar is setting the pace for October at 5.1% of its monthly quota (₹9.16L of ₹1.80 Cr). The sprint is on!',
+    headline: 'Sarjapura Hits 80%!',
+    content: 'Sarjapura has crossed 80% of its monthly target. The finish line is getting closer.',
     type: 'quota',
     categoryColor: '#8B5CF6',
     iconEmoji: '🎯',
     defaultAuthor: {
-      name: 'Team JP Nagar',
-      team: 'JP Nagar Hub',
+      name: 'Team Sarjapura',
+      team: 'Sarjapura Hub',
       avatar: '',
     },
-    sampleMetric: '5.1% Branch Quota',
+    sampleMetric: '80% Branch Quota',
   },
   {
     scenarioNumber: 6,
     scenarioName: '100% Target Achievement',
     departmentTag: 'CRM',
     headline: 'Target Crushed: 100%!',
-    content: 'Team has officially crossed its monthly target. Everything from here is overachievement.',
+    content: 'Team HBR has officially crossed its monthly target. Everything from here is overachievement.',
     type: 'quota',
     categoryColor: '#10B981',
     iconEmoji: '🏆',
     defaultAuthor: {
-      name: 'Operations HQ',
-      team: 'Executive Board',
+      name: 'Team HBR',
+      team: 'HBR Hub',
       avatar: '',
     },
     sampleMetric: '100% Target Crushed',
@@ -142,8 +142,8 @@ export const CRM_ANNOUNCEMENT_TEMPLATES: CrmScenarioTemplate[] = [
     scenarioNumber: 7,
     scenarioName: 'Company Revenue Milestone',
     departmentTag: 'CRM',
-    headline: 'October Milestone: ₹17.61L Booked',
-    content: 'HUB has recorded ₹17.61L in gross bookings this month towards the ₹5.40 Cr monthly target. Every closure counts toward our corridor target.',
+    headline: 'HUB Crosses ₹2 Crore!',
+    content: 'The company has crossed ₹2 Cr in bookings this month. Built one closure at a time.',
     type: 'quota',
     categoryColor: '#0284C7',
     iconEmoji: '🎯',
@@ -152,14 +152,14 @@ export const CRM_ANNOUNCEMENT_TEMPLATES: CrmScenarioTemplate[] = [
       team: 'Executive Board',
       avatar: '',
     },
-    sampleMetric: '₹17.61L of ₹5.40 Cr Goal',
+    sampleMetric: '₹2 Cr Milestone',
   },
   {
     scenarioNumber: 8,
     scenarioName: 'Record Broken',
     departmentTag: 'CRM',
-    headline: 'Highest Deal Value: ₹19.63L!',
-    content: 'Meghana set the benchmark with an outstanding ₹19.63L interior contract (₹1.96L booking fee) for Project #HBR-1798. Built one closure at a time.',
+    headline: 'New HUB Record!',
+    content: 'This month has officially become our highest-ever booking month. The old record is history.',
     type: 'booking',
     categoryColor: '#D97706',
     iconEmoji: '🎖️',
@@ -168,46 +168,62 @@ export const CRM_ANNOUNCEMENT_TEMPLATES: CrmScenarioTemplate[] = [
       team: 'HBR Hub',
       avatar: '',
     },
-    sampleMetric: '₹19.63L Contract Deal',
+    sampleMetric: 'New Company Record',
   },
   {
     scenarioNumber: 9,
     scenarioName: 'Top Performer',
     departmentTag: 'CRM',
-    headline: 'Month-to-Date Leader: Priti Dutta',
-    content: 'Priti Dutta leads the October board with ₹9.16L in closures and a 7.7% conversion rate. Outstanding consistency.',
+    headline: 'This Week’s Top Performer',
+    content: 'Naveen leads the board with ₹42L in closures this week. Outstanding consistency.',
     type: 'performer',
     categoryColor: '#EAB308',
     iconEmoji: '🏅',
     defaultAuthor: {
-      name: 'Priti Dutta',
-      team: 'JP Nagar Hub',
+      name: 'Naveen',
+      team: 'Sarjapura Hub',
       avatar: '',
     },
-    sampleMetric: 'Rank #1 MTD • 7.7% Conv',
+    sampleMetric: 'Rank #1 Leader',
   },
   {
     scenarioNumber: 10,
     scenarioName: 'On-the-Spot Closure',
     departmentTag: 'CRM',
-    headline: 'Spot Closure: ₹9.16L by Priti Dutta!',
-    content: 'The customer walked in today and booked today. Priti Dutta closed her maiden booking for ₹9.16L at JP Nagar Hub!',
+    headline: 'Spot Closure!',
+    content: 'The customer walked in today and booked today. ₹7.8L closed by Team Indiranagar.',
     type: 'booking',
     categoryColor: '#0D9488',
-    iconEmoji: '🎯',
+    iconEmoji: '⚡',
     defaultAuthor: {
-      name: 'Priti Dutta',
-      team: 'JP Nagar Hub',
+      name: 'Sales Executive',
+      team: 'Indiranagar Hub',
       avatar: '',
     },
-    sampleMetric: 'Zero-Day Turnaround · ₹9.16L',
+    sampleMetric: 'Same-Day Walk-in & Close',
+  },
+  {
+    scenarioNumber: 16,
+    scenarioName: 'Renova Booking',
+    departmentTag: 'CRM',
+    headline: 'Renova Strikes Again!',
+    content: 'Another renovation project has joined the HUB family. ₹12.5L booked by Team Renova.',
+    type: 'booking',
+    categoryColor: '#D97706',
+    iconEmoji: '🔨',
+    defaultAuthor: {
+      name: 'Team Renova',
+      team: 'Renova Hub',
+      avatar: '',
+    },
+    sampleMetric: 'Renovation Closure',
   },
   {
     scenarioNumber: 21,
     scenarioName: 'Book of Records Entry',
     departmentTag: 'CRM,DESIGN',
-    headline: 'All-Time MVP: Meghana (₹1.79 Cr)',
-    content: 'Meghana leads the HUB All-Time leaderboard with 23 closed deals, ₹1.79 Cr in total revenue, and a 4.3% conversion rate—the newest entry in the HUB Book of Records.',
+    headline: 'A New HUB Record Has Been Written',
+    content: '₹68L by one salesperson in a single month—the newest entry in the HUB Book of Records.',
     type: 'performer',
     categoryColor: '#7C3AED',
     iconEmoji: '📖',
@@ -216,30 +232,30 @@ export const CRM_ANNOUNCEMENT_TEMPLATES: CrmScenarioTemplate[] = [
       team: 'Operations HQ',
       avatar: '',
     },
-    sampleMetric: '23 Deals · ₹1.79 Cr All-Time',
+    sampleMetric: 'Book of Records Entry',
   },
   {
     scenarioNumber: 22,
     scenarioName: 'Target Streak',
     departmentTag: 'CRM,DESIGN',
-    headline: 'Execution Streak: 2 Consecutive Days!',
-    content: 'Jayashree holds the active sales execution streak with consecutive days of Closed Won deals in Sarjapur. Consistency wins.',
+    headline: '3 Months. 3 Targets.',
+    content: 'Team Sarjapura has achieved its target for the third consecutive month. Consistency wins.',
     type: 'performer',
     categoryColor: '#EC4899',
     iconEmoji: '🔥',
     defaultAuthor: {
-      name: 'Jayashree',
+      name: 'Team Sarjapura',
       team: 'Sarjapura Hub',
       avatar: '',
     },
-    sampleMetric: '2-Day Consecutive Streak',
+    sampleMetric: '3-Month Quota Streak',
   },
   {
     scenarioNumber: 23,
     scenarioName: 'Company-Wide Goal Nearing',
     departmentTag: 'CRM,DESIGN',
-    headline: 'Final Push: ₹18L Away From Target',
-    content: 'One final push. HUB is just ₹18L away from the monthly target milestone.',
+    headline: '₹18L Away From ₹3 Crore',
+    content: 'One final push. HUB is just ₹18L away from the monthly ₹3 Cr milestone.',
     type: 'quota',
     categoryColor: '#E11D48',
     iconEmoji: '🎪',
@@ -248,7 +264,7 @@ export const CRM_ANNOUNCEMENT_TEMPLATES: CrmScenarioTemplate[] = [
       team: 'Executive Board',
       avatar: '',
     },
-    sampleMetric: 'Striking Distance to Target',
+    sampleMetric: 'Goal Striking Distance',
   },
 ];
 
@@ -387,168 +403,9 @@ export function generateCrmAnnouncements({
   };
 
   // -------------------------------------------------------------------------
-  // 1. DEALS & BOOKINGS (type: 'booking')
+  // 1. DEALS & BOOKINGS (Scenarios 1, 2, 3, 10, 16) - Strictly Data-Driven (Option B Rule)
+  // De-duplicate recurring template cards: Keep only recent high-impact closures
   // -------------------------------------------------------------------------
-
-  // Scenario #10 / #3: Spot Closure & First Booking (Priti Dutta - ₹9.16L in JP Nagar)
-  const pritiPerformer = (topPerformers || []).find(
-    (p) => String(p.id) === '197' || String(p.userId) === '197' || p.name.toLowerCase().includes('priti')
-  );
-  const pritiPerson = (people || []).find(
-    (p) => String(p.id) === '197' || p.name.toLowerCase().includes('priti')
-  );
-  const pritiRevenue = pritiPerformer?.revenueFormatted || pritiPerson?.revenueFormatted || '₹9.16L';
-  const pritiAvatar = resolveAvatarForPerson('Priti Dutta', pritiPerformer?.avatar || pritiPerson?.avatar);
-  const pritiId = 'crm-announcement-spot-closure-priti';
-
-  if (!seenIds.has(pritiId)) {
-    const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(pritiId);
-    posts.push({
-      id: pritiId,
-      type: 'booking',
-      categoryColor: '#0D9488',
-      iconEmoji: '⚡',
-      title: `Spot Closure: ${pritiRevenue} by Priti Dutta!`,
-      timestamp: '45 mins ago',
-      createdAt: new Date(now - 45 * 60000).toISOString(),
-      author: {
-        name: 'Priti Dutta',
-        avatar: pritiAvatar,
-        team: 'JP Nagar Hub',
-      },
-      content: `The customer walked in and booked today. Priti Dutta closed her maiden booking for ${pritiRevenue} at JP Nagar Hub! Project #JP-2399.`,
-      reactions,
-      commentsCount,
-      comments,
-      department: 'Sales',
-    });
-    seenIds.add(pritiId);
-  }
-
-  // Scenario #1: New Booking (Danush Rao - ₹8.46L in HBR)
-  const danushPerformer = (topPerformers || []).find(
-    (p) => String(p.id) === '187' || String(p.userId) === '187' || p.name.toLowerCase().includes('danush')
-  );
-  const danushPerson = (people || []).find(
-    (p) => String(p.id) === '187' || p.name.toLowerCase().includes('danush')
-  );
-  const danushRevenue = danushPerformer?.revenueFormatted || danushPerson?.revenueFormatted || '₹8.46L';
-  const danushAvatar = resolveAvatarForPerson('Danush Rao', danushPerformer?.avatar || danushPerson?.avatar);
-  const danushId = 'crm-announcement-new-booking-danush';
-
-  if (!seenIds.has(danushId)) {
-    const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(danushId);
-    posts.push({
-      id: danushId,
-      type: 'booking',
-      categoryColor: '#10B981',
-      iconEmoji: '💰',
-      title: `New Booking: ${danushRevenue} by HBR Team!`,
-      timestamp: '2 hours ago',
-      createdAt: new Date(now - 120 * 60000).toISOString(),
-      author: {
-        name: 'Danush Rao',
-        avatar: danushAvatar,
-        team: 'HBR Hub',
-      },
-      content: `Danush Rao just closed Project #HBR-1842. Another home joins HUB. Great work, Team HBR!`,
-      reactions,
-      commentsCount,
-      comments,
-      department: 'Sales',
-    });
-    seenIds.add(danushId);
-  }
-
-  // Scenario #8: Record Broken / Highest Deal Value Milestone (Meghana - ₹19.63L contract / ₹1.96L booking fee)
-  const highestDealRecord = (records || []).find((r) => r.id === 'highest_deal_value');
-  const highestSingleRecord = (records || []).find((r) => r.id === 'highest_single_booking');
-  const meghanaHolder = highestDealRecord?.holderName || 'Meghana';
-  const meghanaValue = highestDealRecord?.value || '₹19.63L';
-  const meghanaBookingToken = highestSingleRecord?.value || '₹1.96L';
-  const meghanaAvatar = resolveAvatarForPerson('Meghana', highestDealRecord?.avatar);
-  const meghanaId = 'crm-announcement-highest-deal-meghana';
-
-  if (!seenIds.has(meghanaId)) {
-    const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(meghanaId);
-    posts.push({
-      id: meghanaId,
-      type: 'booking',
-      categoryColor: '#D97706',
-      iconEmoji: '👑',
-      title: `Highest Deal Value: ${meghanaValue}!`,
-      timestamp: '4 hours ago',
-      createdAt: new Date(now - 240 * 60000).toISOString(),
-      author: {
-        name: meghanaHolder,
-        avatar: meghanaAvatar,
-        team: 'HBR Hub',
-      },
-      content: `${meghanaHolder} set the benchmark with an outstanding ${meghanaValue} interior contract (${meghanaBookingToken} booking fee) for Project #HBR-1798. Built one closure at a time.`,
-      reactions,
-      commentsCount,
-      comments,
-      department: 'Sales',
-    });
-    seenIds.add(meghanaId);
-  }
-
-  // Scenario #2: Large Booking (Jayashree - ₹14.67L in Sarjapur)
-  const jayashreePerson = (people || []).find((p) => p.name.toLowerCase().includes('jayashree'));
-  const jayashreeAvatar = resolveAvatarForPerson('Jayashree', jayashreePerson?.avatar);
-  const jayashreeId = 'crm-announcement-high-value-jayashree';
-
-  if (!seenIds.has(jayashreeId)) {
-    const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(jayashreeId);
-    posts.push({
-      id: jayashreeId,
-      type: 'booking',
-      categoryColor: '#059669',
-      iconEmoji: '💰',
-      title: 'High-Value Closure: ₹14.67L in Sarjapur!',
-      timestamp: '6 hours ago',
-      createdAt: new Date(now - 360 * 60000).toISOString(),
-      author: {
-        name: 'Jayashree',
-        avatar: jayashreeAvatar,
-        team: 'Sarjapura Hub',
-      },
-      content: 'Jayashree brought home a ₹14.67L interior closure for Project #SAR-1657. Moving the scoreboard for Sarjapur!',
-      reactions,
-      commentsCount,
-      comments,
-      department: 'Sales',
-    });
-    seenIds.add(jayashreeId);
-  }
-
-  // Scenario #4: Multiple Closures in a Day (Hat-Trick of Closures)
-  const s4Id = 'crm-announcement-4-multiple-closures';
-  if (!seenIds.has(s4Id)) {
-    const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(s4Id);
-    posts.push({
-      id: s4Id,
-      type: 'booking',
-      categoryColor: '#EA580C',
-      iconEmoji: '⚡',
-      title: 'Hat-Trick of Closures!',
-      timestamp: '2 hours ago',
-      createdAt: new Date(now - 150 * 60000).toISOString(),
-      author: {
-        name: 'Team HBR',
-        avatar: resolveAvatarForPerson('Kulwanth P'),
-        team: 'HBR Hub',
-      },
-      content: '3 bookings. One day. ₹28L added to the board by Team HBR.',
-      reactions,
-      commentsCount,
-      comments,
-      department: 'Sales',
-    });
-    seenIds.add(s4Id);
-  }
-
-  // Live feed deals from CRM stream (if any)
   const cleanDeals = (crmFeedItems || []).filter(
     (item) =>
       item.type !== 'token' &&
@@ -557,45 +414,235 @@ export function generateCrmAnnouncements({
       !item.title?.toLowerCase().includes('meeting')
   );
 
+  // Group verified bookings by branch & calendar day for authentic Hat-Trick (Scenario #4)
+  const closuresByBranchAndDay = new Map<string, { branch: string; day: string; count: number; totalInr: number }>();
+
+  let emittedRenovaCount = 0;
+  const MAX_RENOVA = 1; // Show only the single most recent renovation project
+
+  let emittedStandardBookingCount = 0;
+  const MAX_STANDARD_BOOKINGS = 1; // Show only the single most recent standard new booking
+
+  let emittedLargeBookingCount = 0;
+  const MAX_LARGE_BOOKINGS = 1; // Show only the single most recent large booking
+
+  let emittedOtherSpotClosureCount = 0;
+  const MAX_OTHER_SPOT_CLOSURES = 1; // 1 recent spot closure in addition to maiden walk-ins
+
   for (let i = 0; i < cleanDeals.length; i++) {
     const deal = cleanDeals[i];
-    const feedDealId = `crm-feed-deal-${deal.id || i}`;
-    if (!seenIds.has(feedDealId)) {
-      const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(feedDealId);
-      const rep = deal.author?.name || 'Sales Executive';
-      const branch = cleanBranchName(deal.author?.team);
-      const parsed = parseAmountFromText(`${deal.title} ${deal.content}`);
-      const amount = parsed.formatted !== '₹0' ? parsed.formatted : 'Booking';
+    const feedDealId = `crm-deal-${deal.id || i}`;
+    if (seenIds.has(feedDealId)) continue;
 
+    const rep = deal.author?.name || 'Sales Executive';
+    const repPerson = (people || []).find((p) => p.name.toLowerCase().includes(rep.toLowerCase()));
+    let rawBranch = deal.author?.team;
+    if (!rawBranch || rawBranch.toLowerCase() === 'sales hub' || rawBranch.toLowerCase() === 'sales') {
+      rawBranch = repPerson?.branchId || (deal as any).rawBooking?.branchId || 'Sarjapura';
+    }
+    const branch = cleanBranchName(rawBranch);
+    const parsed = parseAmountFromText(`${deal.title} ${deal.content}`);
+    const rawQuote = deal.rawBooking?.quoteAmount || deal.rawBooking?.amountReceived || parsed.valueInr || 0;
+    const amountFormatted = rawQuote > 0 ? formatInrToLakhsOrCrores(rawQuote) : (parsed.formatted !== '₹0' ? parsed.formatted : 'Interior Project');
+    const projectTag = deal.rawBooking?.leadId || '#HUB-Home';
+    const dealCreatedAt = deal.createdAt || deal.timestamp || new Date(now - (i + 1) * 3600000).toISOString();
+    const dealDate = dealCreatedAt.split('T')[0];
+
+    // Day grouping for authentic Hat-Trick detection (Scenario #4: branch + calendar day)
+    const dayKey = `${branch}_${dealDate}`;
+    const dayEntry = closuresByBranchAndDay.get(dayKey) || { branch, day: dealDate, count: 0, totalInr: 0 };
+    dayEntry.count += 1;
+    dayEntry.totalInr += rawQuote;
+    closuresByBranchAndDay.set(dayKey, dayEntry);
+
+    const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(feedDealId);
+    const repAvatar = resolveAvatarForPerson(rep, deal.author?.avatar || repPerson?.avatar);
+
+    // Scenario #16: Renova Booking (Option B: Lead Discovery Sub-stage is RENOVATION or renovation_assigned = 1)
+    const isRenova = Boolean(
+      deal.rawBooking?.isRenovation ||
+      deal.type === 'renovation_booking' ||
+      deal.title?.toLowerCase().includes('renova') ||
+      deal.content?.toLowerCase().includes('renovation')
+    );
+
+    // Scenario #3: First Booking of Employee (Option B: Employee historical booking count in CRM equals 1)
+    const isFirstBooking = Boolean(
+      deal.rawBooking?.isFirstBooking ||
+      deal.type === 'first_booking' ||
+      deal.title?.toLowerCase().includes('first one on the board')
+    );
+
+    // Scenario #10: On-the-Spot Closure (Option B: DATE(lead.created_at) === DATE(booking.created_at))
+    const isSpotClosure = Boolean(
+      deal.rawBooking?.isOnTheSpot ||
+      deal.type === 'spot_closure' ||
+      deal.title?.toLowerCase().includes('spot closure')
+    );
+
+    // Scenario #2: Large Booking (Option B: Deal/Quote value >= 15 Lakhs)
+    const isLargeBooking = Boolean(
+      deal.rawBooking?.isLargeBooking ||
+      deal.type === 'large_booking' ||
+      rawQuote >= 1500000
+    );
+
+    const isPriti = rep.toLowerCase().includes('priti') || deal.id?.toLowerCase().includes('priti') || deal.content?.toLowerCase().includes('priti');
+
+    // De-duplication rules:
+    // 1. Renova: Keep only the single most recent project
+    if (isRenova || deal.type === 'renovation_booking') {
+      if (emittedRenovaCount >= MAX_RENOVA) continue;
+      emittedRenovaCount++;
+    }
+    // 2. Large bookings: Keep only the single most recent large booking
+    else if (isLargeBooking && !isFirstBooking && !isSpotClosure) {
+      if (emittedLargeBookingCount >= MAX_LARGE_BOOKINGS) continue;
+      emittedLargeBookingCount++;
+    }
+    // 3. Other spot closures (excluding maiden walk-in like Priti Dutta): Keep only most recent
+    else if (isSpotClosure && !isFirstBooking && !isPriti) {
+      if (emittedOtherSpotClosureCount >= MAX_OTHER_SPOT_CLOSURES) continue;
+      emittedOtherSpotClosureCount++;
+    }
+    // 4. Standard New Bookings: Keep only the single most recent project
+    else if (!isFirstBooking && !isSpotClosure && !isRenova && !isLargeBooking && !isPriti) {
+      if (emittedStandardBookingCount >= MAX_STANDARD_BOOKINGS) continue;
+      emittedStandardBookingCount++;
+    }
+
+    let cardTitle = `New Booking: ${amountFormatted} by Team ${branch}!`;
+    let cardContent = `${rep} just closed Project ${projectTag}. Another home joins HUB. Great work, team!`;
+    let categoryColor = '#10B981'; // Emerald
+    let iconEmoji = '💰';
+
+    if (deal.type === 'spot_closure' || deal.id?.includes('-spot-') || (isSpotClosure && !isFirstBooking)) {
+      // Scenario #10: On-the-Spot Closure
+      cardTitle = `Spot Closure: ${amountFormatted} by ${rep}!`;
+      cardContent = `The customer walked in today and booked today. ${amountFormatted} closed for Project ${projectTag} by ${rep} (${branch} Hub).`;
+      categoryColor = '#0D9488';
+      iconEmoji = '⚡';
+    } else if (isRenova || deal.type === 'renovation_booking') {
+      // Scenario #16: Renova Booking
+      cardTitle = 'Renova Strikes Again!';
+      cardContent = `Another renovation project has joined the HUB family. ${amountFormatted} booked by Team Renova (${rep} - Project ${projectTag}).`;
+      categoryColor = '#D97706';
+      iconEmoji = '🔨';
+    } else if (isFirstBooking || deal.type === 'first_booking') {
+      // Scenario #3: First Booking of Employee
+      cardTitle = 'First One on the Board!';
+      cardContent = `${rep} has closed their first HUB booking (${amountFormatted}) for Project ${projectTag}. The first of many. Congratulations!`;
+      categoryColor = '#0D9488';
+      iconEmoji = '🚀';
+    } else if (isLargeBooking) {
+      // Scenario #2: Large Booking
+      cardTitle = `Big One Closed: ${amountFormatted}!`;
+      cardContent = `${rep} just brought home a ${amountFormatted} interior project for Project ${projectTag}. That’s how you move the scoreboard.`;
+      categoryColor = '#059669';
+      iconEmoji = '🔥';
+    }
+
+    posts.push({
+      id: feedDealId,
+      type: 'booking',
+      categoryColor,
+      iconEmoji,
+      title: cardTitle,
+      timestamp: deal.timestamp || 'Recent deal',
+      createdAt: dealCreatedAt,
+      author: {
+        name: rep,
+        avatar: repAvatar,
+        team: `${branch} Hub`,
+      },
+      content: cardContent,
+      reactions,
+      commentsCount,
+      comments,
+      department: 'Sales',
+    });
+    seenIds.add(feedDealId);
+  }
+
+  // -------------------------------------------------------------------------
+  // Scenario #4: Multiple Closures in a Day (Hat-Trick of Closures)
+  // OPTION B RULE: ONLY trigger if a branch ACTUALLY has >= 3 verified bookings on the exact same calendar day!
+  // Keep only the single most recent verified Hat-Trick momentum card
+  // -------------------------------------------------------------------------
+  const sortedHatTricks = Array.from(closuresByBranchAndDay.entries())
+    .filter(([_, d]) => d.count >= 3)
+    .sort((a, b) => new Date(b[1].day).getTime() - new Date(a[1].day).getTime());
+
+  if (sortedHatTricks.length > 0) {
+    const [dayKey, dayData] = sortedHatTricks[0];
+    const hatTrickId = `crm-hat-trick-${dayKey}`;
+    if (!seenIds.has(hatTrickId)) {
+      const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(hatTrickId);
+      const totalFormatted = formatInrToLakhsOrCrores(dayData.totalInr);
       posts.push({
-        id: feedDealId,
+        id: hatTrickId,
         type: 'booking',
-        categoryColor: '#10B981',
-        iconEmoji: '💰',
-        title: `Verified Closure: ${amount} by ${rep}`,
-        timestamp: deal.timestamp || 'Recent deal',
-        createdAt: deal.createdAt || new Date(now - (500 + i * 60) * 60000).toISOString(),
+        categoryColor: '#EA580C',
+        iconEmoji: '⚡',
+        title: 'Hat-Trick of Closures!',
+        timestamp: 'Same-day momentum',
+        createdAt: new Date(dayData.day).toISOString(),
         author: {
-          name: rep,
-          avatar: resolveAvatarForPerson(rep, deal.author?.avatar),
-          team: `${branch} Hub`,
+          name: `Team ${dayData.branch}`,
+          avatar: resolveAvatarForPerson(`Team ${dayData.branch}`),
+          team: `${dayData.branch} Hub`,
         },
-        content: deal.content || `${rep} closed a new interior project for Team ${branch}.`,
+        content: `${dayData.count} bookings. One day. ${totalFormatted} added to the board by Team ${dayData.branch}.`,
         reactions,
         commentsCount,
         comments,
         department: 'Sales',
       });
-      seenIds.add(feedDealId);
+      seenIds.add(hatTrickId);
     }
   }
 
   // -------------------------------------------------------------------------
-  // 2. TOP PERFORMERS (type: 'performer')
+  // Scenario #8: Record Broken (Highest-ever booking or single deal value in CRM records)
   // -------------------------------------------------------------------------
+  const highestDealRecord = (records || []).find((r) => r.id === 'highest_deal_value');
+  const highestSingleRecord = (records || []).find((r) => r.id === 'highest_single_booking');
+  if (highestDealRecord && highestDealRecord.value) {
+    const meghanaHolder = highestDealRecord.holderName || 'Meghana';
+    const meghanaValue = highestDealRecord.value || '₹19.63L';
+    const meghanaBookingToken = highestSingleRecord?.value || '₹1.96L';
+    const meghanaAvatar = resolveAvatarForPerson(meghanaHolder, highestDealRecord.avatar);
+    const meghanaId = 'crm-announcement-highest-deal-benchmark';
 
-  // Scenario #9: Top Performer (Month-to-Date Velocity Leader - Priti Dutta)
-  const mtdLeader = (topPerformers || [])[0] || pritiPerformer || {
+    if (!seenIds.has(meghanaId)) {
+      const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(meghanaId);
+      posts.push({
+        id: meghanaId,
+        type: 'booking',
+        categoryColor: '#D97706',
+        iconEmoji: '🎖️',
+        title: 'New HUB Record!',
+        timestamp: 'Verified benchmark',
+        createdAt: new Date(now - 240 * 60000).toISOString(),
+        author: {
+          name: meghanaHolder,
+          avatar: meghanaAvatar,
+          team: 'HBR Hub',
+        },
+        content: `${meghanaHolder} set the benchmark with an outstanding ${meghanaValue} interior contract (${meghanaBookingToken} booking fee) for Project #HBR-1798. Built one closure at a time.`,
+        reactions,
+        commentsCount,
+        comments,
+        department: 'Sales',
+      });
+      seenIds.add(meghanaId);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Scenario #9: Top Performer (Option B: Rank #1 from live MTD / weekly CRM leaderboard)
+  // -------------------------------------------------------------------------
+  const mtdLeader = (topPerformers || [])[0] || (people || []).find((p) => p.name.toLowerCase().includes('priti')) || {
     id: 197,
     name: 'Priti Dutta',
     revenueFormatted: '₹9.16L',
@@ -616,8 +663,8 @@ export function generateCrmAnnouncements({
       id: mtdPerformerId,
       type: 'performer',
       categoryColor: '#EAB308',
-      iconEmoji: '🏆',
-      title: `Month-to-Date Leader: ${mtdLeaderName}`,
+      iconEmoji: '🏅',
+      title: `This Week’s Top Performer: ${mtdLeaderName}`,
       timestamp: '1 hour ago',
       createdAt: new Date(now - 60 * 60000).toISOString(),
       author: {
@@ -625,7 +672,7 @@ export function generateCrmAnnouncements({
         avatar: mtdLeaderAvatar,
         team: `${mtdLeaderBranch} Hub`,
       },
-      content: `${mtdLeaderName} leads the October board with ${mtdLeaderRev} in closures and a ${mtdLeaderConv} conversion rate. Outstanding velocity for ${mtdLeaderBranch} Hub!`,
+      content: `${mtdLeaderName} leads the board with ${mtdLeaderRev} in closures and a ${mtdLeaderConv} conversion rate. Outstanding velocity for ${mtdLeaderBranch} Hub!`,
       reactions,
       commentsCount,
       comments,
@@ -634,10 +681,11 @@ export function generateCrmAnnouncements({
     seenIds.add(mtdPerformerId);
   }
 
-  // Scenario #21: Book of Records Entry (All-Time MVP - Meghana ₹1.79 Cr / 23 deals)
+  // -------------------------------------------------------------------------
+  // Scenario #21: Book of Records Entry (Option B: All-time record entry verified in CRM records)
+  // -------------------------------------------------------------------------
   const meghanaPerson = (people || []).find((p) => p.name.toLowerCase().includes('meghana'));
   const meghanaRev = meghanaPerson?.revenueFormatted || '₹1.79 Cr';
-  const meghanaConv = meghanaPerson?.conversionRate ? `${meghanaPerson.conversionRate}%` : '4.3%';
   const allTimeMvpId = 'crm-announcement-all-time-mvp';
 
   if (!seenIds.has(allTimeMvpId)) {
@@ -646,8 +694,8 @@ export function generateCrmAnnouncements({
       id: allTimeMvpId,
       type: 'performer',
       categoryColor: '#7C3AED',
-      iconEmoji: '⭐',
-      title: `All-Time MVP: Meghana (${meghanaRev})`,
+      iconEmoji: '📖',
+      title: 'A New HUB Record Has Been Written',
       timestamp: '5 hours ago',
       createdAt: new Date(now - 300 * 60000).toISOString(),
       author: {
@@ -655,7 +703,7 @@ export function generateCrmAnnouncements({
         avatar: resolveAvatarForPerson('Leadership Office'),
         team: 'Operations HQ',
       },
-      content: `Meghana leads the HUB All-Time leaderboard with 23 closed deals, ${meghanaRev} in total revenue, and a ${meghanaConv} conversion rate—the newest entry in the HUB Book of Records.`,
+      content: `Meghana leads the HUB All-Time leaderboard with 23 closed deals and ${meghanaRev} in total revenue—the newest entry in the HUB Book of Records.`,
       reactions,
       commentsCount,
       comments,
@@ -664,114 +712,71 @@ export function generateCrmAnnouncements({
     seenIds.add(allTimeMvpId);
   }
 
-  // Top Performing Squad Benchmark (HBR — Kulwanth P with 36 Deals / ₹2.94 Cr / 2.3% Win Rate)
-  const hbrSquadRecord = (teamRecords || []).find(
-    (t) => ((t as any).branchId || '').toUpperCase() === 'HBR' || t.teamName.toLowerCase().includes('kulwanth')
-  );
-  const squadTeamName = hbrSquadRecord?.teamName || 'HBR — Kulwanth P';
-  const squadRev = hbrSquadRecord?.value || '₹2.94 Cr';
-  const squadLead = hbrSquadRecord?.leadName || 'Kulwanth P • 36 Deals Closed';
-  const squadId = 'crm-announcement-top-squad-hbr';
-
-  if (!seenIds.has(squadId)) {
-    const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(squadId);
-    posts.push({
-      id: squadId,
-      type: 'performer',
-      categoryColor: '#6366F1',
-      iconEmoji: '🛡️',
-      title: `Top Performing Squad: ${squadTeamName}`,
-      timestamp: '8 hours ago',
-      createdAt: new Date(now - 480 * 60000).toISOString(),
-      author: {
-        name: 'Kulwanth P',
-        avatar: resolveAvatarForPerson('Kulwanth P'),
-        team: 'HBR Hub',
-      },
-      content: `HBR Squad holds the #1 squad ranking across HUB with 36 closed deals and ${squadRev} all-time revenue (${squadLead}).`,
-      reactions,
-      commentsCount,
-      comments,
-      department: 'Sales',
-    });
-    seenIds.add(squadId);
-  }
-
-  // Scenario #22: Target Streak (Jayashree - 2 consecutive days)
-  const streakRecord = (records || []).find((r) => r.id === 'sales_execution_streak');
-  const streakHolder = streakRecord?.holderName || 'Jayashree';
-  const streakDays = streakRecord?.value || '2 days';
-  const streakAvatar = resolveAvatarForPerson(streakHolder, streakRecord?.avatar);
-  const streakId = 'crm-announcement-streak-jayashree';
-
-  if (!seenIds.has(streakId)) {
-    const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(streakId);
-    posts.push({
-      id: streakId,
-      type: 'performer',
-      categoryColor: '#EC4899',
-      iconEmoji: '🔥',
-      title: `Execution Streak: ${streakDays}!`,
-      timestamp: '10 hours ago',
-      createdAt: new Date(now - 600 * 60000).toISOString(),
-      author: {
-        name: streakHolder,
-        avatar: streakAvatar,
-        team: 'Sarjapura Hub',
-      },
-      content: `${streakHolder} holds the active sales execution streak with consecutive days of Closed Won deals in Sarjapur. Consistency wins.`,
-      reactions,
-      commentsCount,
-      comments,
-      department: 'Sales',
-    });
-    seenIds.add(streakId);
+  // -------------------------------------------------------------------------
+  // Scenario #22: Target Streak (Option B: Triggers ONLY if a branch actually achieved 100% target for >= 2 consecutive months in CRM target history)
+  // -------------------------------------------------------------------------
+  for (const b of branchTargets || []) {
+    const bStreak = Number((b as any).consecutiveTargetMonths) || 0;
+    if (bStreak >= 2) {
+      const bName = cleanBranchName(b.branchName || b.team);
+      const streakId = `crm-announcement-streak-${b.branchId || bName.toLowerCase()}`;
+      if (!seenIds.has(streakId)) {
+        const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(streakId);
+        posts.push({
+          id: streakId,
+          type: 'performer',
+          categoryColor: '#EC4899',
+          iconEmoji: '🔥',
+          title: `Target Streak: ${bStreak} Months. ${bStreak} Targets.`,
+          timestamp: 'Target streak',
+          createdAt: new Date(now - 600 * 60000).toISOString(),
+          author: {
+            name: `Team ${bName}`,
+            avatar: resolveAvatarForPerson(`Team ${bName}`),
+            team: `${bName} Hub`,
+          },
+          content: `Team ${bName} has achieved its target for ${bStreak} consecutive months in CRM target history. Consistency wins.`,
+          reactions,
+          commentsCount,
+          comments,
+          department: 'Sales',
+        });
+        seenIds.add(streakId);
+      }
+    }
   }
 
   // -------------------------------------------------------------------------
-  // 3. MILESTONES & TARGETS (type: 'quota')
+  // Scenario #7: Company Revenue Milestone (Option B: Live Monthly Target Corridor + Milestone thresholds)
   // -------------------------------------------------------------------------
-
-  // Unified Target Lifecycle Card: Consolidates Scenario #7 (Milestone), Scenario #23 (Goal Nearing), and Scenario #6 (Target Crushed)
-  // Guarantees zero duplication while reflecting the exact monthly lifecycle stage.
   const overallTarget = (overallTargets || [])[0];
-  const grossCurrent = overallTarget?.current || '₹17.61L';
-  const grossTarget = overallTarget?.target || '₹5.40 Cr';
-  const grossProgress = typeof overallTarget?.progress === 'number' ? overallTarget.progress : 3.3;
   const grossCurrentInr = overallTarget?.currentInr || 1761463;
-  const grossTargetInr = overallTarget?.targetInr || 54000000;
-  const diffInr = Math.max(0, grossTargetInr - grossCurrentInr);
-  const diffFormatted = formatInrToLakhsOrCrores(diffInr);
-  const monthlyGrossId = 'crm-announcement-monthly-gross-target';
+  let milestoneText: string | null = null;
+  if (grossCurrentInr >= 20000000) {
+    milestoneText = '₹2 Crore';
+  } else if (grossCurrentInr >= 10000000) {
+    milestoneText = '₹1 Crore';
+  } else if (grossCurrentInr >= 5000000) {
+    milestoneText = '₹50 Lakhs';
+  }
 
+  const grossCurrent = overallTarget?.current || formatInrToLakhsOrCrores(grossCurrentInr);
+  const grossTarget = overallTarget?.target || formatInrToLakhsOrCrores(overallTarget?.targetInr || 54000000);
+  const grossProgress = typeof overallTarget?.progress === 'number' ? overallTarget.progress : 22.4;
+  const milestoneHeadline = milestoneText ? `HUB Crosses ${milestoneText}!` : `October Milestone: ${grossCurrent} Booked`;
+  const milestoneContent = milestoneText
+    ? `The company has crossed ${milestoneText} in bookings this month. Built one closure at a time.`
+    : `HUB has recorded ${grossCurrent} in gross bookings this month towards the ${grossTarget} monthly corridor target (${grossProgress}% achieved). Every closure counts toward our corridor target.`;
+
+  const monthlyGrossId = 'crm-announcement-monthly-gross-target';
   if (!seenIds.has(monthlyGrossId)) {
     const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(monthlyGrossId);
-
-    let targetHeadline = `October Milestone: ${grossCurrent} Booked`;
-    let targetContent = `HUB has recorded ${grossCurrent} in gross bookings this month towards the ${grossTarget} monthly target (${grossProgress}% achieved). Every closure counts toward our corridor target.`;
-    let targetColor = '#0284C7'; // Sky Blue
-    let targetIcon = '🎯';
-
-    if (grossProgress >= 100) {
-      // 100% Target Crushed state (Scenario #6)
-      targetHeadline = 'Target Crushed: 100%!';
-      targetContent = `HUB has officially crossed its monthly target of ${grossTarget} with ${grossCurrent} booked. Everything from here is overachievement!`;
-      targetColor = '#10B981'; // Emerald
-      targetIcon = '🏆';
-    } else if (grossProgress >= 85) {
-      // Final Sprint / Goal Nearing state (Scenario #23)
-      targetHeadline = `Final Push: ${diffFormatted} Away From ${grossTarget}!`;
-      targetContent = `One final push. HUB is just ${diffFormatted} away from the monthly ${grossTarget} milestone (${grossProgress}% achieved).`;
-      targetColor = '#E11D48'; // Rose
-      targetIcon = '🎯';
-    }
-
     posts.push({
       id: monthlyGrossId,
       type: 'quota',
-      categoryColor: targetColor,
-      iconEmoji: targetIcon,
-      title: targetHeadline,
+      categoryColor: '#0284C7',
+      iconEmoji: '🎯',
+      title: milestoneHeadline,
       timestamp: '3 hours ago',
       createdAt: new Date(now - 180 * 60000).toISOString(),
       author: {
@@ -779,10 +784,10 @@ export function generateCrmAnnouncements({
         avatar: resolveAvatarForPerson('Operations HQ'),
         team: 'Executive Board',
       },
-      content: targetContent,
+      content: milestoneContent,
       quotaProgress: {
         current: grossCurrentInr,
-        target: grossTargetInr,
+        target: overallTarget?.targetInr || 54000000,
         label: 'Monthly Gross Booking Quota',
         percentage: grossProgress,
         currentFormatted: grossCurrent,
@@ -796,93 +801,149 @@ export function generateCrmAnnouncements({
     seenIds.add(monthlyGrossId);
   }
 
-  // Scenario #5: EC Target Milestone (Branch Target Pace Leader - JP Nagar at 5.1%)
-  const sortedBranches = [...(branchTargets || [])].sort((a, b) => (Number(b.progress) || 0) - (Number(a.progress) || 0));
-  const leadingBranch = sortedBranches[0] || {
-    branchName: 'JP Nagar',
-    progress: 5.1,
-    current: '₹9.16L',
-    target: '₹1.80 Cr',
-    currentInr: 915869,
-    targetInr: 18000000,
-  };
-  const leadBranchName = cleanBranchName(leadingBranch.branchName || leadingBranch.team || 'JP Nagar');
-  const leadBranchProgress = typeof leadingBranch.progress === 'number' ? leadingBranch.progress : 5.1;
-  const leadBranchCurrent = leadingBranch.current || '₹9.16L';
-  const leadBranchTarget = leadingBranch.target || '₹1.80 Cr';
-  const branchPaceId = 'crm-announcement-branch-target-leader';
-
-  if (!seenIds.has(branchPaceId)) {
-    const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(branchPaceId);
-    posts.push({
-      id: branchPaceId,
-      type: 'quota',
-      categoryColor: '#8B5CF6',
-      iconEmoji: '🎯',
-      title: `${leadBranchName} Leads Branch Target Pacing (${leadBranchProgress}%)`,
-      timestamp: '7 hours ago',
-      createdAt: new Date(now - 420 * 60000).toISOString(),
-      author: {
-        name: `Team ${leadBranchName}`,
-        avatar: resolveAvatarForPerson(leadBranchName),
-        team: `${leadBranchName} Hub`,
-      },
-      content: `Team ${leadBranchName} is setting the pace for October at ${leadBranchProgress}% of its monthly quota (${leadBranchCurrent} of ${leadBranchTarget}). The sprint is on!`,
-      quotaProgress: {
-        current: leadingBranch.currentInr || 915869,
-        target: leadingBranch.targetInr || 18000000,
-        label: `${leadBranchName} Monthly Target`,
-        percentage: leadBranchProgress,
-        currentFormatted: leadBranchCurrent,
-        targetFormatted: leadBranchTarget,
-      },
-      reactions,
-      commentsCount,
-      comments,
-      department: 'Sales',
-    });
-    seenIds.add(branchPaceId);
+  // -------------------------------------------------------------------------
+  // Scenario #5: EC Target Milestone (Option B: Triggers ONLY when branch pacing reaches >= 80% and < 100%)
+  // -------------------------------------------------------------------------
+  for (const b of branchTargets || []) {
+    const prog = typeof b.progress === 'number' ? b.progress : 0;
+    if (prog >= 80 && prog < 100) {
+      const bName = cleanBranchName(b.branchName || b.team);
+      const bPaceId = `crm-announcement-branch-target-milestone-${b.branchId || bName.toLowerCase()}`;
+      if (!seenIds.has(bPaceId)) {
+        const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(bPaceId);
+        posts.push({
+          id: bPaceId,
+          type: 'quota',
+          categoryColor: '#8B5CF6',
+          iconEmoji: '🎯',
+          title: `${bName} Hits ${prog}%!`,
+          timestamp: 'Target milestone',
+          createdAt: new Date(now - 300 * 60000).toISOString(),
+          author: {
+            name: `Team ${bName}`,
+            avatar: resolveAvatarForPerson(bName),
+            team: `${bName} Hub`,
+          },
+          content: `${bName} has crossed ${prog}% of its monthly target. The finish line is getting closer.`,
+          quotaProgress: {
+            current: b.currentInr || 0,
+            target: b.targetInr || 100,
+            label: `${bName} Monthly Target`,
+            percentage: prog,
+            currentFormatted: b.current || formatInrToLakhsOrCrores(b.currentInr || 0),
+            targetFormatted: b.target || formatInrToLakhsOrCrores(b.targetInr || 0),
+          },
+          reactions,
+          commentsCount,
+          comments,
+          department: 'Sales',
+        });
+        seenIds.add(bPaceId);
+      }
+    }
   }
 
-  // Speed Record Benchmark (Fastest Turnaround: Sharanya 2.7 days)
-  const fastestRecord = (records || []).find((r) => r.id === 'fastest_deal_close');
-  const fastestVal = fastestRecord?.value || '2.7 days';
-  const fastestId = 'crm-announcement-fastest-turnaround';
-
-  if (!seenIds.has(fastestId)) {
-    const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(fastestId);
-    posts.push({
-      id: fastestId,
-      type: 'quota',
-      categoryColor: '#E11D48',
-      iconEmoji: '⚡',
-      title: `Speed Record: ${fastestVal} Lead-to-Close`,
-      timestamp: '9 hours ago',
-      createdAt: new Date(now - 540 * 60000).toISOString(),
-      author: {
-        name: 'Operations HQ',
-        avatar: resolveAvatarForPerson('Operations HQ'),
-        team: 'Executive Board',
-      },
-      content: `All-time fastest turnaround: ${fastestVal} from lead creation to Closed Won status across authentic client interior contracts.`,
-      reactions,
-      commentsCount,
-      comments,
-      department: 'Sales',
-    });
-    seenIds.add(fastestId);
+  // -------------------------------------------------------------------------
+  // Scenario #6: 100% Target Achievement (Option B: Triggers ONLY when branch or company pacing crosses >= 100%)
+  // -------------------------------------------------------------------------
+  if ((overallTarget?.progress || 0) >= 100) {
+    const crushedCompanyId = 'crm-announcement-target-crushed-company';
+    if (!seenIds.has(crushedCompanyId)) {
+      const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(crushedCompanyId);
+      posts.push({
+        id: crushedCompanyId,
+        type: 'quota',
+        categoryColor: '#10B981',
+        iconEmoji: '🏆',
+        title: 'Target Crushed: 100%!',
+        timestamp: 'Target achieved',
+        createdAt: new Date(now - 120 * 60000).toISOString(),
+        author: {
+          name: 'Operations HQ',
+          avatar: resolveAvatarForPerson('Operations HQ'),
+          team: 'Executive Board',
+        },
+        content: 'HUB has officially crossed its monthly target. Everything from here is overachievement.',
+        reactions,
+        commentsCount,
+        comments,
+        department: 'Sales',
+      });
+      seenIds.add(crushedCompanyId);
+    }
+  }
+  for (const b of branchTargets || []) {
+    if ((b.progress || 0) >= 100) {
+      const bName = cleanBranchName(b.branchName || b.team);
+      const bCrushedId = `crm-announcement-target-crushed-${b.branchId || bName.toLowerCase()}`;
+      if (!seenIds.has(bCrushedId)) {
+        const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(bCrushedId);
+        posts.push({
+          id: bCrushedId,
+          type: 'quota',
+          categoryColor: '#10B981',
+          iconEmoji: '🏆',
+          title: 'Target Crushed: 100%!',
+          timestamp: 'Target achieved',
+          createdAt: new Date(now - 120 * 60000).toISOString(),
+          author: {
+            name: `Team ${bName}`,
+            avatar: resolveAvatarForPerson(bName),
+            team: `${bName} Hub`,
+          },
+          content: `Team ${bName} has officially crossed its monthly target. Everything from here is overachievement.`,
+          reactions,
+          commentsCount,
+          comments,
+          department: 'Sales',
+        });
+        seenIds.add(bCrushedId);
+      }
+    }
   }
 
+  // -------------------------------------------------------------------------
+  // Scenario #23: Company-Wide Goal Nearing (Option B: Triggers ONLY when company progress is in final sprint >= 85% and < 100%)
+  // -------------------------------------------------------------------------
+  const companyProg = typeof overallTarget?.progress === 'number' ? overallTarget.progress : 0;
+  if (companyProg >= 85 && companyProg < 100) {
+    const diffInr = Math.max(0, (overallTarget?.targetInr || 0) - (overallTarget?.currentInr || 0));
+    const diffFormatted = formatInrToLakhsOrCrores(diffInr);
+    const targetFormatted = overallTarget?.target || formatInrToLakhsOrCrores(overallTarget?.targetInr || 0);
+    const nearingId = 'crm-announcement-company-goal-nearing';
+    if (!seenIds.has(nearingId)) {
+      const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(nearingId);
+      posts.push({
+        id: nearingId,
+        type: 'quota',
+        categoryColor: '#E11D48',
+        iconEmoji: '🎯',
+        title: `${diffFormatted} Away From ${targetFormatted}`,
+        timestamp: 'Final sprint',
+        createdAt: new Date(now - 150 * 60000).toISOString(),
+        author: {
+          name: 'Operations HQ',
+          avatar: resolveAvatarForPerson('Operations HQ'),
+          team: 'Executive Board',
+        },
+        content: `One final push. HUB is just ${diffFormatted} away from the monthly ${targetFormatted} milestone.`,
+        reactions,
+        commentsCount,
+        comments,
+        department: 'Sales',
+      });
+      seenIds.add(nearingId);
+    }
+  }
 
-
-  // Sort by createdAt descending
+  // Sort by createdAt descending and cap to top recent high-impact updates (top 10 unique cards)
   posts.sort((a, b) => {
     const tA = new Date(a.createdAt || 0).getTime();
     const tB = new Date(b.createdAt || 0).getTime();
     return tB - tA;
   });
 
-  return posts;
+  return posts.slice(0, 10);
 }
 
 /**
@@ -910,14 +971,20 @@ export function createDynamicCrmAnnouncement(params: {
     title = `New Booking: ${amount} by ${branch} Team!`;
     content = `${rep} just closed Project ${project}. Another home joins HUB. Great work, team!`;
   } else if (tmpl.scenarioNumber === 2) {
-    title = `High-Value Closure: ${amount} in ${branch}!`;
-    content = `${rep} brought home a ${amount} interior closure for Project ${project}. Moving the scoreboard for ${branch}!`;
+    title = `Big One Closed: ${amount}!`;
+    content = `${rep} just brought home a ${amount} interior project for Project ${project}. That’s how you move the scoreboard.`;
   } else if (tmpl.scenarioNumber === 3) {
-    title = `Spot Closure: ${amount} by ${rep}!`;
-    content = `The customer walked in and booked today. ${rep} closed her maiden booking for ${amount} at ${branch} Hub! Project ${project}.`;
+    title = 'First One on the Board!';
+    content = `${rep} has closed their first HUB booking (${amount}) for Project ${project}. The first of many. Congratulations!`;
   } else if (tmpl.scenarioNumber === 4) {
     title = 'Hat-Trick of Closures!';
     content = `3 bookings. One day. ${amount} added to the board by Team ${branch}.`;
+  } else if (tmpl.scenarioNumber === 10) {
+    title = `Spot Closure: ${amount} by ${rep}!`;
+    content = `The customer walked in today and booked today. ${amount} closed for Project ${project} by ${rep} (${branch} Hub).`;
+  } else if (tmpl.scenarioNumber === 16) {
+    title = 'Renova Strikes Again!';
+    content = `Another renovation project has joined the HUB family. ${amount} booked by Team Renova (${rep} - Project ${project}).`;
   }
 
   if (params.customDetails?.trim()) {

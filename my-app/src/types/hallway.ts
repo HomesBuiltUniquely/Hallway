@@ -223,6 +223,19 @@ export interface HallwayFeedItem {
   createdAt?: string;
   author?: HallwayFeedAuthor;
   department?: string;
+  rawBooking?: {
+    bookingId: string;
+    leadId?: string | number;
+    quoteAmount?: number;
+    amountReceived?: number;
+    isFirstBooking?: boolean;
+    isRenovation?: boolean;
+    isOnTheSpot?: boolean;
+    isLargeBooking?: boolean;
+    customerName?: string;
+    branchName?: string;
+    createdAt?: string;
+  };
 }
 
 export interface HallwayFeedResponse {

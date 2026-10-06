@@ -23,6 +23,13 @@ const PERIODS: { label: string; value: LeaderboardPeriod }[] = [
   { label: 'All-Time', value: 'all_time' },
 ];
 
+const PERIOD_SUBTITLES: Record<LeaderboardPeriod, string> = {
+  today: "Today's corridor leaders driving active deal closures and immediate momentum.",
+  mtd: "This month's pace-setters driving active corridor velocity and booking impact.",
+  qtd: "Quarterly champions setting the benchmark for conversion velocity and deal size.",
+  all_time: "HUB Hall of Fame: Celebrating all-time record holders and elite producers.",
+};
+
 const DEPARTMENTS = [
   'All Departments',
   'Sales',
@@ -155,6 +162,10 @@ function LeaderboardsInner() {
     });
   }, [data?.teams, localSearch, activeDepartment]);
 
+  // Keep Top 5 only across MTD, QTD, and All-Time
+  const topIndividuals = useMemo(() => individuals.slice(0, 5), [individuals]);
+  const topTeams = useMemo(() => teams.slice(0, 5), [teams]);
+
   return (
     <div className="space-y-6 font-sans">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -201,7 +212,7 @@ function LeaderboardsInner() {
               </h2>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Top performers ranked by highest gross booking value and conversion efficiency.
+              {PERIOD_SUBTITLES[period] || PERIOD_SUBTITLES.all_time}
             </p>
           </div>
 
@@ -253,7 +264,7 @@ function LeaderboardsInner() {
         {loading ? (
           <CorridorSkeleton rows={5} />
         ) : view === 'Individual' ? (
-          individuals.length === 0 ? (
+          topIndividuals.length === 0 ? (
             <EmptyState
               title="No individual standings yet"
               description="Live sales velocity ranks will appear here when CRM returns people for this period."
@@ -271,7 +282,7 @@ function LeaderboardsInner() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-medium">
-                  {individuals.map((member) => {
+                  {topIndividuals.map((member) => {
                     const rankStyles =
                       member.rank === 1
                         ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300'
@@ -348,7 +359,7 @@ function LeaderboardsInner() {
               </table>
             </div>
           )
-        ) : teams.length === 0 ? (
+        ) : topTeams.length === 0 ? (
           <EmptyState
             title="No team standings yet"
             description="Squad velocity ranks will appear here when CRM returns teams for this period."
@@ -366,7 +377,7 @@ function LeaderboardsInner() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-medium">
-                {teams.map((team) => {
+                {topTeams.map((team) => {
                   const teamRankStyles =
                     team.rank === 1
                       ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300'
@@ -422,8 +433,8 @@ function LeaderboardsInner() {
         <div className="pt-2 flex items-center justify-between border-t border-slate-100 dark:border-slate-800 text-xs text-slate-500">
           <span>
             {view === 'Individual'
-              ? `Showing all ${individuals.length} sales executives`
-              : `Showing all ${teams.length} sales squads`}
+              ? `Showing top ${topIndividuals.length} sales executives`
+              : `Showing top ${topTeams.length} sales squads`}
           </span>
           <button
             type="button"

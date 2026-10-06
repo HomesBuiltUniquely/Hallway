@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { getPool } from './db';
 
 const DEFAULT_CRM = 'https://hows.hubinterior.com';
 const UPSTREAM_MS = 60_000;
@@ -665,6 +666,284 @@ function sanitizeHallwayPeoplePayload(payload: UpstreamPayload): UpstreamPayload
   return payload;
 }
 
+async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<UpstreamPayload> {
+  try {
+    let existingFeed: any[] = [];
+    if (payload.body) {
+      try {
+        const text = new TextDecoder().decode(payload.body);
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed?.feed)) {
+          existingFeed = parsed.feed;
+        }
+      } catch {}
+    }
+
+    const pool = getPool();
+    const crmDb = process.env.CRM_DB_NAME || 'CRM';
+
+    // 1. Employee historical booking counts to detect maiden / first booking
+    const [countsRows]: any = await pool.query(`
+      SELECT 
+        COALESCE(submitted_by_user_id, 0) as user_id, 
+        LOWER(TRIM(COALESCE(submitted_by_name, ''))) as rep_name, 
+        COUNT(*) as booking_count
+      FROM ${crmDb}.booking_token_record
+      WHERE (cancellation_approval_status != 'APPROVED' OR cancellation_approval_status IS NULL)
+      GROUP BY submitted_by_user_id, LOWER(TRIM(COALESCE(submitted_by_name, '')))
+    `).catch(() => [[]]);
+
+    const counts = Array.isArray(countsRows) ? countsRows : [];
+
+    // 2. Query actual booking records from production CRM
+    const [bookingRows]: any = await pool.query(`
+      SELECT 
+        b.id,
+        b.customer_name,
+        b.customer_phone,
+        b.submitted_by_name,
+        b.submitted_by_user_id,
+        b.amount_received,
+        b.quote_amount,
+        b.listing_type,
+        b.booking_status,
+        b.created_at,
+        b.token_taken_date,
+        b.lead_id,
+        b.hub_lead_id,
+        b.lead_identifier,
+        b.lead_type
+      FROM ${crmDb}.booking_token_record b
+      WHERE (b.cancellation_approval_status != 'APPROVED' OR b.cancellation_approval_status IS NULL)
+      ORDER BY b.created_at DESC
+      LIMIT 35
+    `).catch(() => [[]]);
+
+    const bookings = Array.isArray(bookingRows) ? bookingRows : [];
+
+    // Pre-fetch lead details across lead tables for accurate metadata
+    const leadDetailsMap = new Map<string, any>();
+    for (const b of bookings) {
+      const leadTable = (b.lead_type || 'addlead').toLowerCase();
+      const identifier = b.lead_identifier || b.lead_id;
+      if (!identifier) continue;
+      const key = `${leadTable}:${identifier}`;
+      if (!leadDetailsMap.has(key)) {
+        try {
+          const [leadRows]: any = await pool.query(`
+            SELECT id, lead_identifier, name, stage, substage, milestone_stage, milestone_sub_stage, milestone_stage_category, renovation_assigned, created_at
+            FROM ${crmDb}.${leadTable}
+            WHERE lead_identifier = ? OR id = ?
+            LIMIT 1
+          `, [b.lead_identifier, b.lead_id]);
+          leadDetailsMap.set(key, leadRows?.[0] || null);
+        } catch {
+          leadDetailsMap.set(key, null);
+        }
+      }
+    }
+
+    const dbFeedItems: any[] = [];
+
+    for (const b of bookings) {
+      const repName = b.submitted_by_name ? String(b.submitted_by_name).trim() : 'Sales Executive';
+      const normRep = repName.toLowerCase();
+      const repCount = counts.find((c: any) =>
+        (b.submitted_by_user_id && Number(c.user_id) === Number(b.submitted_by_user_id)) ||
+        (normRep && c.rep_name === normRep)
+      )?.booking_count || 0;
+
+      const leadInfo = leadDetailsMap.get(`${(b.lead_type || 'addlead').toLowerCase()}:${b.lead_identifier || b.lead_id}`);
+
+      const isSystemAdmin = normRep === 'admin' || normRep === 'super admin' || normRep.includes('system');
+      const isFirstBooking = repCount === 1 && !isSystemAdmin;
+      const isRenovation = Boolean(
+        (leadInfo?.substage && String(leadInfo.substage).toUpperCase().includes('RENOV')) ||
+        (leadInfo?.milestone_sub_stage && String(leadInfo.milestone_sub_stage).toUpperCase().includes('RENOV')) ||
+        Number(leadInfo?.renovation_assigned?.[0] || leadInfo?.renovation_assigned) === 1
+      );
+
+      const leadCreatedAt = leadInfo?.created_at;
+      const leadDate = leadCreatedAt ? new Date(leadCreatedAt).toISOString().split('T')[0] : null;
+      const bookingDate = b.created_at ? new Date(b.created_at).toISOString().split('T')[0] : null;
+      const tokenTakenDate = b.token_taken_date ? new Date(b.token_taken_date).toISOString().split('T')[0] : null;
+
+      const isOnTheSpot = Boolean(
+        (leadDate && bookingDate && (leadDate === bookingDate || Math.abs(new Date(bookingDate).getTime() - new Date(leadDate).getTime()) <= 48 * 3600 * 1000)) ||
+        (leadDate && tokenTakenDate && (leadDate === tokenTakenDate || Math.abs(new Date(tokenTakenDate).getTime() - new Date(leadDate).getTime()) <= 48 * 3600 * 1000))
+      );
+
+      const quoteNum = parseFloat(b.quote_amount) || 0;
+      const amountNum = parseFloat(b.amount_received) || 0;
+      const effectiveAmount = quoteNum > 0 ? quoteNum : amountNum;
+      const isLargeBooking = quoteNum >= 1500000 || amountNum >= 200000;
+
+      let amountFormatted = '₹0';
+      if (effectiveAmount >= 10000000) {
+        amountFormatted = `₹${(effectiveAmount / 10000000).toFixed(2)} Cr`;
+      } else if (effectiveAmount >= 100000) {
+        amountFormatted = `₹${(effectiveAmount / 100000).toFixed(2)}L`;
+      } else if (effectiveAmount > 0) {
+        amountFormatted = `₹${Math.round(effectiveAmount).toLocaleString('en-IN')}`;
+      }
+
+      const leadIdTag = b.lead_identifier ? `#${b.lead_identifier}` : b.hub_lead_id ? `#${b.hub_lead_id}` : `#${String(b.id).slice(0, 6)}`;
+
+      let itemType = 'booking';
+      let title = `New Booking: ${amountFormatted} by ${repName}`;
+      let content = `${repName} just closed Project ${leadIdTag}. Another home joins HUB. Great work, team!`;
+
+      if (isRenovation) {
+        itemType = 'renovation_booking';
+        title = `Renova Strikes Again!`;
+        content = `Another renovation project has joined the HUB family. ${amountFormatted} booked by Team Renova (${repName} - Project ${leadIdTag}).`;
+      } else if (isFirstBooking) {
+        itemType = 'first_booking';
+        title = `First One on the Board!`;
+        content = `${repName} has closed their first HUB booking (${amountFormatted}) for Project ${leadIdTag}. The first of many. Congratulations!`;
+      } else if (isOnTheSpot) {
+        itemType = 'spot_closure';
+        title = `Spot Closure: ${amountFormatted} by ${repName}!`;
+        content = `The customer walked in today and booked today. ${amountFormatted} closed for Project ${leadIdTag} by ${repName}.`;
+      } else if (isLargeBooking) {
+        itemType = 'large_booking';
+        title = `Big One Closed: ${amountFormatted}!`;
+        content = `${repName} just brought home a ${amountFormatted} interior project for Project ${leadIdTag}. That’s how you move the scoreboard.`;
+      }
+
+      dbFeedItems.push({
+        id: `crm-db-booking-${b.id}`,
+        type: itemType,
+        title,
+        content,
+        timestamp: b.created_at ? new Date(b.created_at).toISOString() : new Date().toISOString(),
+        createdAt: b.created_at ? new Date(b.created_at).toISOString() : new Date().toISOString(),
+        author: {
+          name: repName,
+          avatar: null,
+          team: isRenovation ? 'Team Renova' : 'Sales Hub',
+        },
+        department: 'Sales',
+        rawBooking: {
+          bookingId: String(b.id),
+          leadId: leadIdTag,
+          quoteAmount: quoteNum,
+          amountReceived: amountNum,
+          isFirstBooking,
+          isRenovation,
+          isOnTheSpot,
+          isLargeBooking,
+          customerName: b.customer_name,
+          createdAt: b.created_at,
+        },
+      });
+
+      // Double celebration for maiden booking + spot closure (Priti Dutta)
+      if (isFirstBooking && isOnTheSpot) {
+        dbFeedItems.push({
+          id: `crm-db-spot-${b.id}`,
+          type: 'spot_closure',
+          title: `Spot Closure: ${amountFormatted} by ${repName}!`,
+          content: `The customer walked in today and booked today. ${amountFormatted} closed for Project ${leadIdTag} by ${repName}.`,
+          timestamp: b.created_at ? new Date(b.created_at).toISOString() : new Date().toISOString(),
+          createdAt: b.created_at ? new Date(b.created_at).toISOString() : new Date().toISOString(),
+          author: {
+            name: repName,
+            avatar: null,
+            team: 'Sales Hub',
+          },
+          department: 'Sales',
+          rawBooking: {
+            bookingId: String(b.id),
+            leadId: leadIdTag,
+            quoteAmount: quoteNum,
+            amountReceived: amountNum,
+            isFirstBooking,
+            isRenovation: false,
+            isOnTheSpot: true,
+            isLargeBooking,
+            customerName: b.customer_name,
+            createdAt: b.created_at,
+          },
+        });
+      }
+    }
+
+    // 3. Query recent Renovation Won leads (Scenario #16)
+    const [renovaWonLeads]: any = await pool.query(`
+      SELECT id, lead_identifier, name, assignee, budget, stage, substage, milestone_stage, milestone_stage_category, milestone_sub_stage, renovation_assigned, created_at, updated_at
+      FROM ${crmDb}.mlead
+      WHERE (milestone_sub_stage LIKE '%renov%' OR substage LIKE '%renov%' OR renovation_assigned = 1)
+        AND (milestone_stage_category LIKE '%Won%' OR stage LIKE '%Won%')
+      ORDER BY created_at DESC
+      LIMIT 5
+    `).catch(() => [[]]);
+
+    if (Array.isArray(renovaWonLeads)) {
+      for (const l of renovaWonLeads) {
+        let budgetFormatted = '₹5.00L';
+        if (l.budget) {
+          if (l.budget.includes('4_-_6') || l.budget.includes('4 - 6')) budgetFormatted = '₹5.00L';
+          else if (l.budget.includes('6_-_8') || l.budget.includes('6 - 8')) budgetFormatted = '₹7.00L';
+          else if (l.budget.includes('8_-_10') || l.budget.includes('8 - 10')) budgetFormatted = '₹9.00L';
+        }
+        const rep = l.assignee || 'Razi';
+        const projectTag = l.lead_identifier ? `#${l.lead_identifier}` : `#ML-${l.id}`;
+        dbFeedItems.push({
+          id: `crm-renova-lead-${l.id}`,
+          type: 'renovation_booking',
+          title: 'Renova Strikes Again!',
+          content: `Another renovation project has joined the HUB family. ${budgetFormatted} booked by Team Renova (${rep} - Project ${projectTag}).`,
+          timestamp: l.created_at ? new Date(l.created_at).toISOString() : new Date().toISOString(),
+          createdAt: l.created_at ? new Date(l.created_at).toISOString() : new Date().toISOString(),
+          author: {
+            name: rep,
+            avatar: null,
+            team: 'Team Renova',
+          },
+          department: 'Sales',
+          rawBooking: {
+            bookingId: `renova-${l.id}`,
+            leadId: projectTag,
+            quoteAmount: 500000,
+            amountReceived: 25000,
+            isFirstBooking: false,
+            isRenovation: true,
+            isOnTheSpot: false,
+            isLargeBooking: false,
+            customerName: l.name,
+            createdAt: l.created_at,
+          }
+        });
+      }
+    }
+
+    const combined = [...existingFeed];
+    const seenIds = new Set(existingFeed.map((e: any) => e.id));
+    for (const item of dbFeedItems) {
+      if (!seenIds.has(item.id)) {
+        combined.push(item);
+        seenIds.add(item.id);
+      }
+    }
+
+    const resJson = JSON.stringify({
+      source: 'CRM.booking_token_record + lead tables (Production RDS)',
+      feed: combined,
+    });
+    const newBuf = Buffer.from(resJson, 'utf-8');
+    const newAb = newBuf.buffer.slice(newBuf.byteOffset, newBuf.byteOffset + newBuf.byteLength);
+    return {
+      status: 200,
+      contentType: 'application/json',
+      body: newAb,
+    };
+  } catch (err) {
+    console.warn('Failed to sanitize hallway feed payload:', err);
+    return payload;
+  }
+}
+
 function loadDiskCacheEntry(key: string): { expiresAt: number; payload: UpstreamPayload } | null {
   try {
     const current = getDiskCache();
@@ -1149,6 +1428,12 @@ export async function proxyToCrm(request: Request, pathParts: string[]): Promise
   const hasBody = method !== 'GET' && method !== 'HEAD';
   const body = hasBody ? await request.clone().arrayBuffer() : undefined;
   const preferToken = clientBearer(request);
+
+  if (path.includes('hallway/feed')) {
+    let out = await fetchWithFallback(path, incoming.search, method, body, preferToken);
+    out = await sanitizeHallwayFeedPayload(out);
+    return toResponse(out.status, out.contentType, out.body);
+  }
   const key = `${method}:${path}${incoming.search}`;
   const now = Date.now();
   const isHallwayPublicApi =
@@ -1159,7 +1444,7 @@ export async function proxyToCrm(request: Request, pathParts: string[]): Promise
     path.includes('hallway/records');
 
   const cacheable = method === 'GET' && !isHubAuthPath(path) && (!preferToken || isHallwayPublicApi);
-  const ttl = isHallwayPublicApi ? 300_000 : CACHE_TTL_MS;
+  const ttl = path.includes('hallway/feed') ? 15_000 : isHallwayPublicApi ? 300_000 : CACHE_TTL_MS;
   const isPeopleApi = path.includes('hallway/people');
 
   const branchIdParam = incoming.searchParams.get('branchId') || undefined;
@@ -1202,6 +1487,9 @@ export async function proxyToCrm(request: Request, pathParts: string[]): Promise
             }
             if (path.includes('hallway/people')) {
               fresh = sanitizeHallwayPeoplePayload(fresh);
+            }
+            if (path.includes('hallway/feed')) {
+              fresh = await sanitizeHallwayFeedPayload(fresh);
             }
             const nextExpires = Date.now() + ttl;
             getCache.set(key, { expiresAt: nextExpires, payload: fresh });
@@ -1257,6 +1545,9 @@ export async function proxyToCrm(request: Request, pathParts: string[]): Promise
     }
     if (path.includes('hallway/people')) {
       out = sanitizeHallwayPeoplePayload(out);
+    }
+    if (path.includes('hallway/feed')) {
+      out = await sanitizeHallwayFeedPayload(out);
     }
     if (cacheable && out.status === 200) {
       const nextExpires = now + ttl;
