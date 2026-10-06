@@ -7,11 +7,12 @@ const DB_CONFIG = {
   host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT || '3306', 10),
   user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || 'root@00',
+  password: process.env.DB_PASSWORD || 'root@root',
   database: process.env.DB_NAME || 'hallway_db',
   waitForConnections: true,
   connectionLimit: 10,
-  queueLimit: 0
+  queueLimit: 0,
+  connectTimeout: 3000
 };
 
 let pool = null;
@@ -23,7 +24,8 @@ async function initDb() {
       host: DB_CONFIG.host,
       port: DB_CONFIG.port,
       user: DB_CONFIG.user,
-      password: DB_CONFIG.password
+      password: DB_CONFIG.password,
+      connectTimeout: 3000
     });
 
     await adminConn.query(`CREATE DATABASE IF NOT EXISTS \`${DB_CONFIG.database}\`;`);
