@@ -65,7 +65,9 @@ export default function NewPostModal({ isOpen, onClose }: { isOpen: boolean; onC
         {
           name: currentUser.name || 'Leadership Office',
           avatar: currentUser.avatar || '',
-          team: `${currentUser.department || department} Hub`
+          team: `${currentUser.department || department} Hub`,
+          role: currentUser.role || 'ADMIN',
+          email: currentUser.email || '',
         }
       );
 

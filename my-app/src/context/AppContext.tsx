@@ -31,17 +31,28 @@ function mergeReactions(serverReactions?: any, localReactions?: any) {
     joy: 0,
     surprised: 0,
     pray: 0,
+    fire: 0,
+    party: 0,
+    hundred: 0,
+    rocket: 0,
     userThumbsUp: false,
     userClap: false,
     userHeart: false,
     userJoy: false,
     userSurprised: false,
     userPray: false,
+    userFire: false,
+    userParty: false,
+    userHundred: false,
+    userRocket: false,
   };
   const base = { ...blank, ...(serverReactions || {}) };
   if (!localReactions) return base;
 
-  const reactionKeys = ['thumbsUp', 'clap', 'heart', 'joy', 'surprised', 'pray'] as const;
+  const reactionKeys = [
+    'thumbsUp', 'clap', 'heart', 'joy', 'surprised', 'pray',
+    'fire', 'party', 'hundred', 'rocket'
+  ] as const;
   for (const k of reactionKeys) {
     const userK = `user${k.charAt(0).toUpperCase()}${k.slice(1)}`;
     if (localReactions[userK] !== undefined) {
@@ -103,7 +114,7 @@ interface AppContextType {
     type?: FeedPost['type'],
     department?: FeedPost['department'],
     quotaProgress?: FeedPost['quotaProgress'],
-    author?: { name: string; avatar: string; team: string }
+    author?: { name: string; avatar: string; team: string; role?: string; email?: string }
   ) => Promise<FeedPost | null>;
   deleteAnnouncement: (postId: string) => Promise<boolean>;
   deleteComment: (postId: string, commentId: string) => Promise<boolean>;
@@ -481,6 +492,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (p?.id) currentPostsMap.set(p.id, p);
         }
       }
+      if (Array.isArray(announcementPostsRef.current)) {
+        for (const p of announcementPostsRef.current) {
+          if (p?.id) {
+            const prev = currentPostsMap.get(p.id);
+            currentPostsMap.set(p.id, {
+              ...p,
+              reactions: mergeReactions(prev?.reactions, p.reactions),
+              comments: mergeComments(prev?.comments, p.comments),
+            });
+          }
+        }
+      }
+      if (Array.isArray(announcementsData)) {
+        for (const a of announcementsData) {
+          if (a?.id) {
+            const prev = currentPostsMap.get(a.id);
+            currentPostsMap.set(a.id, {
+              ...a,
+              reactions: mergeReactions(a.reactions, prev?.reactions),
+              comments: mergeComments(a.comments, prev?.comments),
+            });
+          }
+        }
+      }
 
       const seenIds = new Set<string>();
       const targetPosts: FeedPost[] = [];
@@ -626,12 +661,42 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       // Merge broadcast announcements + CRM snippet engine
       const announcementPostsMap = new Map<string, FeedPost>();
-      for (const b of announcementBroadcasts) {
-        announcementPostsMap.set(b.id, b);
-      }
+
+      // 1. Dynamic CRM Snippets (Priti Dutta, milestones, records): preserve rich generated copy while merging DB and in-memory reactions/comments
       for (const s of dynamicCrmSnippets) {
-        if (!announcementPostsMap.has(s.id)) {
-          announcementPostsMap.set(s.id, s);
+        const dbPost = announcementsMap.get(s.id);
+        const localPost = currentPostsMap.get(s.id);
+        const reactions = mergeReactions(s.reactions, mergeReactions(dbPost?.reactions, localPost?.reactions));
+        const comments = mergeComments(s.comments, mergeComments(dbPost?.comments, localPost?.comments));
+        announcementPostsMap.set(s.id, {
+          ...s,
+          reactions,
+          comments,
+          commentsCount: Math.max(s.commentsCount || 0, comments.length),
+        });
+      }
+
+      // 2. User broadcast announcements from database
+      for (const b of announcementBroadcasts) {
+        if (announcementPostsMap.has(b.id)) {
+          const existing = announcementPostsMap.get(b.id)!;
+          announcementPostsMap.set(b.id, {
+            ...existing,
+            reactions: mergeReactions(existing.reactions, b.reactions),
+            comments: mergeComments(existing.comments, b.comments),
+            commentsCount: Math.max(existing.commentsCount, b.comments?.length || 0),
+          });
+        } else {
+          announcementPostsMap.set(b.id, b);
+        }
+      }
+
+      // 3. Preserve any in-memory newly created broadcast posts
+      if (Array.isArray(announcementPostsRef.current)) {
+        for (const p of announcementPostsRef.current) {
+          if (p?.id && !announcementPostsMap.has(p.id)) {
+            announcementPostsMap.set(p.id, p);
+          }
         }
       }
 
@@ -739,18 +804,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (res.ok) {
         const data = await res.json();
         if (data?.reactions) {
-          setFeedPosts((prev) =>
-            prev.map((post) => {
-              if (post.id !== postId) return post;
-              return {
-                ...post,
-                reactions: {
-                  ...post.reactions,
-                  ...data.reactions,
-                },
-              };
-            })
-          );
+          const syncReactionPost = (post: FeedPost) => {
+            if (post.id !== postId) return post;
+            return {
+              ...post,
+              reactions: {
+                ...post.reactions,
+                ...data.reactions,
+              },
+            };
+          };
+          setFeedPosts((prev) => prev.map(syncReactionPost));
+          setAnnouncementPosts((prev) => prev.map(syncReactionPost));
         }
       }
     } catch {
@@ -796,7 +861,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   ) => {
     if (!content.trim()) return;
 
-    const targetPost = feedPosts.find((p) => p.id === postId);
+    const targetPost =
+      feedPosts.find((p) => p.id === postId) || announcementPosts.find((p) => p.id === postId);
     const authorName = customAuthor?.name || currentUser.name;
     const authorRole = customAuthor?.role || currentUser.role;
     const authorAvatar = customAuthor?.avatar || currentUser.avatar;
@@ -857,9 +923,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (res.ok) {
         const data = await res.json();
         if (data?.announcement) {
-          setFeedPosts((prev) =>
-            prev.map((p) => (p.id === postId ? data.announcement : p))
-          );
+          const syncCommentPost = (p: FeedPost) => {
+            if (p.id !== postId) return p;
+            return {
+              ...p,
+              ...data.announcement,
+              comments: data.announcement.comments || p.comments,
+              commentsCount: data.announcement.commentsCount ?? data.announcement.comments?.length ?? p.commentsCount,
+            };
+          };
+          setFeedPosts((prev) => prev.map(syncCommentPost));
+          setAnnouncementPosts((prev) => prev.map(syncCommentPost));
         }
       }
     } catch {
@@ -945,6 +1019,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           createdAt: created.createdAt || nowIso
         };
         setFeedPosts((prev) => [postWithDate, ...prev.filter((p) => p.id !== newPost.id && p.id !== created.id)]);
+        setAnnouncementPosts((prev) => [postWithDate, ...prev.filter((p) => p.id !== newPost.id && p.id !== created.id)]);
         return postWithDate;
       }
     } catch (err) {

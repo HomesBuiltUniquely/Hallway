@@ -50,12 +50,20 @@ export const DEFAULT_REACTIONS: Record<string, any> = {
   joy: 0,
   surprised: 0,
   pray: 0,
+  fire: 0,
+  party: 0,
+  hundred: 0,
+  rocket: 0,
   userThumbsUp: false,
   userClap: false,
   userHeart: false,
   userJoy: false,
   userSurprised: false,
   userPray: false,
+  userFire: false,
+  userParty: false,
+  userHundred: false,
+  userRocket: false,
 };
 
 export function parseReactions(raw: any) {
@@ -408,7 +416,7 @@ export async function ensureAnnouncementExists(
     author?: { name?: string; avatar?: string; team?: string };
   }
 ) {
-  const [rows] = await pool.query<any[]>('SELECT id FROM announcements WHERE id = ?', [id]);
+  const [rows] = await pool.query<any[]>('SELECT id, title, content FROM announcements WHERE id = ?', [id]);
   if (rows.length === 0) {
     const type = defaults?.type || 'booking';
     const title = defaults?.title || 'CRM Live Update';
@@ -445,6 +453,23 @@ export async function ensureAnnouncementExists(
         0,
         department,
         now,
+      ]
+    );
+  } else if (defaults?.title && (rows[0].title === 'CRM Live Update' || rows[0].content === 'Live event synced from CRM.')) {
+    // If it was inserted previously with fallback placeholder text, update it with the authentic metadata
+    const quotaProgressJson = defaults?.quotaProgress ? JSON.stringify(defaults.quotaProgress) : null;
+    await pool.query(
+      `UPDATE announcements SET title = ?, content = ?, type = ?, category_color = ?, author_name = ?, author_team = ?, department = ?, quota_progress = COALESCE(?, quota_progress) WHERE id = ?`,
+      [
+        defaults.title,
+        defaults.content || rows[0].content,
+        defaults.type || 'booking',
+        defaults.categoryColor || '#10B981',
+        defaults.author?.name || defaults.authorName || 'Sales Executive',
+        defaults.author?.team || defaults.authorTeam || 'Sales Hub',
+        defaults.department || 'Sales',
+        quotaProgressJson,
+        id,
       ]
     );
   }
@@ -497,6 +522,13 @@ export function ensureJsonAnnouncement(
       comments: [],
     };
     list.unshift(post);
+    saveJsonAnnouncements(list);
+  } else if (defaults?.title && (post.title === 'CRM Live Update' || post.content === 'Live event synced from CRM.')) {
+    post.title = defaults.title;
+    if (defaults.content) post.content = defaults.content;
+    if (defaults.type) post.type = defaults.type;
+    if (defaults.categoryColor) post.categoryColor = defaults.categoryColor;
+    if (defaults.quotaProgress) post.quotaProgress = defaults.quotaProgress;
     saveJsonAnnouncements(list);
   }
   return post;

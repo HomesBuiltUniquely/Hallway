@@ -159,8 +159,8 @@ export default function AnnouncementsPage() {
         )}
       </div>
 
-      {/* 2-Column Responsive Feed Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+      {/* Full-width Horizontal Feed Cards Flow */}
+      <div className="flex flex-col gap-4 w-full">
         {sortedAnnouncements.map((post) => (
           <HubLiveFeedCard key={post.id} post={post} />
         ))}

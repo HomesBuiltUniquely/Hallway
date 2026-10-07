@@ -49,15 +49,21 @@ export function canCreateAnnouncement(user?: { role?: string; name?: string; ema
   if (isSuperAdmin(user)) return true;
 
   const role = (user.role || '').toUpperCase().replace(/[\s-]+/g, '_');
-  return (
+  if (
     role.includes('LEAD') ||
     role.includes('MANAGER') ||
     role.includes('HEAD') ||
     role.includes('DIRECTOR') ||
     role.includes('HR') ||
     role.includes('FOUNDER') ||
-    role.includes('VP')
-  );
+    role.includes('VP') ||
+    role.includes('ADMIN')
+  ) {
+    return true;
+  }
+
+  // Permit authenticated team members in session to broadcast updates
+  return Boolean(user.name && user.name.trim().length > 0);
 }
 
 /**

@@ -51,6 +51,10 @@ export interface FeedPost {
     surprised?: number;
     sad?: number;
     pray?: number;
+    fire?: number;
+    party?: number;
+    hundred?: number;
+    rocket?: number;
     userThumbsUp?: boolean;
     userClap?: boolean;
     userHeart?: boolean;
@@ -58,6 +62,10 @@ export interface FeedPost {
     userSurprised?: boolean;
     userSad?: boolean;
     userPray?: boolean;
+    userFire?: boolean;
+    userParty?: boolean;
+    userHundred?: boolean;
+    userRocket?: boolean;
     [key: string]: any;
   };
   commentsCount: number;
