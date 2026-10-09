@@ -1,5 +1,5 @@
-import fs from 'fs';
-import path from 'path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { getPool } from './db';
 
 const DEFAULT_CRM = 'https://hows.hubinterior.com';
@@ -43,8 +43,8 @@ const SEED_PEOPLE_JSON = JSON.stringify({
 
 function getDiskCache(): Record<string, { expiresAt: number; status: number; contentType: string | null; bodyBase64: string }> {
   try {
-    if (!fs.existsSync(DISK_CACHE_FILE)) return {};
-    const content = fs.readFileSync(DISK_CACHE_FILE, 'utf-8');
+    if (!existsSync(DISK_CACHE_FILE)) return {};
+    const content = readFileSync(DISK_CACHE_FILE, 'utf-8');
     return JSON.parse(content);
   } catch {
     return {};
@@ -53,8 +53,8 @@ function getDiskCache(): Record<string, { expiresAt: number; status: number; con
 
 function saveDiskCacheEntry(key: string, expiresAt: number, payload: UpstreamPayload) {
   try {
-    if (!fs.existsSync(CACHE_DIR)) {
-      fs.mkdirSync(CACHE_DIR, { recursive: true });
+    if (!existsSync(CACHE_DIR)) {
+      mkdirSync(CACHE_DIR, { recursive: true });
     }
     const current = getDiskCache();
     const base64 = Buffer.from(payload.body).toString('base64');
@@ -64,7 +64,7 @@ function saveDiskCacheEntry(key: string, expiresAt: number, payload: UpstreamPay
       contentType: payload.contentType,
       bodyBase64: base64,
     };
-    fs.writeFileSync(DISK_CACHE_FILE, JSON.stringify(current, null, 2), 'utf-8');
+    writeFileSync(DISK_CACHE_FILE, JSON.stringify(current, null, 2), 'utf-8');
   } catch (err) {
     console.warn('Failed to persist crm cache to disk:', err);
   }

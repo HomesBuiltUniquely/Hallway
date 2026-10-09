@@ -1,6 +1,6 @@
 import mysql, { Pool } from 'mysql2/promise';
-import fs from 'fs';
-import path from 'path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 
 const DB_CONFIG = {
   host: process.env.DB_HOST || 'database-1.cl002gu0o5ft.ap-south-2.rds.amazonaws.com',
@@ -94,7 +94,7 @@ function getStoragePath(): string {
     path.join(__dirname, '..', 'data', 'announcements.json'),
   ];
   for (const p of candidates) {
-    if (fs.existsSync(p)) return p;
+    if (existsSync(p)) return p;
   }
   return candidates[0];
 }
@@ -106,7 +106,7 @@ function getSeedPath(): string {
     path.join(__dirname, '..', 'data', 'announcementsSeed.json'),
   ];
   for (const p of candidates) {
-    if (fs.existsSync(p)) return p;
+    if (existsSync(p)) return p;
   }
   return candidates[0];
 }
@@ -114,13 +114,13 @@ function getSeedPath(): string {
 function getJsonAnnouncements(): any[] {
   try {
     const storagePath = getStoragePath();
-    if (fs.existsSync(storagePath)) {
-      const content = fs.readFileSync(storagePath, 'utf-8');
+    if (existsSync(storagePath)) {
+      const content = readFileSync(storagePath, 'utf-8');
       return JSON.parse(content);
     }
     const seedPath = getSeedPath();
-    if (fs.existsSync(seedPath)) {
-      const content = fs.readFileSync(seedPath, 'utf-8');
+    if (existsSync(seedPath)) {
+      const content = readFileSync(seedPath, 'utf-8');
       const list = JSON.parse(content);
       saveJsonAnnouncements(list);
       return list;
@@ -136,8 +136,8 @@ function saveJsonAnnouncements(data: any[]): boolean {
   try {
     const storagePath = getStoragePath();
     const dir = path.dirname(storagePath);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(storagePath, JSON.stringify(data, null, 2), 'utf-8');
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    writeFileSync(storagePath, JSON.stringify(data, null, 2), 'utf-8');
     return true;
   } catch (err) {
     console.error('Error saving JSON announcements:', err);
