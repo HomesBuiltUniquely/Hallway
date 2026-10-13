@@ -180,6 +180,12 @@ export interface HallwayTodayEvent {
   linkUrl?: string | null;
   category?: string;
   startAt?: string;
+  endAt?: string;
+  clientName?: string | null;
+  crmPersonName?: string | null;
+  designerName?: string | null;
+  meetingType?: string | null;
+  attendees?: string[];
 }
 
 export interface HallwayTodayEventsResponse {
@@ -193,6 +199,9 @@ export interface HallwayActionItem {
   name: string;
   detail?: string;
   done: boolean;
+  xpPoints?: number;
+  xpPenaltyWarning?: string;
+  dueTime?: string;
 }
 
 export interface HallwayActionGroup {
@@ -201,6 +210,8 @@ export interface HallwayActionGroup {
   count: number;
   urgent?: boolean;
   items: HallwayActionItem[];
+  designerXpTier?: string;
+  designerTotalXp?: number;
 }
 
 export interface HallwayActionsResponse {

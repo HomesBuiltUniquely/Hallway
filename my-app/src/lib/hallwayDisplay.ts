@@ -170,4 +170,72 @@ export function getTimeBasedGreeting(date = new Date()): string {
   return 'Good evening';
 }
 
+/**
+ * Returns exact formatted Indian Standard Time (IST / UTC+05:30) timestamp.
+ * e.g. "12 Oct 2026, 4:30 PM IST" or "Today, 4:30 PM IST"
+ */
+export function formatExactIstTimestamp(dateInput?: string | Date | null): string {
+  if (!dateInput) return 'Today IST';
+  const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+  if (isNaN(d.getTime())) return typeof dateInput === 'string' ? dateInput : 'Today IST';
+
+  const now = new Date();
+  const isToday = istYmd(now) === istYmd(d);
+  const isYesterday = getYesterdayYmd() === istYmd(d);
+
+  const timeStr = d.toLocaleTimeString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+
+  if (isToday) {
+    return `Today, ${timeStr} IST`;
+  }
+  if (isYesterday) {
+    return `Yesterday, ${timeStr} IST`;
+  }
+
+  const dateStr = d.toLocaleDateString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+
+  return `${dateStr}, ${timeStr} IST`;
+}
+
+/**
+ * Returns exact date in Indian Standard Time (e.g. "13 Oct 2026")
+ */
+export function formatExactDateIst(dateInput = new Date()): string {
+  const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+/**
+ * Returns both exact IST timestamp and relative time for feed posts & notifications
+ */
+export function formatTimestampWithContext(dateInput?: string | Date | null): {
+  exact: string;
+  relative: string;
+  full: string;
+} {
+  const relative = formatRelativeTime(dateInput);
+  const exact = formatExactIstTimestamp(dateInput);
+  return {
+    exact,
+    relative,
+    full: `${exact} · ${relative}`,
+  };
+}
+
 

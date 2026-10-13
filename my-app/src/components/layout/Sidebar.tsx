@@ -79,12 +79,11 @@ export default function Sidebar() {
   }, []);
 
   const mainNavItems = [
-    { name: 'Dashboard', href: '/', icon: Home },
+    { name: 'Home', href: '/', icon: Home },
     { name: 'Leaderboards', href: '/leaderboards', icon: BarChart2 },
     { name: 'Book of Records', href: '/records', icon: Award },
     { name: 'Targets', href: '/targets', icon: Target },
     { name: 'People', href: '/people', icon: Users },
-    { name: 'Announcements', href: '/announcements', icon: Megaphone },
   ];
 
   return (

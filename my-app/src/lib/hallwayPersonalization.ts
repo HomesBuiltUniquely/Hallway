@@ -25,6 +25,32 @@ export function getPersonalizedSchedule(
   const emailLower = (user.email || '').toLowerCase().trim();
   const firstName = nameLower.split(' ')[0] || '';
 
+  // Prioritize real CRM appointments from AWS RDS when present
+  if (Array.isArray(allEvents) && allEvents.length > 0) {
+    if (isAdmin && mode === 'my') {
+      return allEvents;
+    }
+
+    // Filter events matching user's name across CRM person, Designer, Client, or Title
+    const matched = allEvents.filter((ev) => {
+      const crm = (ev.crmPersonName || '').toLowerCase();
+      const des = (ev.designerName || '').toLowerCase();
+      const cli = (ev.clientName || '').toLowerCase();
+      const tit = (ev.title || '').toLowerCase();
+      return (
+        crm.includes(nameLower) ||
+        crm.includes(firstName) ||
+        des.includes(nameLower) ||
+        des.includes(firstName) ||
+        cli.includes(nameLower) ||
+        tit.includes(nameLower)
+      );
+    });
+
+    if (matched.length > 0) return matched;
+    return allEvents;
+  }
+
   // 1. Sachin Shekar (Admin / Leadership)
   if (nameLower.includes('sachin') || emailLower.includes('sachin')) {
     return [
@@ -338,21 +364,29 @@ export function getPersonalizedActions(
     return [
       {
         id: 'design-tasks',
-        title: 'Design Deliverables',
+        title: 'Design Tasks (XP Protection)',
         count: 2,
         urgent: true,
+        designerXpTier: 'Creator · Level 3',
+        designerTotalXp: 1850,
         items: [
           {
             id: 'des-act-1',
-            name: 'Upload 3D Photorealistic Renders — Villa 402',
-            detail: 'Due today · Client Review Stage',
+            name: 'Upload 3D Spatial Renders — Villa 402',
+            detail: 'Client Review Stage · Due today by 4:00 PM · Avoid -20 XP penalty',
             done: false,
+            xpPoints: 40,
+            xpPenaltyWarning: 'Avoid -20 XP penalty',
+            dueTime: 'Today 4:00 PM',
           },
           {
             id: 'des-act-2',
             name: 'Revise Modular Kitchen CAD Drawing for Production',
-            detail: 'Due today · Factory Handoff',
+            detail: 'Factory DQC Handoff · Due today by 6:30 PM · Avoid -15 XP penalty',
             done: false,
+            xpPoints: 30,
+            xpPenaltyWarning: 'Avoid -15 XP penalty',
+            dueTime: 'Today 6:30 PM',
           },
         ],
       },

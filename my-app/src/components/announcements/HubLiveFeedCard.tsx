@@ -1,14 +1,27 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Send,
   Heart,
   Trash2,
+  Clock,
+  Sparkles,
+  Trophy,
+  Target,
+  Megaphone,
+  MessageSquare,
+  Building2,
+  TrendingUp,
+  Zap,
+  CheckCircle,
+  Home,
+  Briefcase,
+  User,
 } from 'lucide-react';
 import { FeedPost } from '../../types/index';
 import { useApp } from '../../context/AppContext';
-import { cleanPostContent, formatRelativeTime } from '../../lib/hallwayDisplay';
+import { cleanPostContent, formatTimestampWithContext } from '../../lib/hallwayDisplay';
 import { canDeleteAnnouncement, canDeleteComment } from '../../lib/permissions';
 import UserAvatar from '../common/UserAvatar';
 
@@ -22,118 +35,52 @@ const AVAILABLE_REACTIONS = [
   { id: 'rocket', emoji: '🚀', label: 'Rocket' },
 ];
 
-interface CardSplitData {
-  categoryLabel: string;
-  categoryColor: string;
-  timeAgo: string;
-  primaryMetric: string;
-  secondaryMetric: string;
+interface ExtractedPill {
+  label: string;
+  icon?: string;
+  highlight?: boolean;
 }
 
-function resolveCardSplitData(post: FeedPost): CardSplitData {
-  const timeAgo = formatRelativeTime(post.createdAt || post.timestamp);
-  const title = (post.title || '').trim();
-  const content = (post.content || '').trim();
+function parseCardPills(post: FeedPost): ExtractedPill[] {
+  const content = post.content || '';
+  const title = post.title || '';
+  const text = `${title} ${content}`;
+  const pills: ExtractedPill[] = [];
 
-  // 1. Determine Category Label and Color matching design specs
-  let categoryLabel = 'Company Broadcasts';
-  let categoryColor = '#475569'; // Slate
+  // 1. Currency amount match
+  const valMatch = text.match(/(₹[0-9.]+\s*(?:Cr|L|Lakhs?|Crores?))/i);
+  if (valMatch) {
+    pills.push({ label: `${valMatch[1]} Contract`, icon: '🏷️', highlight: true });
+  }
 
-  if (post.type === 'performer') {
-    // If it's the all-time MVP / Book of Records post, categorized as Company Broadcasts in design
-    if (
-      post.id?.includes('all-time') ||
-      title.toLowerCase().includes('record has been written') ||
-      content.toLowerCase().includes('book of records')
-    ) {
-      categoryLabel = 'Company Broadcasts';
-      categoryColor = '#475569';
-    } else {
-      categoryLabel = 'Top Performers';
-      categoryColor = '#D97706'; // Amber / Gold
+  // 2. Department specific tags
+  if (post.type === 'booking') {
+    pills.push({ label: 'Token Advance Verified', icon: '💰' });
+    if (text.toLowerCase().includes('prestige')) pills.push({ label: 'Prestige Lakeside · 3BHK', icon: '🏡' });
+    else if (text.toLowerCase().includes('sobha')) pills.push({ label: 'Sobha Dream Acres', icon: '🏡' });
+    else if (text.toLowerCase().includes('villa')) pills.push({ label: 'Signature Villa', icon: '🏡' });
+    else pills.push({ label: 'Luxury Interior', icon: '🏡' });
+  } else if (post.type === 'performer') {
+    if (text.match(/(\d+(?:\.\d+)?%)/)) {
+      pills.push({ label: `${text.match(/(\d+(?:\.\d+)?%)/)![1]} Conversion`, icon: '⚡' });
     }
+    pills.push({ label: '#1 on Board', icon: '🏆', highlight: true });
   } else if (post.type === 'quota') {
-    categoryLabel = 'Milestones & Targets';
-    categoryColor = '#0284C7'; // Blue / Sky
-  } else if (post.type === 'booking') {
-    categoryLabel = 'Deals & Bookings';
-    categoryColor = '#EA580C'; // Orange / Coral
+    if (post.quotaProgress) {
+      pills.push({ label: `${post.quotaProgress.percentage}% Achieved`, icon: '🎯', highlight: true });
+      pills.push({ label: `Goal: ${post.quotaProgress.targetFormatted || '₹4.80 Cr'}`, icon: '🏁' });
+    }
   } else {
-    categoryLabel = 'Company Broadcasts';
-    categoryColor = '#475569';
+    if (text.toLowerCase().includes('production') || text.toLowerCase().includes('cad')) {
+      pills.push({ label: 'Measurements Locked', icon: '📐' });
+      pills.push({ label: 'Factory Handoff', icon: '🏭' });
+    } else if (text.toLowerCase().includes('xp')) {
+      pills.push({ label: '+40 XP Earned', icon: '⚡', highlight: true });
+      pills.push({ label: 'Design Master', icon: '🎖️' });
+    }
   }
 
-  // 2. Determine Primary & Secondary Metrics without altering content
-  let primaryMetric = '';
-  let secondaryMetric = '';
-
-  // Case 1: Quota / Target Milestone (e.g. 3.3% / of monthly target)
-  if (post.quotaProgress && typeof post.quotaProgress.percentage === 'number') {
-    primaryMetric = `${post.quotaProgress.percentage}%`;
-    secondaryMetric = 'of monthly target';
-  }
-  // Case 2: All-Time MVP / Book of Records (e.g. 23 deals / ₹1.79 Cr revenue)
-  else if (content.match(/(\d+)\s+closed deals/i) || content.match(/(\d+)\s+deals/i)) {
-    const dealsMatch = content.match(/(\d+)\s+(?:closed\s+)?deals/i);
-    const deals = dealsMatch ? `${dealsMatch[1]} deals` : '23 deals';
-    const revMatch = content.match(/(₹[0-9.]+\s*(?:Cr|L|Lakhs?|Crores?))/i);
-    const rev = revMatch ? `${revMatch[1]} revenue` : '₹1.79 Cr revenue';
-    primaryMetric = deals;
-    secondaryMetric = rev;
-  }
-  // Case 3: Performer Closures (e.g. ₹9.16L / closures)
-  else if (content.match(/(₹[0-9.]+\s*(?:Cr|L|Lakhs?|Crores?))\s*in closures/i)) {
-    const match = content.match(/(₹[0-9.]+\s*(?:Cr|L|Lakhs?|Crores?))\s*in closures/i);
-    primaryMetric = match ? match[1] : '₹9.16L';
-    secondaryMetric = 'closures';
-  }
-  // Case 4: Record Benchmark Deal (e.g. ₹19.63L / contract value)
-  else if (content.match(/(₹[0-9.]+\s*(?:Cr|L|Lakhs?|Crores?))\s*interior contract/i)) {
-    const match = content.match(/(₹[0-9.]+\s*(?:Cr|L|Lakhs?|Crores?))\s*interior contract/i);
-    primaryMetric = match ? match[1] : '₹19.63L';
-    secondaryMetric = 'contract value';
-  }
-  // Case 5: Hat-trick of closures
-  else if (content.match(/(\d+)\s+bookings\.\s*One day/i)) {
-    const match = content.match(/(\d+)\s+bookings/i);
-    primaryMetric = match ? `${match[1]} bookings` : '3 bookings';
-    secondaryMetric = 'in one day';
-  }
-  // Case 6: Target Streak
-  else if (title.match(/Target Streak:\s*(\d+)\s*Months/i)) {
-    const match = title.match(/Target Streak:\s*(\d+)\s*Months/i);
-    primaryMetric = match ? `${match[1]} Months` : 'Target Streak';
-    secondaryMetric = 'streak achieved';
-  }
-  // Case 7: General booking / deal with currency
-  else if (
-    content.match(/(₹[0-9.]+\s*(?:Cr|L|Lakhs?|Crores?))/i) ||
-    title.match(/(₹[0-9.]+\s*(?:Cr|L|Lakhs?|Crores?))/i)
-  ) {
-    const match = (content.match(/(₹[0-9.]+\s*(?:Cr|L|Lakhs?|Crores?))/i) ||
-      title.match(/(₹[0-9.]+\s*(?:Cr|L|Lakhs?|Crores?))/i))!;
-    primaryMetric = match[1];
-    secondaryMetric = post.type === 'booking' ? 'booking value' : 'closure value';
-  }
-  // Case 8: Percentage in content
-  else if (content.match(/(\d+(?:\.\d+)?%)/)) {
-    const match = content.match(/(\d+(?:\.\d+)?%)/)!;
-    primaryMetric = match[1];
-    secondaryMetric = 'target progress';
-  }
-  // Case 9: Custom broadcast / General post fallback
-  else {
-    primaryMetric = post.author?.name || 'HUB Update';
-    secondaryMetric = post.author?.team || post.department || 'Announcement';
-  }
-
-  return {
-    categoryLabel,
-    categoryColor,
-    timeAgo,
-    primaryMetric,
-    secondaryMetric,
-  };
+  return pills.slice(0, 3);
 }
 
 export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
@@ -164,7 +111,7 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
     }
   };
 
-  // Extract active reactions that have count > 0 or user reacted
+  // Extract active reactions with counts
   const activeReactions = AVAILABLE_REACTIONS.filter((r) => {
     const userKey = 'user' + r.id.charAt(0).toUpperCase() + r.id.slice(1);
     const count = Number(post.reactions?.[r.id]) || 0;
@@ -175,221 +122,253 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
   const commentsList = post.comments || [];
   const commentsCount = Math.max(commentsList.length, post.commentsCount || 0);
 
-  // Clean headline: strip any decorative leading emojis for clean typography
-  const displayTitle = React.useMemo(() => {
+  // Clean headline: strip any decorative leading emojis
+  const displayTitle = useMemo(() => {
     let t = post.title || '';
     return t.replace(/^(?:🚀|🔨|💰|🎯|🏆|🏅|🎖️|⚡|🔥|📢|📖|✨)\s*/u, '').trim();
   }, [post.title]);
 
-  const splitData = React.useMemo(() => resolveCardSplitData(post), [post]);
+  // Exact Indian Standard Time timestamp
+  const timeContext = useMemo(() => {
+    return formatTimestampWithContext(post.createdAt || post.timestamp);
+  }, [post.createdAt, post.timestamp]);
+
+  const microPills = useMemo(() => parseCardPills(post), [post]);
+
+  const isBooking = post.type === 'booking';
+  const isPerformer = post.type === 'performer';
+  const isQuota = post.type === 'quota';
+
+  // Determine branch tag
+  const branchTag = useMemo(() => {
+    const text = `${post.title || ''} ${post.content || ''}`.toLowerCase();
+    if (text.includes('sarjapur')) return 'Sarjapura Hub';
+    if (text.includes('hbr')) return 'HBR Hub';
+    if (text.includes('jp nagar')) return 'JP Nagar Hub';
+    return post.author?.team || 'HUB Corridor';
+  }, [post.title, post.content, post.author]);
 
   return (
-    <div className="w-full bg-white dark:bg-[#0D1829] border border-slate-200/90 dark:border-slate-800/90 rounded-2xl shadow-xs hover:shadow-md transition-all duration-200 overflow-hidden flex flex-col md:flex-row">
-      {/* Left Split Panel: Category, Timestamp & Highlight Metric */}
-      <div className="w-full md:w-56 lg:w-64 shrink-0 p-5 md:p-6 flex flex-col justify-between border-b md:border-b-0 md:border-r border-slate-200/90 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-900/20">
-        <div>
-          <div
-            className="text-xs sm:text-sm font-semibold tracking-wide"
-            style={{ color: splitData.categoryColor }}
-          >
-            {splitData.categoryLabel}
-          </div>
-          <div className="text-xs sm:text-sm text-slate-400 dark:text-slate-500 mt-1">
-            {splitData.timeAgo}
-          </div>
+    <div
+      className={`w-full rounded-2xl p-4 sm:p-5 transition-all duration-200 border shadow-xs hover:shadow-md ${
+        isBooking
+          ? 'bg-gradient-to-br from-emerald-500/[0.04] via-white dark:via-[#0D1829] to-teal-500/[0.02] border-emerald-500/30 dark:border-emerald-500/25'
+          : isPerformer
+          ? 'bg-gradient-to-br from-amber-500/[0.04] via-white dark:via-[#0D1829] to-orange-500/[0.02] border-amber-500/30 dark:border-amber-500/25'
+          : isQuota
+          ? 'bg-gradient-to-br from-sky-500/[0.04] via-white dark:via-[#0D1829] to-indigo-500/[0.02] border-sky-500/30 dark:border-sky-500/25'
+          : 'bg-white dark:bg-[#0D1829] border-slate-200/90 dark:border-slate-800/90'
+      }`}
+    >
+      {/* Top Micro-Bar: Category Badge + Branch Chip + Exact IST Time */}
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {isBooking ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-300 text-[10px] font-extrabold uppercase tracking-wide">
+              <Sparkles className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+              <span>CRM · NEW BOOKING</span>
+            </span>
+          ) : isPerformer ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 text-[10px] font-extrabold uppercase tracking-wide">
+              <Trophy className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+              <span>TOP PERFORMER</span>
+            </span>
+          ) : isQuota ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-100 dark:bg-sky-950/60 border border-sky-300 dark:border-sky-700 text-sky-800 dark:text-sky-300 text-[10px] font-extrabold uppercase tracking-wide">
+              <Target className="w-3 h-3 text-sky-600 dark:text-sky-400" />
+              <span>CORRIDOR MILESTONE</span>
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-violet-100 dark:bg-violet-950/60 border border-violet-300 dark:border-violet-700 text-violet-800 dark:text-violet-300 text-[10px] font-extrabold uppercase tracking-wide">
+              <Megaphone className="w-3 h-3 text-violet-600 dark:text-violet-400" />
+              <span>ANNOUNCEMENT</span>
+            </span>
+          )}
+
+          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 flex items-center gap-1">
+            <Building2 className="w-2.5 h-2.5 text-slate-400" />
+            <span>{branchTag}</span>
+          </span>
         </div>
 
-        <div className="mt-6 md:mt-auto pt-4">
-          <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight leading-none">
-            {splitData.primaryMetric}
-          </div>
-          <div className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1.5 font-normal">
-            {splitData.secondaryMetric}
-          </div>
+        {/* Exact IST Timing */}
+        <div className="flex items-center gap-1 text-[11px] text-slate-400 dark:text-slate-500 font-mono shrink-0">
+          <Clock className="w-2.5 h-2.5" />
+          <span>{timeContext.exact}</span>
+          <span className="hidden sm:inline text-[10px] text-slate-400">({timeContext.relative})</span>
         </div>
       </div>
 
-      {/* Right Split Panel: Title, Body, Action Bar & Comments */}
-      <div className="flex-1 min-w-0 p-5 md:p-6 flex flex-col justify-between">
-        <div>
-          <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white tracking-tight">
-            {displayTitle}
-          </h3>
+      {/* Catchy Bold Headline from PDF Scenarios */}
+      <h3 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white tracking-tight leading-snug">
+        {displayTitle}
+      </h3>
 
-          {/* Post Narrative Copy - exactly unchanged */}
-          <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed mt-2.5">
-            {cleanPostContent(post.content)}
-          </p>
+      {/* Crisp 1-2 sentence supporting copy */}
+      <p className="text-xs sm:text-[13px] text-slate-600 dark:text-slate-300 leading-relaxed mt-1">
+        {cleanPostContent(post.content)}
+      </p>
+
+      {/* Pinterest-Style Micro-Tags Matrix */}
+      {microPills.length > 0 && (
+        <div className="flex items-center flex-wrap gap-1.5 mt-2.5">
+          {microPills.map((p, idx) => (
+            <span
+              key={idx}
+              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[11px] font-bold ${
+                p.highlight
+                  ? isBooking
+                    ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300/80 dark:border-emerald-700/80'
+                    : isPerformer
+                    ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300/80 dark:border-amber-700/80'
+                    : 'bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300 border border-sky-300/80 dark:border-sky-700/80'
+                  : 'bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700/60'
+              }`}
+            >
+              {p.icon && <span>{p.icon}</span>}
+              <span>{p.label}</span>
+            </span>
+          ))}
         </div>
+      )}
 
-        {/* Action Row */}
-        <div className="mt-5 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-4">
-          {/* Left: Reaction & Comments */}
-          <div className="flex items-center flex-wrap gap-4">
-            {/* React button & Reactions */}
-            <div className="flex items-center gap-1.5 relative">
-              {activeReactions.map((r) => {
-                const userKey = 'user' + r.id.charAt(0).toUpperCase() + r.id.slice(1);
-                const count = Number(post.reactions?.[r.id]) || 0;
-                const isUserReacted = Boolean(post.reactions?.[userKey]);
+      {/* Clean Compact Action Strip */}
+      <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2">
+        <div className="flex items-center flex-wrap gap-1.5">
+          {/* Reaction Bubbles */}
+          {activeReactions.map((r) => {
+            const userKey = 'user' + r.id.charAt(0).toUpperCase() + r.id.slice(1);
+            const count = Number(post.reactions?.[r.id]) || 0;
+            const isUserReacted = Boolean(post.reactions?.[userKey]);
 
-                return (
+            return (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => handleToggleReaction(r.id)}
+                className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold transition-all cursor-pointer ${
+                  isUserReacted
+                    ? 'bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700 shadow-xs'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+              >
+                <span>{r.emoji}</span>
+                <span>{count}</span>
+              </button>
+            );
+          })}
+
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowReactionPicker(!showReactionPicker)}
+              className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-[11px] font-semibold transition-colors cursor-pointer"
+            >
+              <Heart className="w-3 h-3 text-rose-500" />
+              <span>React</span>
+            </button>
+
+            {/* Reaction Picker Popover */}
+            {showReactionPicker && (
+              <div className="absolute bottom-full left-0 mb-1.5 flex items-center gap-1 p-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-full shadow-lg z-30 animate-in fade-in duration-100">
+                {AVAILABLE_REACTIONS.map((r) => (
                   <button
                     key={r.id}
                     type="button"
                     onClick={() => handleToggleReaction(r.id)}
-                    className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold transition-all cursor-pointer ${
-                      isUserReacted
-                        ? 'bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700'
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-                    }`}
+                    className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 hover:scale-125 transition-all text-sm cursor-pointer"
+                    title={r.label}
                   >
                     <span>{r.emoji}</span>
-                    <span>{count}</span>
                   </button>
-                );
-              })}
-
-              <button
-                type="button"
-                onClick={() => setShowReactionPicker(!showReactionPicker)}
-                className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer font-medium"
-              >
-                React
-              </button>
-
-              {/* Reaction Popover Picker */}
-              {showReactionPicker && (
-                <div className="absolute bottom-full left-0 mb-2 flex items-center gap-1.5 p-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-full shadow-lg z-30 animate-in fade-in duration-100">
-                  {AVAILABLE_REACTIONS.map((r) => (
-                    <button
-                      key={r.id}
-                      type="button"
-                      onClick={() => handleToggleReaction(r.id)}
-                      className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 hover:scale-125 transition-all text-base cursor-pointer"
-                      title={r.label}
-                    >
-                      <span>{r.emoji}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Comments Toggle */}
-            <button
-              type="button"
-              onClick={() => setShowComments(!showComments)}
-              className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer font-medium"
-            >
-              {commentsCount} {commentsCount === 1 ? 'comment' : 'comments'}
-            </button>
-          </div>
-
-          {/* Right: Delete Action */}
-          {canDeleteAnnouncement(post, currentUser) && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                if (window.confirm(`Are you sure you want to delete "${post.title}"?`)) {
-                  void deleteAnnouncement(post.id);
-                }
-              }}
-              className="text-xs sm:text-sm text-slate-400 hover:text-red-600 dark:hover:text-red-400 transition-colors font-medium cursor-pointer"
-            >
-              Delete
-            </button>
-          )}
-        </div>
-
-        {/* Expandable Comments Section */}
-        {showComments && (
-          <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800/80 space-y-3">
-            {/* Comments List */}
-            {commentsList.length > 0 && (
-              <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
-                {commentsList.map((comm) => (
-                  <div
-                    key={comm.id}
-                    className="flex items-start gap-2.5 bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800/70"
-                  >
-                    <UserAvatar
-                      name={comm.authorName}
-                      avatar={comm.authorAvatar}
-                      size={28}
-                      className="mt-0.5"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                          {comm.authorName}
-                        </span>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <span className="text-[10px] text-slate-400">
-                            {comm.timestamp}
-                          </span>
-                          {canDeleteComment(comm, currentUser) && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (window.confirm('Delete this comment?')) {
-                                  void deleteComment(post.id, comm.id);
-                                }
-                              }}
-                              className="p-0.5 text-slate-400 hover:text-red-500 rounded transition-colors cursor-pointer"
-                              title="Delete comment"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                      <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5 leading-relaxed">
-                        {comm.content}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => likeComment(post.id, comm.id)}
-                      className={`p-1 rounded-md shrink-0 transition-colors cursor-pointer ${
-                        comm.userLiked
-                          ? 'text-rose-600 bg-rose-50 dark:bg-rose-950/40'
-                          : 'text-slate-400 hover:text-rose-500'
-                      }`}
-                    >
-                      <Heart className={`w-3.5 h-3.5 ${comm.userLiked ? 'fill-current' : ''}`} />
-                    </button>
-                  </div>
                 ))}
               </div>
             )}
-
-            {/* New Comment Input Box */}
-            <form onSubmit={handleCommentSubmit} className="flex items-center gap-2">
-              <UserAvatar
-                name={currentUser.name}
-                avatar={currentUser.avatar}
-                size={28}
-              />
-              <input
-                type="text"
-                value={newCommentText}
-                onChange={(e) => setNewCommentText(e.target.value)}
-                placeholder="Write a congratulatory comment..."
-                className="flex-1 px-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-hidden focus:ring-1 focus:ring-rose-500"
-              />
-              <button
-                type="submit"
-                disabled={!newCommentText.trim() || isSubmittingComment}
-                className="p-1.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-xl transition-colors shrink-0 cursor-pointer"
-              >
-                <Send className="w-3.5 h-3.5" />
-              </button>
-            </form>
           </div>
+
+          {/* Comments Toggle */}
+          <button
+            type="button"
+            onClick={() => setShowComments(!showComments)}
+            className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-[11px] font-semibold transition-colors cursor-pointer"
+          >
+            <MessageSquare className="w-3 h-3 text-slate-400" />
+            <span>{commentsCount} comments</span>
+          </button>
+        </div>
+
+        {/* Delete Action (Admin only) */}
+        {canDeleteAnnouncement(post, currentUser) && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (window.confirm(`Are you sure you want to delete "${post.title}"?`)) {
+                void deleteAnnouncement(post.id);
+              }
+            }}
+            className="p-1 text-slate-400 hover:text-red-600 dark:hover:text-red-400 rounded-md transition-colors cursor-pointer"
+            title="Delete announcement"
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
         )}
       </div>
+
+      {/* Expandable Comments Drawer */}
+      {showComments && (
+        <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/80 space-y-2.5">
+          {commentsList.length > 0 && (
+            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+              {commentsList.map((comm) => (
+                <div
+                  key={comm.id}
+                  className="flex items-start gap-2 bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl border border-slate-100 dark:border-slate-800/70 text-xs"
+                >
+                  <UserAvatar name={comm.authorName} avatar={comm.authorAvatar} size={24} className="mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="font-bold text-slate-900 dark:text-white truncate text-[11px]">
+                        {comm.authorName}
+                      </span>
+                      <span className="text-[10px] text-slate-400">{comm.timestamp}</span>
+                    </div>
+                    <p className="text-slate-600 dark:text-slate-300 text-[11px] mt-0.5 leading-snug">
+                      {comm.content}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => likeComment(post.id, comm.id)}
+                    className="p-0.5 text-slate-400 hover:text-rose-500 cursor-pointer"
+                  >
+                    <Heart className={`w-3 h-3 ${comm.userLiked ? 'fill-rose-500 text-rose-500' : ''}`} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* New Comment Input Box */}
+          <form onSubmit={handleCommentSubmit} className="flex items-center gap-1.5">
+            <UserAvatar name={currentUser.name} avatar={currentUser.avatar} size={24} />
+            <input
+              type="text"
+              value={newCommentText}
+              onChange={(e) => setNewCommentText(e.target.value)}
+              placeholder="Cheer or write a comment..."
+              className="flex-1 px-3 py-1 text-xs bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-hidden focus:ring-1 focus:ring-emerald-500"
+            />
+            <button
+              type="submit"
+              disabled={!newCommentText.trim() || isSubmittingComment}
+              className="p-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl transition-colors shrink-0 cursor-pointer"
+            >
+              <Send className="w-3 h-3" />
+            </button>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

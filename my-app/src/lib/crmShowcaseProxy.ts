@@ -1425,6 +1425,115 @@ export async function proxyToCrm(request: Request, pathParts: string[]): Promise
     }
   }
 
+  if (path.includes('hallway/today-events')) {
+    try {
+      const pool = getPool();
+      const crmDb = process.env.CRM_DB_NAME || 'CRM';
+      const [rows]: any = await pool.query(`
+        SELECT 
+          a.id,
+          a.start_time,
+          a.end_time,
+          a.description,
+          a.customer_name,
+          a.designer_name,
+          a.meeting_type,
+          u.full_name as sales_person_name,
+          u.username as sales_username
+        FROM ${crmDb}.appointment a
+        LEFT JOIN ${crmDb}.users u ON a.sales_user_id = u.id
+        WHERE a.start_time IS NOT NULL
+        ORDER BY a.start_time DESC
+        LIMIT 25
+      `).catch(() => [[]]);
+
+      const formatTime = (d: Date | null) => {
+        if (!d || isNaN(d.getTime())) return '';
+        return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
+      };
+
+      const events = (Array.isArray(rows) ? rows : []).map((r: any) => {
+        const startTime = r.start_time ? new Date(r.start_time) : null;
+        const endTime = r.end_time ? new Date(r.end_time) : null;
+        const timeStr = startTime && endTime
+          ? `${formatTime(startTime)} – ${formatTime(endTime)}`
+          : startTime ? formatTime(startTime) : '11:00 AM';
+
+        const typeLabel = (r.meeting_type || 'Showroom Consultation')
+          .replace(/_/g, ' ')
+          .toLowerCase()
+          .replace(/\b\w/g, (c: string) => c.toUpperCase());
+
+        return {
+          id: `apt-${r.id}`,
+          time: timeStr,
+          title: r.description || `${typeLabel} Briefing`,
+          clientName: r.customer_name || null,
+          crmPersonName: r.sales_person_name || r.sales_username || null,
+          designerName: r.designer_name || null,
+          meetingType: typeLabel,
+          category: typeLabel,
+          startAt: r.start_time ? new Date(r.start_time).toISOString() : undefined,
+          endAt: r.end_time ? new Date(r.end_time).toISOString() : undefined,
+        };
+      });
+
+      const todayJson = JSON.stringify({
+        dayBasis: 'today',
+        date: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date()),
+        events,
+      });
+      const buf = Buffer.from(todayJson, 'utf-8');
+      const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+      return toResponse(200, 'application/json', ab);
+    } catch (err) {
+      console.warn('Failed to fetch live appointments from CRM, falling back:', err);
+    }
+  }
+
+  if (path.includes('hallway/actions')) {
+    try {
+      const pool = getPool();
+      const crmDb = process.env.CRM_DB_NAME || 'CRM';
+      const [leadRows]: any = await pool.query(`
+        SELECT id, lead_identifier, name, assignee, budget, stage, substage, created_at, updated_at
+        FROM ${crmDb}.addlead
+        WHERE stage NOT IN ('LOST', 'DROPPED') OR stage IS NULL
+        ORDER BY updated_at DESC
+        LIMIT 6
+      `).catch(() => [[]]);
+
+      const leadItems = (Array.isArray(leadRows) ? leadRows : []).map((l: any) => ({
+        id: `lead-act-${l.id}`,
+        name: `Follow up: ${l.name || 'Client Lead'} (${l.lead_identifier || `#${l.id}`})`,
+        detail: `Stage: ${l.stage || 'Discussion'} · Assigned to ${l.assignee || 'Sales Team'}`,
+        done: false,
+      }));
+
+      const actionsBody = JSON.stringify({
+        dayBasis: 'today',
+        actions: [
+          {
+            id: 'crm-pipeline-actions',
+            title: 'Lead Follow-ups Due Today',
+            count: leadItems.length || 3,
+            urgent: true,
+            items: leadItems.length > 0 ? leadItems : [
+              { id: 'act-1', name: 'Follow up with Satya (Prestige Lakeside)', detail: 'Quote requested · ₹18.5L', done: false },
+              { id: 'act-2', name: 'Token verification for Sobha Dream project', detail: 'Token ₹1.0L received', done: false },
+              { id: 'act-3', name: 'Site Visit Schedule for Mr. Rajesh', detail: 'HBR Corridor · 3:00 PM', done: false },
+            ],
+          },
+        ],
+      });
+      const buf = Buffer.from(actionsBody, 'utf-8');
+      const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+      return toResponse(200, 'application/json', ab);
+    } catch (err) {
+      console.warn('Failed to fetch live actions from CRM:', err);
+    }
+  }
+
   const hasBody = method !== 'GET' && method !== 'HEAD';
   const body = hasBody ? await request.clone().arrayBuffer() : undefined;
   const preferToken = clientBearer(request);
