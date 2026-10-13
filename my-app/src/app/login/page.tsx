@@ -16,6 +16,7 @@ import {
 import { useApp } from '../../context/AppContext';
 import { CrmApiError, crmDisplayName, loginToCrm, clearCrmSession } from '../../lib/crmApi';
 import { saveDesignHandoff, clearDesignHandoff } from '../../lib/modulePortals';
+import { LivingRoomScene } from '../../components/login/LivingRoomScene';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -167,7 +168,10 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F9FAFB] dark:bg-[#080C14] text-slate-900 dark:text-slate-100 flex items-center justify-center p-4 relative overflow-hidden font-sans select-none transition-colors duration-300">
+    <div className="min-h-screen bg-[#f3e6dd] dark:bg-[#090d15] text-slate-900 dark:text-slate-100 flex items-center justify-center p-4 relative overflow-hidden font-sans select-none transition-colors duration-700">
+      {/* Living Room Scene Background */}
+      <LivingRoomScene isDark={theme === 'dark'} />
+
       {/* Floating Theme Toggle */}
       <button
         onClick={toggleTheme}
@@ -182,15 +186,10 @@ export default function LoginPage() {
         )}
       </button>
 
-      {/* Ambient background glows for Pinterest-inspired warm depth */}
-      <div className="absolute -top-24 -left-24 w-96 h-96 bg-red-500/10 dark:bg-red-600/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute top-1/2 -right-24 w-80 h-80 bg-rose-500/8 dark:bg-rose-950/20 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute -bottom-24 left-1/3 w-96 h-96 bg-amber-500/8 dark:bg-slate-900/40 rounded-full blur-3xl pointer-events-none" />
-
       {/* Main Container */}
-      <div className="max-w-[430px] w-full z-10">
+      <div className="max-w-[480px] w-full z-10">
         {/* Pinterest-style Elevated Card */}
-        <div className="bg-white/95 dark:bg-[#0F1523]/95 backdrop-blur-2xl border border-slate-200/70 dark:border-slate-800/80 rounded-[32px] p-8 sm:p-9 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.07),0_4px_16px_-4px_rgba(0,0,0,0.03)] dark:shadow-[0_25px_60px_-15px_rgba(0,0,0,0.7),0_0_1px_1px_rgba(255,255,255,0.05)] space-y-6">
+        <div className="bg-white/98 dark:bg-[#0F1523]/95 backdrop-blur-2xl border border-stone-200/90 dark:border-slate-800/80 rounded-[32px] p-8 sm:p-10 shadow-[0_28px_65px_-12px_rgba(55,40,30,0.16),0_10px_25px_-5px_rgba(55,40,30,0.08),0_0_0_1px_rgba(255,255,255,0.9)] dark:shadow-[0_25px_60px_-15px_rgba(0,0,0,0.7),0_0_1px_1px_rgba(255,255,255,0.05)] space-y-6 sm:space-y-7 transition-all duration-300">
           
           {/* Brand Header */}
           <div className="text-center space-y-3">
@@ -207,7 +206,7 @@ export default function LoginPage() {
               <h1 className="text-2xl sm:text-[28px] font-extrabold text-slate-900 dark:text-white tracking-tight">
                 Pulse of HUB
               </h1>
-              <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1 font-medium">
+              <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-1 font-medium">
                 Where deal momentum turns into dream homes.
               </p>
             </div>
@@ -225,7 +224,7 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Field 1: Username or Email */}
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 ml-0.5">
+              <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1.5 ml-0.5 tracking-wide">
                 Username or Email
               </label>
               <div className="relative group">
@@ -238,7 +237,7 @@ export default function LoginPage() {
                     setIdentifier(e.target.value);
                     if (errorMessage) setErrorMessage(null);
                   }}
-                  className="w-full pl-10 pr-4 py-3 bg-slate-50/80 hover:bg-slate-50 dark:bg-slate-800/50 dark:hover:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80 rounded-2xl text-xs sm:text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:bg-white dark:focus:bg-slate-800 focus:border-red-500 focus:ring-4 focus:ring-red-500/15 transition-all font-sans"
+                  className="w-full pl-10 pr-4 py-3 bg-slate-50/90 hover:bg-slate-50 dark:bg-slate-800/50 dark:hover:bg-slate-800/80 border border-slate-300 hover:border-slate-400 dark:border-slate-700/80 dark:hover:border-slate-600 rounded-2xl text-xs sm:text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 shadow-[inset_0_1px_2px_rgba(0,0,0,0.02)] dark:shadow-none focus:outline-none focus:bg-white dark:focus:bg-slate-800 focus:border-red-500 focus:ring-4 focus:ring-red-500/15 transition-all font-sans"
                   placeholder="username or abc@hubinterior.com"
                 />
               </div>
@@ -247,7 +246,7 @@ export default function LoginPage() {
             {/* Field 2: Password with timed Eye Preview */}
             <div>
               <div className="flex items-center justify-between mb-1.5 ml-0.5">
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                <label className="text-xs font-bold text-slate-800 dark:text-slate-200 tracking-wide">
                   Password
                 </label>
               </div>
@@ -261,13 +260,13 @@ export default function LoginPage() {
                     setPassword(e.target.value);
                     if (errorMessage) setErrorMessage(null);
                   }}
-                  className="w-full pl-10 pr-11 py-3 bg-slate-50/80 hover:bg-slate-50 dark:bg-slate-800/50 dark:hover:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80 rounded-2xl text-xs sm:text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:bg-white dark:focus:bg-slate-800 focus:border-red-500 focus:ring-4 focus:ring-red-500/15 transition-all font-sans"
+                  className="w-full pl-10 pr-11 py-3 bg-slate-50/90 hover:bg-slate-50 dark:bg-slate-800/50 dark:hover:bg-slate-800/80 border border-slate-300 hover:border-slate-400 dark:border-slate-700/80 dark:hover:border-slate-600 rounded-2xl text-xs sm:text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 shadow-[inset_0_1px_2px_rgba(0,0,0,0.02)] dark:shadow-none focus:outline-none focus:bg-white dark:focus:bg-slate-800 focus:border-red-500 focus:ring-4 focus:ring-red-500/15 transition-all font-sans"
                   placeholder="••••••••"
                 />
                 <button
                   type="button"
                   onClick={toggleShowPassword}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-all cursor-pointer"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-all cursor-pointer"
                   title={showPassword ? 'Hide password' : 'View password for a few seconds'}
                   aria-label={showPassword ? 'Hide password' : 'View password'}
                 >
@@ -278,14 +277,14 @@ export default function LoginPage() {
 
             {/* Remember me & Forgot Password */}
             <div className="flex items-center justify-between text-xs pt-1 px-0.5">
-              <label className="flex items-center gap-2 text-slate-600 dark:text-slate-400 cursor-pointer select-none group">
+              <label className="flex items-center gap-2 text-slate-700 dark:text-slate-300 cursor-pointer select-none group">
                 <input
                   type="checkbox"
                   checked={rememberMe}
                   onChange={(e) => setRememberMe(e.target.checked)}
                   className="w-4 h-4 rounded-md border-slate-300 dark:border-slate-700 text-red-600 accent-red-600 focus:ring-red-500/30 cursor-pointer"
                 />
-                <span className="group-hover:text-slate-900 dark:group-hover:text-slate-200 transition-colors font-medium">
+                <span className="group-hover:text-slate-900 dark:group-hover:text-slate-100 transition-colors font-medium">
                   Remember me
                 </span>
               </label>
@@ -293,7 +292,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => alert('Please contact your System Administrator or IT Support to reset your password.')}
-                className="text-xs font-semibold text-slate-500 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400 transition-colors cursor-pointer"
+                className="text-xs font-bold text-slate-600 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400 transition-colors cursor-pointer"
               >
                 Forgot Password?
               </button>
@@ -320,10 +319,10 @@ export default function LoginPage() {
           </form>
 
           {/* Access Help / Support Footer */}
-          <div className="pt-4 border-t border-slate-100 dark:border-slate-800/80 text-center">
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+          <div className="pt-4 border-t border-slate-200 dark:border-slate-800/80 text-center">
+            <p className="text-xs text-slate-600 dark:text-slate-400">
               Not a member?{' '}
-              <span className="font-semibold text-slate-700 dark:text-slate-300">
+              <span className="font-bold text-slate-800 dark:text-slate-200">
                 Contact your Admin for access
               </span>
             </p>
