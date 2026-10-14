@@ -238,4 +238,19 @@ export function formatTimestampWithContext(dateInput?: string | Date | null): {
   };
 }
 
-
+/**
+ * Returns grouping category for notification timestamps: TODAY, YESTERDAY, or EARLIER
+ */
+export function getNotificationDayGroup(
+  dateInput?: string | Date | null
+): 'TODAY' | 'YESTERDAY' | 'EARLIER' {
+  if (!dateInput) return 'TODAY';
+  const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+  if (isNaN(d.getTime())) return 'TODAY';
+  const todayYmd = istYmd(new Date());
+  const yesterdayYmd = getYesterdayYmd();
+  const itemYmd = istYmd(d);
+  if (itemYmd === todayYmd) return 'TODAY';
+  if (itemYmd === yesterdayYmd) return 'YESTERDAY';
+  return 'EARLIER';
+}

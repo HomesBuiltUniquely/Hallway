@@ -181,3 +181,17 @@ export interface ActiveCampaign {
   targetDate: string; // ISO date string for countdown timer
   isActive: boolean;
 }
+
+export interface NotificationItem {
+  id: string;
+  type: 'deal' | 'task' | 'urgent' | 'milestone' | 'meeting' | 'lead';
+  title: string;
+  message: string;
+  subtitle?: string;
+  categoryTag?: string;
+  timestamp: string;
+  exactIstTime: string;
+  read: boolean;
+  actionUrl?: string;
+  targetRole?: string;
+}

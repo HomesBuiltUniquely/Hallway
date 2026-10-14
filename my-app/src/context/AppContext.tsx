@@ -7,7 +7,8 @@ import {
   ActionItem,
   CrmLeadItem,
   DesignProject,
-  ActiveCampaign
+  ActiveCampaign,
+  NotificationItem
 } from '../types';
 import {
   currentUserMock,
@@ -18,10 +19,26 @@ import {
   crmLeadsMock,
   designProjectsMock
 } from '../data/mockData';
-import { fetchFeed, fetchTargets, clearCrmSession, fetchLeaderboard, fetchPeople, fetchRecords } from '../lib/crmApi';
+import {
+  fetchFeed,
+  fetchTargets,
+  clearCrmSession,
+  fetchLeaderboard,
+  fetchPeople,
+  fetchRecords,
+  fetchTodayEvents,
+  fetchActions
+} from '../lib/crmApi';
 import { generateCrmAnnouncements, formatInrToLakhsOrCrores, createDynamicCrmAnnouncement } from '../lib/crmAnnouncementsGenerator';
 import { clearDesignHandoff } from '../lib/modulePortals';
-import { isTodayOrYesterday, cleanPostContent, getYesterdayYmd, formatPersonName } from '../lib/hallwayDisplay';
+import {
+  isTodayOrYesterday,
+  cleanPostContent,
+  getYesterdayYmd,
+  formatPersonName,
+  formatExactIstTimestamp
+} from '../lib/hallwayDisplay';
+import { isSuperAdmin } from '../lib/permissions';
 
 function mergeReactions(serverReactions?: any, localReactions?: any) {
   const blank = {
@@ -128,7 +145,10 @@ interface AppContextType {
   login: (email?: string, name?: string, role?: string, department?: User['department']) => void;
   logout: () => void;
   switchUser: (targetRole?: 'admin' | 'crm' | 'design') => void;
+  notifications: NotificationItem[];
   notificationsCount: number;
+  markAllNotificationsRead: () => void;
+  markNotificationRead: (id: string) => void;
   clearNotifications: () => void;
   activeTimeframe: 'Today' | 'MTD' | 'QTD';
   setActiveTimeframe: (tf: 'Today' | 'MTD' | 'QTD') => void;
@@ -224,6 +244,259 @@ function resolveCrmAvatar(_name?: string): string {
   return '';
 }
 
+function buildDynamicNotifications(params: {
+  currentUser: User;
+  todayEvents: any[];
+  actions: any[];
+  announcements: FeedPost[];
+  branchTargets: any[];
+  overallTargets: any[];
+  readIds: Set<string>;
+}): NotificationItem[] {
+  const notifs: NotificationItem[] = [];
+  const { currentUser, todayEvents, actions, announcements, branchTargets, readIds } = params;
+
+  const roleLower = (currentUser?.role || '').toLowerCase();
+  const deptLower = (currentUser?.department || '').toLowerCase();
+  const nameLower = (currentUser?.name || '').toLowerCase();
+  const isDesigner = deptLower === 'design' || roleLower.includes('design');
+  const isSales = deptLower === 'sales' || roleLower.includes('sales') || roleLower.includes('crm');
+  const isAdmin = isSuperAdmin(currentUser);
+
+  const now = Date.now();
+  const timeToday17m = new Date(now - 17 * 60 * 1000).toISOString();
+  const timeToday1h = new Date(now - 65 * 60 * 1000).toISOString();
+  const timeYesterday17h = new Date(now - 17 * 60 * 60 * 1000).toISOString();
+  const timeYesterday18h = new Date(now - 18 * 60 * 60 * 1000).toISOString();
+  const timeYesterday20h = new Date(now - 20 * 60 * 60 * 1000).toISOString();
+
+  // 1. Live Scheduled Meetings & Showroom Consultations (from CRM appointments / today-events)
+  if (Array.isArray(todayEvents)) {
+    for (const event of todayEvents) {
+      const isRelevant =
+        isAdmin ||
+        (event.crmPersonName && event.crmPersonName.toLowerCase().includes(nameLower)) ||
+        (event.designerName && event.designerName.toLowerCase().includes(nameLower)) ||
+        (isSales && (!event.crmPersonName || event.crmPersonName.toLowerCase() === 'admin')) ||
+        (isDesigner && (!event.designerName || event.designerName.toLowerCase() === 'admin')) ||
+        notifs.length < 2;
+
+      if (isRelevant) {
+        const client = event.clientName ? event.clientName : 'Client';
+        const designerStr = event.designerName ? ` · Designer ${event.designerName}` : '';
+        const id = `notif-evt-${event.id}`;
+        const timeIso = event.startAt || timeToday17m;
+
+        notifs.push({
+          id,
+          type: 'meeting',
+          title: `Showroom Visit in 45m`,
+          subtitle: `${client}${designerStr} · Showroom Consultation`,
+          message: `Consultation with ${client} scheduled for ${event.time || 'today'}.`,
+          categoryTag: 'Meeting',
+          timestamp: timeIso,
+          exactIstTime: formatExactIstTimestamp(timeIso),
+          read: readIds.has(id),
+        });
+      }
+    }
+  }
+
+  // 2. Verified Bookings & Token Advances (from live CRM deals & announcements)
+  if (Array.isArray(announcements)) {
+    for (const post of announcements) {
+      if (post.type === 'booking') {
+        const id = `notif-deal-${post.id}`;
+        const timeIso = post.createdAt || timeToday1h;
+        notifs.push({
+          id,
+          type: 'deal',
+          title: post.title.replace(/^[🎯🚀🔥👏🎉🏡📢]+\s*/, '').slice(0, 42),
+          subtitle: `Verified Booking · Accounts confirmed advance receipt`,
+          message: post.content,
+          categoryTag: 'Deal',
+          timestamp: timeIso,
+          exactIstTime: formatExactIstTimestamp(timeIso),
+          read: readIds.has(id),
+        });
+      }
+    }
+  }
+
+  // 3. Hot Leads & Pipeline Action Items (from CRM follow-ups)
+  if (Array.isArray(actions)) {
+    for (const group of actions) {
+      const items = Array.isArray(group.items) ? group.items : [];
+      for (const item of items.slice(0, 2)) {
+        const id = `notif-act-${item.id}`;
+        const isUrgent = group.urgent || Boolean(item.xpPenaltyWarning);
+        const timeIso = item.dueTime || timeYesterday17h;
+        notifs.push({
+          id,
+          type: isUrgent ? 'urgent' : 'lead',
+          title: isUrgent ? `Urgent Action: ${item.name}` : `New lead in Pre-10%`,
+          subtitle: `${item.name} · Stage: Pre-10% · Showroom Visit`,
+          message: item.detail || 'Pipeline action required in active corridor.',
+          categoryTag: isUrgent ? 'Urgent' : 'Lead',
+          timestamp: timeIso,
+          exactIstTime: formatExactIstTimestamp(timeIso),
+          read: readIds.has(id),
+        });
+      }
+    }
+  }
+
+  // 4. Branch Pacing Milestones (e.g. JP Nagar 26.5%, Sarjapura 20.3%)
+  if (Array.isArray(branchTargets)) {
+    for (const target of branchTargets) {
+      if (Number(target.progress) >= 20) {
+        const id = `notif-target-${target.branchId || 'overall'}`;
+        const timeIso = timeYesterday18h;
+        notifs.push({
+          id,
+          type: 'milestone',
+          title: `${target.branchName} Corridor Milestone 🔥`,
+          subtitle: `${target.branchName} Hub · ${target.progress}% achieved towards quota`,
+          message: `${target.branchName} Hub pacing reached ${target.progress}%.`,
+          categoryTag: 'Milestone',
+          timestamp: timeIso,
+          exactIstTime: formatExactIstTimestamp(timeIso),
+          read: readIds.has(id),
+        });
+      }
+    }
+  }
+
+  // 5. Smart role-based fallback items if list is short
+  if (notifs.length < 4) {
+    if (isDesigner) {
+      notifs.push(
+        {
+          id: 'notif-fb-des-1',
+          type: 'urgent',
+          title: 'XP SLA Warning: Villa 402',
+          subtitle: 'Villa 402 · 2 hours left to submit 3D concept (-20 XP)',
+          message: 'Submit 3D concept before SLA expiry.',
+          categoryTag: 'Urgent',
+          timestamp: timeToday17m,
+          exactIstTime: formatExactIstTimestamp(timeToday17m),
+          read: readIds.has('notif-fb-des-1'),
+        },
+        {
+          id: 'notif-fb-des-2',
+          type: 'task',
+          title: 'Factory DQC Drawing Approved',
+          subtitle: 'Penthouse 1204 · Modular kitchen CAD ready for prod',
+          message: 'CAD drawing approved for production.',
+          categoryTag: 'Task',
+          timestamp: timeYesterday18h,
+          exactIstTime: formatExactIstTimestamp(timeYesterday18h),
+          read: readIds.has('notif-fb-des-2'),
+        }
+      );
+    } else if (isAdmin) {
+      notifs.push(
+        {
+          id: 'notif-fb-adm-1',
+          type: 'urgent',
+          title: 'Commercial Discount Escalation',
+          subtitle: 'Prestige Willow · 4% margin deviation sign-off required',
+          message: 'Quote requires Admin sign-off.',
+          categoryTag: 'Urgent',
+          timestamp: timeToday17m,
+          exactIstTime: formatExactIstTimestamp(timeToday17m),
+          read: readIds.has('notif-fb-adm-1'),
+        },
+        {
+          id: 'notif-fb-adm-2',
+          type: 'deal',
+          title: 'High-Value Project Closed: ₹31.82L',
+          subtitle: 'Priti Dutta · Gross booking closure at JP Nagar Hub',
+          message: 'Gross booking closure verified.',
+          categoryTag: 'Deal',
+          timestamp: timeToday1h,
+          exactIstTime: formatExactIstTimestamp(timeToday1h),
+          read: readIds.has('notif-fb-adm-2'),
+        }
+      );
+    } else {
+      notifs.push(
+        {
+          id: 'notif-fb-crm-1',
+          type: 'meeting',
+          title: 'Showroom Visit in 45m',
+          subtitle: 'Somya biswal · Gulshi Ar. · Showroom Consultation',
+          message: 'Client consultation with Somya biswal in 45 mins.',
+          categoryTag: 'Meeting',
+          timestamp: timeToday17m,
+          exactIstTime: formatExactIstTimestamp(timeToday17m),
+          read: readIds.has('notif-fb-crm-1'),
+        },
+        {
+          id: 'notif-fb-crm-2',
+          type: 'deal',
+          title: 'Token Advance Verified: ₹1.00L',
+          subtitle: 'Lead #1240 · Accounts confirmed advance receipt',
+          message: 'Advance payment received for Lead #1240.',
+          categoryTag: 'Deal',
+          timestamp: timeToday1h,
+          exactIstTime: formatExactIstTimestamp(timeToday1h),
+          read: readIds.has('notif-fb-crm-2'),
+        },
+        {
+          id: 'notif-fb-crm-3',
+          type: 'lead',
+          title: 'New lead in Pre-10%',
+          subtitle: 'Divya · Stage: Pre-10% · Showroom Visit',
+          message: 'High-intent enquiry assigned to your queue.',
+          categoryTag: 'Lead',
+          timestamp: timeYesterday17h,
+          exactIstTime: formatExactIstTimestamp(timeYesterday17h),
+          read: readIds.has('notif-fb-crm-3'),
+        },
+        {
+          id: 'notif-fb-crm-4',
+          type: 'milestone',
+          title: 'Moved Up to #2 on Board! 🔥',
+          subtitle: 'Top Closer pacing · 26.5% monthly quota achieved',
+          message: 'Leaderboard rank changed to #2.',
+          categoryTag: 'Milestone',
+          timestamp: timeYesterday18h,
+          exactIstTime: formatExactIstTimestamp(timeYesterday18h),
+          read: readIds.has('notif-fb-crm-4'),
+        },
+        {
+          id: 'notif-fb-crm-5',
+          type: 'lead',
+          title: 'Hot Lead in Pre-10%',
+          subtitle: 'Ambrish · Stage: Pre-10% · Showroom Visit',
+          message: 'New lead assigned for JP Nagar corridor.',
+          categoryTag: 'Lead',
+          timestamp: timeYesterday20h,
+          exactIstTime: formatExactIstTimestamp(timeYesterday20h),
+          read: readIds.has('notif-fb-crm-5'),
+        }
+      );
+    }
+  }
+
+  // Deduplicate by ID and sort chronologically (newest first)
+  const seen = new Set<string>();
+  const deduped: NotificationItem[] = [];
+  for (const n of notifs) {
+    if (!seen.has(n.id)) {
+      seen.add(n.id);
+      deduped.push(n);
+    }
+  }
+
+  return deduped.sort((a, b) => {
+    const tA = new Date(a.timestamp).getTime() || 0;
+    const tB = new Date(b.timestamp).getTime() || 0;
+    return tB - tA;
+  });
+}
+
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
@@ -245,7 +518,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [actionItems, setActionItems] = useState<ActionItem[]>(actionItemsMock);
   const [crmLeads, setCrmLeads] = useState<CrmLeadItem[]>(crmLeadsMock);
   const [designProjects, setDesignProjects] = useState<DesignProject[]>(designProjectsMock);
-  const [notificationsCount, setNotificationsCount] = useState<number>(0);
+  const [readNotificationIds, setReadNotificationIds] = useState<Set<string>>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('hub_read_notifications');
+        if (stored) return new Set(JSON.parse(stored));
+      } catch {}
+    }
+    return new Set();
+  });
+  const readNotificationIdsRef = useRef<Set<string>>(readNotificationIds);
+  readNotificationIdsRef.current = readNotificationIds;
+  const [notifications, setNotifications] = useState<NotificationItem[]>(() =>
+    buildDynamicNotifications({
+      currentUser: currentUserMock,
+      todayEvents: [],
+      actions: [],
+      announcements: [],
+      branchTargets: [],
+      overallTargets: [],
+      readIds: readNotificationIdsRef.current,
+    })
+  );
+  const notificationsCount = notifications.filter((n) => !readNotificationIds.has(n.id)).length;
   const [activeTimeframe, setActiveTimeframe] = useState<'Today' | 'MTD' | 'QTD'>('Today');
   const [activeLeaderboardView, setActiveLeaderboardView] = useState<'Individual' | 'Team'>('Individual');
 
@@ -339,6 +634,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         .then((res) => res || { individualRecords: [], teamRecords: [] })
         .catch(() => ({ individualRecords: [], teamRecords: [] }));
 
+      const todayEventsPromise = fetchTodayEvents('')
+        .then((res) => res?.events || [])
+        .catch(() => []);
+
+      const crmActionsPromise = fetchActions('')
+        .then((res) => res?.actions || [])
+        .catch(() => []);
+
       const branchTargetPromises = BRANCH_TARGET_CONFIGS.map(async (b) => {
         try {
           const res = await fetchTargets('', { branchId: b.id });
@@ -360,6 +663,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         leaderboardData,
         crmPeopleData,
         crmRecordsData,
+        todayEventsData,
+        crmActionsData,
         ...branchTargetsArrays
       ] = await Promise.all([
         announcementsPromise,
@@ -368,6 +673,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         crmLeaderboardPromise,
         crmPeoplePromise,
         crmRecordsPromise,
+        todayEventsPromise,
+        crmActionsPromise,
         ...branchTargetPromises,
       ]);
 
@@ -416,12 +723,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           branchId: 'all',
           branchName: 'All Hubs (Overall)',
           team: 'Operations HQ',
-          title: 'Monthly Target',
-          current: '₹1.48 Cr',
-          target: '₹6.60 Cr',
-          progress: 22.4,
-          currentInr: 14800000,
-          targetInr: 66000000,
+          title: 'Monthly gross booking',
+          current: '₹71.67L',
+          target: '₹4.80 Cr',
+          progress: 14.9,
+          currentInr: 7167288,
+          targetInr: 48000000,
         });
       }
 
@@ -433,36 +740,36 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (branchTargets.length === 0) {
         branchTargets.push(
           {
-            branchId: 'SARJAPUR',
-            branchName: 'Sarjapura',
-            team: 'Sarjapura Hub',
-            title: 'Monthly Target',
-            current: '₹55.40L',
-            target: '₹1.20 Cr',
-            progress: 46.2,
-            currentInr: 5540000,
-            targetInr: 12000000,
-          },
-          {
             branchId: 'JP_NAGAR',
             branchName: 'JP Nagar',
             team: 'JP Nagar Hub',
-            title: 'Monthly Target',
-            current: '₹48.77L',
-            target: '₹2.40 Cr',
+            title: 'Monthly gross booking',
+            current: '₹31.82L',
+            target: '₹1.20 Cr',
+            progress: 26.5,
+            currentInr: 3181997,
+            targetInr: 12000000,
+          },
+          {
+            branchId: 'SARJAPUR',
+            branchName: 'Sarjapura',
+            team: 'Sarjapura Hub',
+            title: 'Monthly gross booking',
+            current: '₹24.40L',
+            target: '₹1.20 Cr',
             progress: 20.3,
-            currentInr: 4877000,
-            targetInr: 24000000,
+            currentInr: 2439911,
+            targetInr: 12000000,
           },
           {
             branchId: 'HBR',
             branchName: 'HBR Layout',
             team: 'HBR Layout Hub',
-            title: 'Monthly Target',
-            current: '₹36.95L',
+            title: 'Monthly gross booking',
+            current: '₹15.45L',
             target: '₹2.40 Cr',
-            progress: 15.4,
-            currentInr: 3695000,
+            progress: 6.4,
+            currentInr: 1545380,
             targetInr: 24000000,
           }
         );
@@ -544,8 +851,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               .replace(/[²]/g, '2')
               .replace(/[\u20B9â‚¹]/g, '₹');
 
-        const branchPrefix = target.branchName ? `${target.branchName}: ` : '';
-        const title = `${branchPrefix}${target.title}: ${currentFormatted} achieved (${target.progress}%)`;
+        const isOverall = target.branchId === 'all' || target.branchName?.includes('Overall');
+        const branchPrefix = target.branchName
+          ? isOverall
+            ? `${target.branchName} : `
+            : `${target.branchName}: `
+          : '';
+        const targetTitle = target.title || 'Monthly gross booking';
+        const title = `${branchPrefix}${targetTitle}: ${currentFormatted} achieved (${target.progress}%)`;
         const content =
           target.branchName && target.branchId !== 'all'
             ? `${target.branchName} Hub monthly gross booking pacing is at ${currentFormatted} towards the ${targetFormatted} branch target (${target.progress}% achieved).`
@@ -557,7 +870,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           categoryColor: '#8B5CF6',
           iconEmoji: '🎯',
           title,
-          timestamp: 'Live Pacing',
+          timestamp: 'Just now',
           createdAt: new Date().toISOString(),
           author: {
             name:
@@ -707,6 +1020,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       });
 
       setAnnouncementPosts(combinedAnnouncements);
+
+      const dynamicNotifs = buildDynamicNotifications({
+        currentUser,
+        todayEvents: Array.isArray(todayEventsData) ? todayEventsData : [],
+        actions: Array.isArray(crmActionsData) ? crmActionsData : [],
+        announcements: combinedAnnouncements,
+        branchTargets,
+        overallTargets,
+        readIds: readNotificationIdsRef.current,
+      });
+      setNotifications(dynamicNotifs);
     } catch {
       // Offline fallback preserved in state
     }
@@ -1273,9 +1597,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  const clearNotifications = () => {
-    setNotificationsCount(0);
+  const markAllNotificationsRead = () => {
+    const allIds = notifications.map((n) => n.id);
+    const nextSet = new Set([...Array.from(readNotificationIds), ...allIds]);
+    setReadNotificationIds(nextSet);
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('hub_read_notifications', JSON.stringify(Array.from(nextSet)));
+      } catch {}
+    }
   };
+
+  const markNotificationRead = (id: string) => {
+    const nextSet = new Set(readNotificationIds);
+    nextSet.add(id);
+    setReadNotificationIds(nextSet);
+    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('hub_read_notifications', JSON.stringify(Array.from(nextSet)));
+      } catch {}
+    }
+  };
+
+  const clearNotifications = markAllNotificationsRead;
 
   return (
     <AppContext.Provider
@@ -1314,7 +1660,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         login,
         logout,
         switchUser,
+        notifications,
         notificationsCount,
+        markAllNotificationsRead,
+        markNotificationRead,
         clearNotifications,
         activeTimeframe,
         setActiveTimeframe,

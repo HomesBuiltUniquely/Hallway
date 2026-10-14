@@ -379,9 +379,11 @@ export default function Header() {
             title="Activity & Notifications"
           >
             <Bell className="w-4 h-4" />
-            <span className="absolute -top-1 -right-1 px-1.5 py-0.2 bg-[#EF4444] text-white text-[9px] font-black rounded-full shadow-xs">
-              3
-            </span>
+            {notificationsCount > 0 && (
+              <span className="absolute -top-1 -right-1 px-1.5 py-0.2 bg-[#EF4444] text-white text-[9px] font-black rounded-full shadow-xs animate-in zoom-in-75 duration-150">
+                {notificationsCount > 9 ? '9+' : notificationsCount}
+              </span>
+            )}
           </button>
 
           {/* Notifications Dropdown */}

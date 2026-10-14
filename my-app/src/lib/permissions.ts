@@ -103,6 +103,8 @@ export function canDeleteAnnouncement(
   user?: { role?: string; name?: string; email?: string } | null
 ): boolean {
   if (!user) return false;
+  // System target pacing cards cannot be deleted
+  if (post.type === 'quota' || post.id?.startsWith('crm-target-')) return false;
   if (isSuperAdmin(user)) return true;
 
   const uName = (user.name || '').toLowerCase().trim();
