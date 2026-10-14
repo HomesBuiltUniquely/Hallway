@@ -1,173 +1,182 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { CorridorGate } from '../../components/hallway/CorridorGate';
-import { CorridorScopeBar, useCorridorScope } from '../../components/hallway/CorridorScopeBar';
+import {
+  CorridorBanner,
+  CorridorGate,
+  CorridorSkeleton,
+} from '../../components/hallway/CorridorGate';
 import DepartmentPills, {
   isSalesCrmDepartment,
 } from '../../components/common/DepartmentPills';
-import { FeedPost } from '../../types';
 import EmptyState from '../../components/common/EmptyState';
+import TargetsPaceBoard, {
+  type TargetQuotaRow,
+} from '../../components/targets/TargetsPaceBoard';
+import { fetchTargets } from '../../lib/crmApi';
+import { formatInrToLakhsOrCrores } from '../../lib/crmAnnouncementsGenerator';
+import type { HallwayTargetCard } from '../../types/hallway';
 
-type QuotaCard = {
-  id: string;
-  label: string;
-  currentFormatted: string;
-  targetFormatted: string;
-  percentage: number;
-  periodKey: string;
+const BRANCH_TARGET_CONFIGS = [
+  { id: 'JP_NAGAR', name: 'JP Nagar' },
+  { id: 'SARJAPUR', name: 'Sarjapura' },
+  { id: 'HBR', name: 'HBR Layout' },
+] as const;
+
+type TargetCardWithBranch = HallwayTargetCard & {
+  branchId?: string;
+  branchName?: string;
 };
 
-const FALLBACK_CARDS: QuotaCard[] = [
-  {
-    id: 'crm-target-all-current',
-    label: 'MONTHLY GROSS BOOKING',
-    currentFormatted: '₹71.79L',
-    targetFormatted: '₹4.80 Cr',
-    percentage: 15,
-    periodKey: 'sales_targets - 2026-10',
-  },
-  {
-    id: 'crm-target-JP_NAGAR-current',
-    label: 'JP NAGAR · MONTHLY GROSS BOOKING',
-    currentFormatted: '₹31.82L',
-    targetFormatted: '₹1.20 Cr',
-    percentage: 26.5,
-    periodKey: 'sales_targets - 2026-10',
-  },
-  {
-    id: 'crm-target-SARJAPUR-current',
-    label: 'SARJAPURA · MONTHLY GROSS BOOKING',
-    currentFormatted: '₹24.40L',
-    targetFormatted: '₹1.20 Cr',
-    percentage: 20.3,
-    periodKey: 'sales_targets - 2026-10',
-  },
-  {
-    id: 'crm-target-HBR-current',
-    label: 'HBR LAYOUT · MONTHLY GROSS BOOKING',
-    currentFormatted: '₹15.45L',
-    targetFormatted: '₹2.40 Cr',
-    percentage: 6.4,
-    periodKey: 'sales_targets - 2026-10',
-  },
-];
+function toRow(card: TargetCardWithBranch, index: number): TargetQuotaRow {
+  const currentInr =
+    typeof card.currentInr === 'number' && card.currentInr > 0 ? card.currentInr : undefined;
+  const targetInr =
+    typeof card.targetInr === 'number' && card.targetInr > 0 ? card.targetInr : undefined;
+  const currentFormatted =
+    currentInr != null
+      ? formatInrToLakhsOrCrores(currentInr)
+      : card.current || '₹0';
+  const targetFormatted =
+    targetInr != null
+      ? formatInrToLakhsOrCrores(targetInr)
+      : card.target || '₹0';
 
-function toQuotaCard(post: FeedPost): QuotaCard | null {
-  const q = post.quotaProgress;
-  if (!q) return null;
-  const label =
-    q.label?.toUpperCase().includes('GROSS') || q.label?.toUpperCase().includes('TARGET')
-      ? q.label.replace(/Target/i, '').trim().toUpperCase() || 'MONTHLY GROSS BOOKING'
-      : 'MONTHLY GROSS BOOKING';
+  const isOverall =
+    !card.branchId ||
+    card.branchId === 'all' ||
+    /overall|all hubs/i.test(card.branchName || '') ||
+    /overall|all hubs/i.test(card.title || '');
+
+  const label = isOverall
+    ? (card.title || 'MONTHLY GROSS BOOKING').toUpperCase()
+    : `${(card.branchName || card.branchId || 'HUB').toUpperCase()} · ${(card.title || 'MONTHLY GROSS BOOKING').toUpperCase()}`;
+
   return {
-    id: post.id,
-    label: label.includes('GROSS') ? label : `${label} · MONTHLY GROSS BOOKING`,
-    currentFormatted: q.currentFormatted || `₹${q.current}`,
-    targetFormatted: q.targetFormatted || `₹${q.target}`,
-    percentage: Number(q.percentage) || 0,
-    periodKey: `sales_targets - ${new Date().toISOString().slice(0, 7)}`,
+    id: `crm-target-${card.branchId || 'all'}-${card.yearMonth || 'current'}-${index}`,
+    label,
+    currentFormatted,
+    targetFormatted,
+    percentage: Number(card.progress) || 0,
+    currentInr,
+    targetInr,
+    periodKey: card.yearMonth
+      ? `sales_targets - ${card.yearMonth}`
+      : `sales_targets - ${new Date().toISOString().slice(0, 7)}`,
   };
 }
 
-function TargetQuotaCard({ card }: { card: QuotaCard }) {
-  const pct = Math.max(0, Math.min(100, card.percentage));
-  return (
-    <div className="bg-white dark:bg-panel border border-slate-200/90 dark:border-surface-warm/60 rounded-2xl p-5 sm:p-6 shadow-xs space-y-4">
-      <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">
-        {card.label}
-      </p>
-
-      <div className="flex items-end justify-between gap-4 flex-wrap">
-        <p className="text-3xl sm:text-4xl font-black text-ink dark:text-white tracking-tight font-mono">
-          {card.currentFormatted}
-        </p>
-        <div className="text-right">
-          <p className="text-lg sm:text-xl font-black text-ink dark:text-white">{Math.round(pct)}%</p>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Target: <span className="font-semibold text-accent-cyan">{card.targetFormatted}</span>
-          </p>
-        </div>
-      </div>
-
-      <div className="h-2.5 w-full bg-surface-muted dark:bg-surface-warm/40 rounded-full overflow-hidden">
-        <div
-          className="h-full rounded-full bg-gradient-to-r from-brand via-brand-hover to-accent-cyan transition-all duration-700"
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-
-      <p className="text-[11px] text-slate-400 dark:text-slate-500 font-medium">{card.periodKey}</p>
-    </div>
-  );
-}
-
 function TargetsInner() {
-  const { branchId, setBranchId, salesManagerId, setSalesManagerId, options } = useCorridorScope();
-  const { feedPosts, activeDepartment } = useApp();
+  const { activeDepartment } = useApp();
+  const [rows, setRows] = useState<TargetQuotaRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
 
-  const cards = useMemo(() => {
-    const dynamic = (feedPosts || [])
-      .filter((p) => p.type === 'quota' || p.id?.startsWith('crm-target-'))
-      .map(toQuotaCard)
-      .filter((c): c is QuotaCard => Boolean(c));
-
-    const source = dynamic.length > 0 ? dynamic : FALLBACK_CARDS;
-
-    return source.filter((card) => {
-      if (!branchId || branchId === 'all') return true;
-      const b = branchId.toLowerCase();
-      const id = card.id.toLowerCase();
-      const label = card.label.toLowerCase();
-      return (
-        id.includes(b) ||
-        label.includes(b) ||
-        id.includes('overall') ||
-        id.includes('all') ||
-        label.includes('all hubs')
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const overallRes = await fetchTargets('', {});
+      const overallCards = (overallRes?.cards || []).map((card, i) =>
+        toRow({ ...card, branchId: 'all', branchName: 'All Hubs (Overall)' }, i)
       );
-    });
-  }, [feedPosts, branchId]);
+
+      const branchArrays = await Promise.all(
+        BRANCH_TARGET_CONFIGS.map(async (b) => {
+          try {
+            const res = await fetchTargets('', { branchId: b.id });
+            return (res?.cards || []).map((card, i) =>
+              toRow({ ...card, branchId: b.id, branchName: b.name }, i + 10)
+            );
+          } catch {
+            return [] as TargetQuotaRow[];
+          }
+        })
+      );
+
+      const branchRows = branchArrays.flat();
+      // Prefer one overall card, then one card per branch (highest progress if duplicates)
+      const byBranch = new Map<string, TargetQuotaRow>();
+      for (const row of [...overallCards, ...branchRows]) {
+        const key = row.id.includes('-all-')
+          ? 'all'
+          : row.label.split('·')[0]?.trim().toUpperCase() || row.id;
+        const prev = byBranch.get(key);
+        if (!prev || row.percentage >= prev.percentage) byBranch.set(key, row);
+      }
+
+      const ordered: TargetQuotaRow[] = [];
+      const all = byBranch.get('all') || overallCards[0];
+      if (all) ordered.push(all);
+      for (const b of BRANCH_TARGET_CONFIGS) {
+        const hit = byBranch.get(b.name.toUpperCase()) || byBranch.get(b.id);
+        if (hit && hit !== all) ordered.push(hit);
+      }
+      // Any remaining CRM cards not matched above
+      for (const row of byBranch.values()) {
+        if (!ordered.includes(row)) ordered.push(row);
+      }
+
+      setRows(ordered);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error('Failed to load CRM targets'));
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   return (
-    <div className="space-y-6">
-      {/* Page title — matches Operating Targets & Quotas reference */}
-      <div className="pb-1 border-b border-slate-200/80 dark:border-surface-warm/50">
-        <h1 className="text-2xl sm:text-3xl font-black text-ink dark:text-white tracking-tight">
+    <div className="space-y-6 pb-12">
+      <div className="space-y-2">
+        <h1 className="text-2xl font-black tracking-tight text-ink dark:text-white sm:text-3xl">
           Operating Targets &amp; Quotas
         </h1>
-        <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1.5 max-w-2xl">
-          Monthly gross booking vs Hub incentives target. Progress comes from CRM.
+        <p className="max-w-2xl text-xs font-medium text-slate-500 dark:text-slate-400 sm:text-sm">
+          Live monthly gross booking vs Hub target from CRM — pace, forecast, and which corridor
+          needs attention.
         </p>
       </div>
 
       <DepartmentPills />
 
-      <CorridorScopeBar
-        branchId={branchId}
-        salesManagerId={salesManagerId}
-        options={options}
-        onBranch={setBranchId}
-        onManager={setSalesManagerId}
-      />
-
       {!isSalesCrmDepartment(activeDepartment) ? (
         <EmptyState
-          title="No individual standings yet"
-          description="Live sales velocity ranks will appear here when CRM returns people for this period."
-        />
-      ) : cards.length === 0 ? (
-        <EmptyState
-          title="No targets matching scope"
-          description="Select 'All branches' or adjust corridor filters to inspect branch quotas."
+          title="No targets for this department"
+          description="Sales CRM quotas appear when Sales is selected."
         />
       ) : (
-        <div className="space-y-4">
-          {cards.map((card) => (
-            <TargetQuotaCard key={card.id} card={card} />
-          ))}
-        </div>
+        <>
+          {error && (
+            <div className="flex items-center justify-between gap-3 rounded-2xl border border-brand/25 bg-brand-soft px-4 py-3 text-xs text-brand">
+              <span>{error.message}</span>
+              <button
+                type="button"
+                onClick={() => void load()}
+                className="rounded-xl bg-brand px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-white"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+          <CorridorBanner error={error} />
+
+          {loading ? (
+            <CorridorSkeleton rows={4} />
+          ) : rows.length === 0 ? (
+            <EmptyState
+              title="No targets yet"
+              description="Branch quotas will appear here when CRM publishes monthly gross booking targets."
+            />
+          ) : (
+            <TargetsPaceBoard rows={rows} />
+          )}
+        </>
       )}
     </div>
   );

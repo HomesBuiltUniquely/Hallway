@@ -70,39 +70,6 @@ function saveDiskCacheEntry(key: string, expiresAt: number, payload: UpstreamPay
   }
 }
 
-const ALL_TIME_TEAMS_DATA = [
-  {
-    id: 'team_rank_1',
-    teamName: 'HBR — Kulwanth P',
-    leadName: 'Led by Kulwanth P • 36 Deals Closed',
-    value: '₹2.94 Cr',
-    metricLabel: 'All-Time Highest Revenue',
-    branchId: 'HBR',
-    department: 'Sales',
-    verified: true,
-  },
-  {
-    id: 'team_rank_2',
-    teamName: 'SARJAPUR — Arjun Hub',
-    leadName: 'Led by Arjun Hub • 20 Deals Closed',
-    value: '₹1.63 Cr',
-    metricLabel: 'All-Time Highest Revenue',
-    branchId: 'SARJAPUR',
-    department: 'Sales',
-    verified: true,
-  },
-  {
-    id: 'team_rank_3',
-    teamName: 'JP NAGAR — Marfani Hub',
-    leadName: 'Led by Marfani Hub • 5 Deals Closed',
-    value: '₹66.18L',
-    metricLabel: 'All-Time Highest Revenue',
-    branchId: 'JP_NAGAR',
-    department: 'Sales',
-    verified: true,
-  },
-];
-
 const ALL_TIME_LEADERBOARD_INDIVIDUALS = [
   {
     id: '23',
@@ -497,7 +464,7 @@ function sanitizeHallwayLeaderboardPayload(payload: UpstreamPayload): UpstreamPa
   return payload;
 }
 
-function sanitizeHallwayRecordsPayload(payload: UpstreamPayload, branchId?: string): UpstreamPayload {
+function sanitizeHallwayRecordsPayload(payload: UpstreamPayload, _branchId?: string): UpstreamPayload {
   try {
     const text = new TextDecoder().decode(payload.body);
     const parsed = JSON.parse(text);
@@ -505,88 +472,26 @@ function sanitizeHallwayRecordsPayload(payload: UpstreamPayload, branchId?: stri
 
     if (parsed && Array.isArray(parsed.individualRecords)) {
       const testRegex = /\btest\b/i;
+      const before = parsed.individualRecords.length;
 
-      parsed.individualRecords = parsed.individualRecords
-        .map((rec: any) => {
-          if (rec.id === 'fastest_deal_close' && (rec.holderName || '').includes('Sharanya')) {
-            return {
-              ...rec,
-              description: 'All-time fastest turnaround from lead creation to Closed Won status across authentic client interior contracts.',
-            };
-          }
+      parsed.individualRecords = parsed.individualRecords.filter((rec: any) => {
+        const isTestWord =
+          testRegex.test(rec.holderName || '') || testRegex.test(rec.subValue || '');
+        const valNum = parseFloat(String(rec.value || '').replace(/[^0-9.]/g, ''));
+        const isZeroTurnaround =
+          rec.id === 'fastest_deal_close' &&
+          (valNum <= 0.05 ||
+            String(rec.subValue || '').toLowerCase().includes('g-2607') ||
+            String(rec.holderName || '').toLowerCase().includes('shalny'));
+        if (isTestWord) return false;
+        if (isZeroTurnaround) return false;
+        return true;
+      });
 
-          const isTestWord =
-            testRegex.test(rec.holderName || '') ||
-            testRegex.test(rec.subValue || '');
-
-          const valNum = parseFloat(String(rec.value || '').replace(/[^0-9.]/g, ''));
-          const isZeroTurnaround =
-            rec.id === 'fastest_deal_close' &&
-            (valNum <= 0.05 ||
-              String(rec.subValue || '').toLowerCase().includes('g-2607') ||
-              String(rec.holderName || '').toLowerCase().includes('shalny'));
-
-          if (rec.id === 'fastest_deal_close' && (isTestWord || isZeroTurnaround)) {
-            modified = true;
-            return {
-              id: 'fastest_deal_close',
-              title: 'Fastest Deal Close',
-              holderName: 'Sharanya (Inactive)',
-              holderRole: 'Sales Executive',
-              userId: 105,
-              avatar: null,
-              value: '2.7 days',
-              subValue: 'Lead #M-777 • Marketing Lead',
-              department: 'Sales',
-              dateAwarded: '2026-06-15',
-              verified: true,
-              description:
-                'All-time fastest turnaround from lead creation to Closed Won status across authentic client interior contracts.',
-            };
-          }
-
-          if (isTestWord) {
-            modified = true;
-            return null;
-          }
-
-          return rec;
-        })
-        .filter(Boolean);
-
-      const hasFastest = parsed.individualRecords.some((r: any) => r.id === 'fastest_deal_close');
-      if (!hasFastest) {
-        parsed.individualRecords.splice(1, 0, {
-          id: 'fastest_deal_close',
-          title: 'Fastest Deal Close',
-          holderName: 'Sharanya (Inactive)',
-          holderRole: 'Sales Executive',
-          userId: 105,
-          avatar: null,
-          value: '2.7 days',
-          subValue: 'Lead #M-777 • Marketing Lead',
-          department: 'Sales',
-          dateAwarded: '2026-06-15',
-          verified: true,
-          description:
-            'All-time fastest turnaround from lead creation to Closed Won status across authentic client interior contracts.',
-        });
-      }
-      modified = true;
+      modified = parsed.individualRecords.length !== before;
     }
 
-    // Replace quarterly/monthly team records with verified all-time CRM team revenue benchmarks
-    const normBranch = (branchId || '').toUpperCase();
-    let teams = ALL_TIME_TEAMS_DATA;
-    if (normBranch === 'HBR') {
-      teams = ALL_TIME_TEAMS_DATA.filter((t) => t.branchId === 'HBR');
-    } else if (normBranch === 'SARJAPUR') {
-      teams = ALL_TIME_TEAMS_DATA.filter((t) => t.branchId === 'SARJAPUR');
-    } else if (normBranch === 'JP_NAGAR' || normBranch === 'JP NAGAR') {
-      teams = ALL_TIME_TEAMS_DATA.filter((t) => t.branchId === 'JP_NAGAR');
-    }
-    parsed.teamRecords = teams;
-    modified = true;
+    // Keep CRM teamRecords as returned — do not replace with static benchmarks
 
     if (modified) {
       const newBuf = Buffer.from(JSON.stringify(parsed), 'utf-8');
@@ -603,13 +508,6 @@ function sanitizeHallwayRecordsPayload(payload: UpstreamPayload, branchId?: stri
   return payload;
 }
 
-const SQUAD_ROLLUPS: Record<string, { revenueFormatted: string; conversionRate: number }> = {
-  HBR: { revenueFormatted: '₹2.94 Cr', conversionRate: 2.3 },
-  SARJAPUR: { revenueFormatted: '₹1.63 Cr', conversionRate: 2.4 },
-  SARJAPURA: { revenueFormatted: '₹1.63 Cr', conversionRate: 2.4 },
-  JP_NAGAR: { revenueFormatted: '₹66.18L', conversionRate: 1.3 },
-};
-
 function sanitizeHallwayPeoplePayload(payload: UpstreamPayload): UpstreamPayload {
   try {
     const text = new TextDecoder().decode(payload.body);
@@ -618,37 +516,20 @@ function sanitizeHallwayPeoplePayload(payload: UpstreamPayload): UpstreamPayload
 
     if (parsed && Array.isArray(parsed.people)) {
       const testRegex = /\btest\b/i;
-      parsed.people = parsed.people
-        .filter((person: any) => {
-          const name = String(person.name || '');
-          if (
-            testRegex.test(name) ||
-            name.toLowerCase().includes('shalny') ||
-            name.toLowerCase().includes('razi md') ||
-            name.toLowerCase().includes('inactive')
-          ) {
-            return false;
-          }
-          return true;
-        })
-        .map((person: any) => {
-          const role = String(person.role || '');
-          const isManager = role.toLowerCase().includes('manager');
-          if (isManager) {
-            const branch = (person.branchId || '').toUpperCase();
-            const rollup = SQUAD_ROLLUPS[branch];
-            if (rollup && (person.revenueFormatted === '₹0' || !person.conversionRate)) {
-              modified = true;
-              return {
-                ...person,
-                revenueFormatted: rollup.revenueFormatted,
-                conversionRate: rollup.conversionRate,
-              };
-            }
-          }
-          return person;
-        });
-      modified = true;
+      const before = parsed.people.length;
+      parsed.people = parsed.people.filter((person: any) => {
+        const name = String(person.name || '');
+        if (
+          testRegex.test(name) ||
+          name.toLowerCase().includes('shalny') ||
+          name.toLowerCase().includes('razi md') ||
+          name.toLowerCase().includes('inactive')
+        ) {
+          return false;
+        }
+        return true;
+      });
+      modified = parsed.people.length !== before;
     }
 
     if (modified) {
