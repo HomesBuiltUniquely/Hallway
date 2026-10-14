@@ -250,7 +250,7 @@ export default function ModuleLauncher() {
         <div
           role="dialog"
           aria-label="HOWS Modules"
-          className="absolute right-0 top-[calc(100%+8px)] z-50 rounded-2xl border border-slate-200/90 dark:border-slate-700/80 bg-white/95 dark:bg-[#0D1829]/95 backdrop-blur-xl px-2 py-1.5 shadow-[0_12px_28px_rgba(15,23,42,0.14)] animate-in fade-in zoom-in-95 duration-150"
+          className="absolute right-0 top-[calc(100%+8px)] z-50 rounded-2xl border border-slate-200/90 dark:border-slate-700/80 bg-white/95 dark:bg-panel/95 backdrop-blur-xl px-2 py-1.5 shadow-[0_12px_28px_rgba(15,23,42,0.14)] animate-in fade-in zoom-in-95 duration-150"
         >
           <div className="flex items-center gap-1.5">
             {modules.map((m) => (
@@ -283,7 +283,7 @@ export default function ModuleLauncher() {
       {/* Module Authentication Dialog */}
       {authModalModule && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-          <div className="relative w-full max-w-md bg-white dark:bg-[#0D1829] rounded-3xl p-6 sm:p-7 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-5 animate-in zoom-in-95 duration-150">
+          <div className="relative w-full max-w-md bg-white dark:bg-panel rounded-3xl p-6 sm:p-7 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-5 animate-in zoom-in-95 duration-150">
             {/* Close Button */}
             <button
               type="button"

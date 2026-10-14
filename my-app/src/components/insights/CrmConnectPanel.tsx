@@ -48,7 +48,7 @@ export function CrmConnectPanel({
 
       <form
         onSubmit={handleLogin}
-        className="bg-white dark:bg-[#0D1829] border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-xs space-y-3"
+        className="bg-white dark:bg-panel border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-xs space-y-3"
       >
         <p className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">CRM login</p>
         <input
@@ -79,7 +79,7 @@ export function CrmConnectPanel({
         </button>
       </form>
 
-      <div className="bg-white dark:bg-[#0D1829] border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-xs space-y-3">
+      <div className="bg-white dark:bg-panel border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-xs space-y-3">
         <p className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
           Dev token
         </p>

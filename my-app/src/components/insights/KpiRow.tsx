@@ -38,7 +38,7 @@ function KpiCard({
   const up = (tile.changePercent ?? tile.changeAbsolute ?? 0) >= 0;
 
   return (
-    <div className="bg-white dark:bg-[#0D1829] border border-slate-200/80 dark:border-slate-800 rounded-2xl p-4 shadow-xs">
+    <div className="bg-white dark:bg-panel border border-slate-200/80 dark:border-slate-800 rounded-2xl p-4 shadow-xs">
       <p className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">{label}</p>
       <p className="text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-1">{display}</p>
       {delta && (

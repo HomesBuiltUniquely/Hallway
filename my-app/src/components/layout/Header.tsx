@@ -78,9 +78,10 @@ export default function Header() {
   const getPageInfo = () => {
     if (pathname === '/leaderboards') return { module: 'HUB Velocity', title: 'Performance Leaderboards' };
     if (pathname === '/records') return { module: 'HUB Archive', title: 'Book of Records' };
-    if (pathname === '/targets') return { module: 'HUB Operations', title: 'Operating Targets' };
+    if (pathname === '/targets') return { module: 'HUB Operations', title: 'Operating Targets & Quotas' };
     if (pathname === '/people') return { module: 'HUB Directory', title: 'People & Directory' };
     if (pathname === '/announcements') return { module: 'HUB Broadcasts', title: 'Announcements' };
+    if (pathname === '/notifications') return { module: 'HUB Alerts', title: 'Notifications' };
     if (pathname === '/crm-erp') return { module: 'Hows CRM', title: 'Lead Management' };
     if (pathname === '/insights') return { module: 'Hows CRM', title: 'CRM Insights' };
     if (pathname === '/design-erp') return { module: 'Hows Design', title: '3D Spatial Studio' };
@@ -196,7 +197,7 @@ export default function Header() {
 
         {/* Global Search Results Dropdown Overlay */}
         {isSearchFocused && q.length > 0 && (
-          <div className="absolute left-0 right-0 top-full mt-2 bg-white dark:bg-[#0D1829] rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden z-50 animate-in fade-in duration-100 max-h-96 overflow-y-auto">
+          <div className="absolute left-0 right-0 top-full mt-2 bg-white dark:bg-panel rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden z-50 animate-in fade-in duration-100 max-h-96 overflow-y-auto">
             <div className="px-4 py-2 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-500 font-semibold">
               <span>Found {totalResultsCount} matching {totalResultsCount === 1 ? 'item' : 'items'}</span>
               <span className="font-mono text-[10px] bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded">ESC to close</span>
@@ -380,7 +381,7 @@ export default function Header() {
           >
             <Bell className="w-4 h-4" />
             {notificationsCount > 0 && (
-              <span className="absolute -top-1 -right-1 px-1.5 py-0.2 bg-[#EF4444] text-white text-[9px] font-black rounded-full shadow-xs animate-in zoom-in-75 duration-150">
+              <span className="absolute -top-1 -right-1 px-1.5 py-0.2 bg-brand text-white text-[9px] font-black rounded-full shadow-xs animate-in zoom-in-75 duration-150">
                 {notificationsCount > 9 ? '9+' : notificationsCount}
               </span>
             )}
@@ -415,7 +416,7 @@ export default function Header() {
 
           {/* User Profile Popover Card */}
           {isProfileOpen && (
-            <div className="absolute right-0 mt-2 w-72 bg-white dark:bg-[#0D1829] rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-4 z-50 animate-in fade-in zoom-in-95 duration-150">
+            <div className="absolute right-0 mt-2 w-72 bg-white dark:bg-panel rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-4 z-50 animate-in fade-in zoom-in-95 duration-150">
               {/* Profile Details */}
               <div className="flex items-start gap-3">
                 <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 border border-slate-200 dark:border-slate-700/60">

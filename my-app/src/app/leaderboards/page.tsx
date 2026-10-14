@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { ChevronRight, Search, Sparkles, TrendingDown, TrendingUp } from 'lucide-react';
+import { Search, TrendingUp } from 'lucide-react';
 import { useLeaderboard } from '../../hooks/useLeaderboard';
-import type { HallwayTrend, LeaderboardPeriod } from '../../types/hallway';
+import type { LeaderboardPeriod } from '../../types/hallway';
 import EmptyState from '../../components/common/EmptyState';
 import {
   CorridorBanner,
@@ -14,8 +14,8 @@ import {
 } from '../../components/hallway/CorridorGate';
 import { CorridorScopeBar, useCorridorScope } from '../../components/hallway/CorridorScopeBar';
 import DepartmentPills from '../../components/common/DepartmentPills';
+import TopFiveShowroom from '../../components/leaderboards/TopFiveShowroom';
 import { useApp } from '../../context/AppContext';
-import { progressWidth } from '../../lib/hallwayDisplay';
 
 const PERIODS: { label: string; value: LeaderboardPeriod }[] = [
   { label: 'MTD', value: 'mtd' },
@@ -38,12 +38,6 @@ const DEPARTMENTS = [
   'HR',
   'Finance',
 ] as const;
-
-function TrendMark({ trend }: { trend?: HallwayTrend }) {
-  if (trend === 'up') return <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />;
-  if (trend === 'down') return <TrendingDown className="w-3.5 h-3.5 text-rose-500" />;
-  return null;
-}
 
 function LeaderboardsInner() {
   const { activeDepartment, setActiveDepartment } = useApp();
@@ -162,16 +156,22 @@ function LeaderboardsInner() {
     });
   }, [data?.teams, localSearch, activeDepartment]);
 
-  // Keep Top 5 only across MTD, QTD, and All-Time
-  const topIndividuals = useMemo(() => individuals.slice(0, 5), [individuals]);
-  const topTeams = useMemo(() => teams.slice(0, 5), [teams]);
+  // Top 5 CRM sales with positive standings only
+  const topIndividuals = useMemo(
+    () => individuals.filter((m) => m.rank != null).slice(0, 5),
+    [individuals]
+  );
+  const topTeams = useMemo(
+    () => teams.filter((t) => t.rank != null).slice(0, 5),
+    [teams]
+  );
 
   return (
     <div className="space-y-6 font-sans">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-            Performance <span className="text-rose-500 dark:text-rose-400">Leaderboards</span>
+          <h1 className="text-2xl sm:text-3xl font-black text-ink dark:text-white tracking-tight">
+            Performance Leaderboards
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
             Real-time velocity metrics across all operating divisions.
@@ -184,7 +184,7 @@ function LeaderboardsInner() {
             placeholder="Find member..."
             value={localSearch}
             onChange={(e) => setLocalSearch(e.target.value)}
-            className="w-full pl-9 pr-3 py-1.5 bg-white dark:bg-[#0D1829] border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            className="w-full pl-9 pr-3 py-1.5 bg-white dark:bg-panel border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
           />
         </div>
       </div>
@@ -202,12 +202,12 @@ function LeaderboardsInner() {
 
       <CorridorBanner error={error} />
 
-      <div className="bg-white dark:bg-[#0D1829] border border-slate-200/90 dark:border-slate-800/90 rounded-2xl p-6 shadow-xs space-y-6">
+      <div className="bg-white dark:bg-panel border border-slate-200/90 dark:border-slate-800/90 rounded-2xl p-6 shadow-xs space-y-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
           <div>
             <div className="flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-rose-500" />
-              <h2 className="text-sm font-extrabold uppercase tracking-wider text-slate-900 dark:text-white font-sans">
+              <TrendingUp className="w-4 h-4 text-brand" />
+              <h2 className="text-sm font-extrabold uppercase tracking-wider text-ink dark:text-white font-sans">
                 SALES VELOCITY
               </h2>
             </div>
@@ -217,14 +217,14 @@ function LeaderboardsInner() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
+            <div className="flex p-1 bg-surface-muted dark:bg-slate-800 rounded-xl">
               <button
                 type="button"
                 onClick={() => setView('Individual')}
                 className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
                   view === 'Individual'
-                    ? 'bg-emerald-600 text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    ? 'bg-brand text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-ink dark:hover:text-white'
                 }`}
               >
                 Individual
@@ -234,15 +234,15 @@ function LeaderboardsInner() {
                 onClick={() => setView('Team')}
                 className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
                   view === 'Team'
-                    ? 'bg-emerald-600 text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    ? 'bg-brand text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-ink dark:hover:text-white'
                 }`}
               >
                 Team
               </button>
             </div>
 
-            <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs">
+            <div className="flex p-1 bg-surface-muted dark:bg-slate-800 rounded-xl text-xs">
               {PERIODS.map((tf) => (
                 <button
                   key={tf.value}
@@ -250,7 +250,7 @@ function LeaderboardsInner() {
                   onClick={() => setPeriod(tf.value)}
                   className={`px-2.5 py-1 font-bold rounded-lg transition-all ${
                     period === tf.value
-                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                      ? 'bg-white dark:bg-panel text-brand shadow-xs ring-1 ring-brand/20'
                       : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                   }`}
                 >
@@ -270,94 +270,11 @@ function LeaderboardsInner() {
               description="Live sales velocity ranks will appear here when CRM returns people for this period."
             />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-slate-100 dark:border-slate-800 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                    <th className="pb-3 pl-2">Rank</th>
-                    <th className="pb-3">Member</th>
-                    <th className="pb-3 text-right">Gross Bookings</th>
-                    <th className="pb-3 text-center">Bookings</th>
-                    <th className="pb-3 pr-2 text-right">Conversion %</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-medium">
-                  {topIndividuals.map((member) => {
-                    const rankStyles =
-                      member.rank === 1
-                        ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300'
-                        : member.rank === 2
-                          ? 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300'
-                          : member.rank === 3
-                            ? 'bg-amber-100/60 dark:bg-amber-950/40 text-amber-800 dark:text-amber-400 border border-amber-400/50'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400';
-
-                    return (
-                      <tr
-                        key={member.id}
-                        className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors group"
-                      >
-                        <td className="py-4 pl-2">
-                          <span
-                            className={`w-6 h-6 rounded-full inline-flex items-center justify-center font-bold text-xs ${rankStyles}`}
-                          >
-                            {member.rank ?? '-'}
-                          </span>
-                        </td>
-                        <td className="py-4">
-                          <div className="flex items-center gap-3">
-                            <PersonAvatar name={member.name} src={member.avatar} size={36} />
-                            <div>
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-bold text-slate-900 dark:text-white text-sm">
-                                  {member.name}
-                                </span>
-                                {member.rank === 1 && (
-                                  <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                                )}
-                                <TrendMark trend={member.trend} />
-                              </div>
-                              <span className="text-[11px] text-slate-400 font-normal">
-                                {member.role}
-                              </span>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-4 text-right">
-                          <span className="font-bold text-slate-900 dark:text-white text-sm font-mono">
-                            {member.revenueFormatted}
-                          </span>
-                        </td>
-                        <td className="py-4 text-center">
-                          <span className="font-bold text-slate-700 dark:text-slate-300">
-                            {member.bookings}
-                          </span>
-                        </td>
-                        <td className="py-4 pr-2 text-right">
-                          <div className="flex items-center justify-end gap-3">
-                            <span className="font-bold text-slate-900 dark:text-white font-mono w-12 text-right">
-                              {displayRate(member.conversionRate)}
-                            </span>
-                            <div className="w-24 h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden shrink-0">
-                              <div
-                                className={`h-full rounded-full ${
-                                  member.rank === 1
-                                    ? 'bg-emerald-500'
-                                    : member.rank === 2
-                                      ? 'bg-blue-500'
-                                      : 'bg-purple-500'
-                                }`}
-                                style={{ width: progressWidth(member.conversionRate) }}
-                              />
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <TopFiveShowroom
+              mode="individual"
+              items={topIndividuals}
+              onViewFull={() => setShowFullRosterModal(true)}
+            />
           )
         ) : topTeams.length === 0 ? (
           <EmptyState
@@ -365,91 +282,17 @@ function LeaderboardsInner() {
             description="Squad velocity ranks will appear here when CRM returns teams for this period."
           />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-slate-100 dark:border-slate-800 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                  <th className="pb-3 pl-2">Rank</th>
-                  <th className="pb-3">Squad / Team</th>
-                  <th className="pb-3 text-right">Gross Bookings</th>
-                  <th className="pb-3 text-center">Deals Closed</th>
-                  <th className="pb-3 pr-2 text-right">Win Rate</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-medium">
-                {topTeams.map((team) => {
-                  const teamRankStyles =
-                    team.rank === 1
-                      ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300'
-                      : team.rank === 2
-                        ? 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300'
-                        : team.rank === 3
-                          ? 'bg-amber-100/60 dark:bg-amber-950/40 text-amber-800 dark:text-amber-400 border border-amber-400/50'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400';
-
-                  return (
-                    <tr key={team.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
-                      <td className="py-4 pl-2">
-                        <span
-                          className={`w-6 h-6 rounded-full inline-flex items-center justify-center font-bold text-xs ${teamRankStyles}`}
-                        >
-                          {team.rank ?? '-'}
-                        </span>
-                      </td>
-                      <td className="py-4">
-                        <div className="flex items-center gap-3">
-                          <PersonAvatar name={team.teamName} src={team.avatar} size={36} />
-                          <div>
-                            <div className="flex items-center gap-1.5">
-                              <p className="font-bold text-slate-900 dark:text-white text-sm">{team.teamName}</p>
-                              {team.rank === 1 && (
-                                <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                              )}
-                            </div>
-                            {team.leadName && (
-                              <p className="text-[11px] text-slate-400 font-normal">Led by {team.leadName}</p>
-                            )}
-                          </div>
-                          <TrendMark trend={team.trend} />
-                        </div>
-                      </td>
-                      <td className="py-4 text-right font-mono font-bold text-slate-900 dark:text-white text-sm">
-                        {team.totalRevenue}
-                      </td>
-                      <td className="py-4 text-center font-bold text-slate-700 dark:text-slate-300">
-                        {team.dealsClosed}
-                      </td>
-                      <td className="py-4 pr-2 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                        {displayRate(team.winRate)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <TopFiveShowroom
+            mode="team"
+            items={topTeams}
+            onViewFull={() => setShowFullRosterModal(true)}
+          />
         )}
-
-        <div className="pt-2 flex items-center justify-between border-t border-slate-100 dark:border-slate-800 text-xs text-slate-500">
-          <span>
-            {view === 'Individual'
-              ? `Showing top ${topIndividuals.length} sales executives`
-              : `Showing top ${topTeams.length} sales squads`}
-          </span>
-          <button
-            type="button"
-            onClick={() => setShowFullRosterModal(true)}
-            className="font-bold text-slate-600 dark:text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 inline-flex items-center gap-1 transition-colors"
-          >
-            <span>View Full Roster</span>
-            <ChevronRight className="w-3.5 h-3.5" />
-          </button>
-        </div>
       </div>
 
       {showFullRosterModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
-          <div className="bg-white dark:bg-[#0D1829] border border-slate-200 dark:border-slate-800 rounded-2xl max-w-2xl w-full p-6 shadow-2xl animate-in zoom-in-95">
+          <div className="bg-white dark:bg-panel border border-slate-200 dark:border-slate-800 rounded-2xl max-w-2xl w-full p-6 shadow-2xl animate-in zoom-in-95">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800 mb-4">
               <h3 className="font-bold text-slate-900 dark:text-white text-base">
                 Operating Division Roster

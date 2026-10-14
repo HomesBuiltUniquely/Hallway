@@ -66,7 +66,7 @@ export function FilterBar({
   const hideManager = isExecutive;
 
   return (
-    <div className="bg-white dark:bg-[#0D1829] border border-slate-200/80 dark:border-slate-800 rounded-2xl p-4 shadow-xs space-y-3">
+    <div className="bg-white dark:bg-panel border border-slate-200/80 dark:border-slate-800 rounded-2xl p-4 shadow-xs space-y-3">
       <div className="flex flex-wrap gap-2">
         <label className="space-y-1">
           <span className="block text-[10px] font-extrabold uppercase tracking-widest text-slate-400">

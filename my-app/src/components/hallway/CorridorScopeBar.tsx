@@ -5,7 +5,7 @@ import { fetchInsightsFilterOptions } from '../../lib/crmApi';
 import type { InsightsFilterOptions } from '../../types/crmInsights';
 
 const selectClass =
-  'px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-slate-100';
+  'px-3 py-1.5 bg-white dark:bg-panel border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand';
 
 export function useCorridorScope() {
   const [branchId, setBranchId] = useState<string | undefined>();

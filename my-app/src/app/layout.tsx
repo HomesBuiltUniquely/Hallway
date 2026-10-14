@@ -43,7 +43,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className={`${manrope.className} min-h-full flex flex-col font-sans bg-[#F1F5F9] dark:bg-[#060B13] text-slate-900 dark:text-[#F8FAFC] transition-colors duration-200`}>
+      <body className={`${manrope.className} min-h-full flex flex-col font-sans bg-app-bg text-app-fg transition-colors duration-200`}>
         <AppProvider>
           <AppLayout>{children}</AppLayout>
         </AppProvider>

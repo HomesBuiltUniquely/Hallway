@@ -25,13 +25,8 @@ export function getPersonalizedSchedule(
   const emailLower = (user.email || '').toLowerCase().trim();
   const firstName = nameLower.split(' ')[0] || '';
 
-  // Prioritize real CRM appointments from AWS RDS when present
+  // Prioritize real CRM appointments when present — always scope "my" to the logged-in person
   if (Array.isArray(allEvents) && allEvents.length > 0) {
-    if (isAdmin && mode === 'my') {
-      return allEvents;
-    }
-
-    // Filter events matching user's name across CRM person, Designer, Client, or Title
     const matched = allEvents.filter((ev) => {
       const crm = (ev.crmPersonName || '').toLowerCase();
       const des = (ev.designerName || '').toLowerCase();
@@ -39,15 +34,20 @@ export function getPersonalizedSchedule(
       const tit = (ev.title || '').toLowerCase();
       return (
         crm.includes(nameLower) ||
-        crm.includes(firstName) ||
+        (firstName.length > 2 && crm.includes(firstName)) ||
         des.includes(nameLower) ||
-        des.includes(firstName) ||
-        cli.includes(nameLower) ||
-        tit.includes(nameLower)
+        (firstName.length > 2 && des.includes(firstName)) ||
+        tit.includes(nameLower) ||
+        (firstName.length > 2 && tit.includes(firstName)) ||
+        // Client name match only when it is the user (rare); avoid dumping all client visits
+        (cli.includes(nameLower) && nameLower.length > 3)
       );
     });
 
-    if (matched.length > 0) return matched;
+    // My Schedule / default: only this person's meetings (admins use All Hubs for company-wide)
+    if (mode === 'my' || !isAdmin) {
+      return matched;
+    }
     return allEvents;
   }
 

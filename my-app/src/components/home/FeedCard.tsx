@@ -90,7 +90,7 @@ export default function FeedCard({ post }: { post: FeedPost }) {
   const isPerformerPost = post.type === 'performer' || post.title.toLowerCase().includes('sarah');
 
   return (
-    <div className="bg-white dark:bg-[#0D1829] border border-slate-200/90 dark:border-slate-800/90 rounded-2xl p-5 shadow-xs hover:shadow-md transition-all duration-200">
+    <div className="bg-white dark:bg-panel border border-slate-200/90 dark:border-slate-800/90 rounded-2xl p-5 shadow-xs hover:shadow-md transition-all duration-200">
       {/* Top Header with Category Indicator */}
       <div className="flex items-start justify-between gap-3 mb-2.5">
         <div className="flex items-center gap-2.5 min-w-0">
@@ -102,7 +102,7 @@ export default function FeedCard({ post }: { post: FeedPost }) {
             {post.title}
           </h3>
           {isPerformerPost && (
-            <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-600 dark:text-amber-400 text-[10px] font-extrabold uppercase border border-amber-400/30">
+            <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent-gold/20 text-ink dark:text-accent-gold text-[10px] font-extrabold uppercase border border-accent-gold/40">
               <Award className="w-3 h-3" />
               <span>Corridor MVP</span>
             </span>
@@ -121,11 +121,12 @@ export default function FeedCard({ post }: { post: FeedPost }) {
                   void deleteAnnouncement(post.id);
                 }
               }}
-              className="p-1 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-brand hover:bg-brand-soft transition-colors cursor-pointer"
               title="Delete announcement"
               aria-label="Delete announcement"
             >
               <Trash2 className="w-3.5 h-3.5" />
+              <span>Delete</span>
             </button>
           )}
         </div>
@@ -138,14 +139,14 @@ export default function FeedCard({ post }: { post: FeedPost }) {
 
       {/* Quota Progress Bar (if quota milestone post) */}
       {post.quotaProgress && (
-        <div className="mb-4 bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
+        <div className="mb-4 bg-surface-muted dark:bg-slate-800/60 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
           <div className="flex items-center justify-between text-xs mb-1.5 font-medium">
             <span className="text-slate-500 dark:text-slate-400">{post.quotaProgress.label}</span>
-            <span className="text-indigo-600 dark:text-indigo-400 font-bold">{post.quotaProgress.percentage}%</span>
+            <span className="text-brand font-bold">{post.quotaProgress.percentage}%</span>
           </div>
           <div className="h-2 w-full bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
             <div
-              className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all duration-1000"
+              className="h-full bg-gradient-to-r from-brand via-brand-hover to-accent-cyan rounded-full transition-all duration-1000"
               style={{ width: `${post.quotaProgress.percentage}%` }}
             />
           </div>

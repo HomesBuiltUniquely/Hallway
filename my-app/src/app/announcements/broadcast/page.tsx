@@ -74,7 +74,7 @@ export default function BroadcastPage() {
       id: 'announcement',
       label: 'Official Announcement',
       icon: Megaphone,
-      color: '#EF4444',
+      color: 'var(--brand)',
       desc: 'Company directives, executive memos, town hall notices, and branch operations.'
     },
     {
@@ -165,7 +165,7 @@ export default function BroadcastPage() {
       {/* Main Grid: Form on Left, Live Preview on Right */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Form (7 Cols) */}
-        <div className="lg:col-span-7 bg-white dark:bg-[#0D1829] border border-slate-200 dark:border-slate-800 rounded-2xl p-5 sm:p-6 shadow-sm">
+        <div className="lg:col-span-7 bg-white dark:bg-panel border border-slate-200 dark:border-slate-800 rounded-2xl p-5 sm:p-6 shadow-sm">
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Category Selector */}
             <div>
@@ -320,7 +320,7 @@ export default function BroadcastPage() {
             <span>Live Timeline Preview</span>
           </div>
 
-          <div className="bg-white dark:bg-[#0D1829] border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">
+          <div className="bg-white dark:bg-panel border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">
             {/* Header: Author + Category */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">

@@ -97,7 +97,7 @@ function CrmErpInner() {
       <CorridorBanner error={error || milestonesError} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-white dark:bg-[#0D1829] border-2 border-[#F59E0B] rounded-3xl p-6 shadow-xs">
+        <div className="bg-white dark:bg-panel border-2 border-[#F59E0B] rounded-3xl p-6 shadow-xs">
           <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 block mb-2">
             SUMMARY
           </span>
@@ -111,7 +111,7 @@ function CrmErpInner() {
             created {month.dateFrom} → {month.dateTo}
           </p>
         </div>
-        <div className="bg-white dark:bg-[#0D1829] border-2 border-[#F59E0B] rounded-3xl p-6 shadow-xs">
+        <div className="bg-white dark:bg-panel border-2 border-[#F59E0B] rounded-3xl p-6 shadow-xs">
           <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 block mb-2">
             BOARD
           </span>
@@ -125,7 +125,7 @@ function CrmErpInner() {
         </div>
       </div>
 
-      <div className="bg-white dark:bg-[#0D1829] border border-slate-200/80 dark:border-slate-800 rounded-2xl p-4 shadow-xs space-y-3">
+      <div className="bg-white dark:bg-panel border border-slate-200/80 dark:border-slate-800 rounded-2xl p-4 shadow-xs space-y-3">
         <div className="flex items-center justify-between">
           <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Journey phases</span>
           <button
@@ -155,14 +155,14 @@ function CrmErpInner() {
           ))}
       </div>
 
-      <div className="bg-white dark:bg-[#0D1829] border border-slate-200/80 dark:border-slate-800 rounded-2xl p-3 flex items-center justify-between shadow-xs">
+      <div className="bg-white dark:bg-panel border border-slate-200/80 dark:border-slate-800 rounded-2xl p-3 flex items-center justify-between shadow-xs">
         <p className="text-xs text-slate-500">Live CRM leads. Assign and delete are disabled in Hallway.</p>
         <span className="px-4 py-1.5 rounded-xl bg-blue-600 text-white text-xs font-bold">
           Total Leads {total}
         </span>
       </div>
 
-      <div className="bg-white dark:bg-[#0D1829] border border-slate-200/80 dark:border-slate-800 rounded-3xl shadow-xs overflow-x-auto">
+      <div className="bg-white dark:bg-panel border border-slate-200/80 dark:border-slate-800 rounded-3xl shadow-xs overflow-x-auto">
         {loading ? (
           <div className="p-6">
             <CorridorSkeleton rows={8} />

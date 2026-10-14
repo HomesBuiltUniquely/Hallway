@@ -39,6 +39,7 @@ import {
   formatExactIstTimestamp
 } from '../lib/hallwayDisplay';
 import { isSuperAdmin } from '../lib/permissions';
+import { getPersonalizedActions } from '../lib/hallwayPersonalization';
 
 function mergeReactions(serverReactions?: any, localReactions?: any) {
   const blank = {
@@ -168,7 +169,29 @@ interface AppContextType {
 
 const HALLWAY_SESSION_KEY = 'hallway-auth';
 const SESSION_EXPIRY_MS = 8 * 60 * 60 * 1000; // 8 hours shift expiry
-const HALLWAY_LOCAL_API = (process.env.NEXT_PUBLIC_API_URL || '/api').replace(/\/$/, '');
+
+/**
+ * Announcements/comments live on this Next.js app at /api/*.
+ * Never call a cross-origin NEXT_PUBLIC_API_URL from the browser — that causes
+ * CORS "Failed to fetch" when developing on localhost against a remote host.
+ */
+function resolveHallwayLocalApi(): string {
+  const raw = (process.env.NEXT_PUBLIC_API_URL || '/api').trim().replace(/\/$/, '');
+  if (!raw || raw === '/api') return '/api';
+  if (raw.startsWith('/')) return raw;
+  if (typeof window !== 'undefined') {
+    try {
+      const remote = new URL(raw);
+      if (remote.origin !== window.location.origin) return '/api';
+      return `${remote.pathname.replace(/\/$/, '') || '/api'}`;
+    } catch {
+      return '/api';
+    }
+  }
+  // SSR / build: prefer same-app path
+  return '/api';
+}
+const HALLWAY_LOCAL_API = resolveHallwayLocalApi();
 
 function userFromSession(
   email?: string,
@@ -270,100 +293,109 @@ function buildDynamicNotifications(params: {
   const timeYesterday18h = new Date(now - 18 * 60 * 60 * 1000).toISOString();
   const timeYesterday20h = new Date(now - 20 * 60 * 60 * 1000).toISOString();
 
-  // 1. Live Scheduled Meetings & Showroom Consultations (from CRM appointments / today-events)
+  const firstName = nameLower.split(' ')[0] || '';
+  const eventMentionsUser = (event: any) => {
+    const crm = String(event.crmPersonName || '').toLowerCase();
+    const des = String(event.designerName || '').toLowerCase();
+    const tit = String(event.title || '').toLowerCase();
+    return (
+      (nameLower && (crm.includes(nameLower) || des.includes(nameLower) || tit.includes(nameLower))) ||
+      (firstName.length > 2 &&
+        (crm.includes(firstName) || des.includes(firstName) || tit.includes(firstName)))
+    );
+  };
+
+  // 1. Live meetings — only the logged-in person's schedule (admins also get company-wide meetings)
   if (Array.isArray(todayEvents)) {
     for (const event of todayEvents) {
-      const isRelevant =
-        isAdmin ||
-        (event.crmPersonName && event.crmPersonName.toLowerCase().includes(nameLower)) ||
-        (event.designerName && event.designerName.toLowerCase().includes(nameLower)) ||
-        (isSales && (!event.crmPersonName || event.crmPersonName.toLowerCase() === 'admin')) ||
-        (isDesigner && (!event.designerName || event.designerName.toLowerCase() === 'admin')) ||
-        notifs.length < 2;
+      const isRelevant = isAdmin || eventMentionsUser(event);
+      if (!isRelevant) continue;
 
-      if (isRelevant) {
-        const client = event.clientName ? event.clientName : 'Client';
-        const designerStr = event.designerName ? ` · Designer ${event.designerName}` : '';
-        const id = `notif-evt-${event.id}`;
-        const timeIso = event.startAt || timeToday17m;
+      const client = event.clientName ? event.clientName : 'Client';
+      const designerStr = event.designerName ? ` · Designer ${event.designerName}` : '';
+      const id = `notif-evt-${event.id}`;
+      const timeIso = event.startAt || timeToday17m;
 
-        notifs.push({
-          id,
-          type: 'meeting',
-          title: `Showroom Visit in 45m`,
-          subtitle: `${client}${designerStr} · Showroom Consultation`,
-          message: `Consultation with ${client} scheduled for ${event.time || 'today'}.`,
-          categoryTag: 'Meeting',
-          timestamp: timeIso,
-          exactIstTime: formatExactIstTimestamp(timeIso),
-          read: readIds.has(id),
-        });
-      }
+      notifs.push({
+        id,
+        type: 'meeting',
+        title: event.title || 'Showroom Visit in 45m',
+        subtitle: `${client}${designerStr} · Showroom Consultation`,
+        message: `Consultation with ${client} scheduled for ${event.time || 'today'}.`,
+        categoryTag: 'Meeting',
+        timestamp: timeIso,
+        exactIstTime: formatExactIstTimestamp(timeIso),
+        read: readIds.has(id),
+      });
     }
   }
 
-  // 2. Verified Bookings & Token Advances (from live CRM deals & announcements)
-  if (Array.isArray(announcements)) {
+  // 2. Bookings — sales + admin see corridor deals; designers skip deal noise
+  if (Array.isArray(announcements) && (isSales || isAdmin)) {
     for (const post of announcements) {
-      if (post.type === 'booking') {
-        const id = `notif-deal-${post.id}`;
-        const timeIso = post.createdAt || timeToday1h;
-        notifs.push({
-          id,
-          type: 'deal',
-          title: post.title.replace(/^[🎯🚀🔥👏🎉🏡📢]+\s*/, '').slice(0, 42),
-          subtitle: `Verified Booking · Accounts confirmed advance receipt`,
-          message: post.content,
-          categoryTag: 'Deal',
-          timestamp: timeIso,
-          exactIstTime: formatExactIstTimestamp(timeIso),
-          read: readIds.has(id),
-        });
-      }
+      if (post.type !== 'booking') continue;
+      const id = `notif-deal-${post.id}`;
+      const timeIso = post.createdAt || timeToday1h;
+      notifs.push({
+        id,
+        type: 'deal',
+        title: post.title.replace(/^[🎯🚀🔥👏🎉🏡📢]+\s*/, '').slice(0, 42),
+        subtitle: `Verified Booking · Accounts confirmed advance receipt`,
+        message: post.content,
+        categoryTag: 'Deal',
+        timestamp: timeIso,
+        exactIstTime: formatExactIstTimestamp(timeIso),
+        read: readIds.has(id),
+      });
     }
   }
 
-  // 3. Hot Leads & Pipeline Action Items (from CRM follow-ups)
-  if (Array.isArray(actions)) {
-    for (const group of actions) {
-      const items = Array.isArray(group.items) ? group.items : [];
-      for (const item of items.slice(0, 2)) {
-        const id = `notif-act-${item.id}`;
-        const isUrgent = group.urgent || Boolean(item.xpPenaltyWarning);
-        const timeIso = item.dueTime || timeYesterday17h;
-        notifs.push({
-          id,
-          type: isUrgent ? 'urgent' : 'lead',
-          title: isUrgent ? `Urgent Action: ${item.name}` : `New lead in Pre-10%`,
-          subtitle: `${item.name} · Stage: Pre-10% · Showroom Visit`,
-          message: item.detail || 'Pipeline action required in active corridor.',
-          categoryTag: isUrgent ? 'Urgent' : 'Lead',
-          timestamp: timeIso,
-          exactIstTime: formatExactIstTimestamp(timeIso),
-          read: readIds.has(id),
-        });
-      }
+  // 3. Action items — use personalized action groups for this user only
+  const personalizedActions = getPersonalizedActions(
+    Array.isArray(actions) ? actions : [],
+    currentUser,
+    'my'
+  );
+  for (const group of personalizedActions) {
+    const items = Array.isArray(group.items) ? group.items : [];
+    for (const item of items.slice(0, 3)) {
+      const id = `notif-act-${item.id}`;
+      const isUrgent = group.urgent || Boolean(item.xpPenaltyWarning);
+      const timeIso =
+        typeof item.dueTime === 'string' && item.dueTime.includes('T')
+          ? item.dueTime
+          : timeYesterday17h;
+      notifs.push({
+        id,
+        type: isUrgent ? 'urgent' : isDesigner ? 'task' : 'lead',
+        title: isUrgent ? `Urgent Action: ${item.name}` : item.name || 'New lead in Pre-10%',
+        subtitle: item.detail || `${item.name} · Action required`,
+        message: item.detail || 'Pipeline action required in active corridor.',
+        categoryTag: isUrgent ? 'Urgent' : isDesigner ? 'Task' : 'Lead',
+        timestamp: timeIso,
+        exactIstTime: formatExactIstTimestamp(timeIso),
+        read: readIds.has(id),
+      });
     }
   }
 
-  // 4. Branch Pacing Milestones (e.g. JP Nagar 26.5%, Sarjapura 20.3%)
-  if (Array.isArray(branchTargets)) {
+  // 4. Branch pacing — admins + sales see milestones; designers do not
+  if (Array.isArray(branchTargets) && (isAdmin || isSales)) {
     for (const target of branchTargets) {
-      if (Number(target.progress) >= 20) {
-        const id = `notif-target-${target.branchId || 'overall'}`;
-        const timeIso = timeYesterday18h;
-        notifs.push({
-          id,
-          type: 'milestone',
-          title: `${target.branchName} Corridor Milestone 🔥`,
-          subtitle: `${target.branchName} Hub · ${target.progress}% achieved towards quota`,
-          message: `${target.branchName} Hub pacing reached ${target.progress}%.`,
-          categoryTag: 'Milestone',
-          timestamp: timeIso,
-          exactIstTime: formatExactIstTimestamp(timeIso),
-          read: readIds.has(id),
-        });
-      }
+      if (Number(target.progress) < 20) continue;
+      const id = `notif-target-${target.branchId || 'overall'}`;
+      const timeIso = timeYesterday18h;
+      notifs.push({
+        id,
+        type: 'milestone',
+        title: `${target.branchName} Corridor Milestone 🔥`,
+        subtitle: `${target.branchName} Hub · ${target.progress}% achieved towards quota`,
+        message: `${target.branchName} Hub pacing reached ${target.progress}%.`,
+        categoryTag: 'Milestone',
+        timestamp: timeIso,
+        exactIstTime: formatExactIstTimestamp(timeIso),
+        read: readIds.has(id),
+      });
     }
   }
 
@@ -529,6 +561,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   });
   const readNotificationIdsRef = useRef<Set<string>>(readNotificationIds);
   readNotificationIdsRef.current = readNotificationIds;
+
+  /** Admin-deleted CRM snippet IDs — persist so regenerating feed does not bring them back */
+  const [suppressedAnnouncementIds, setSuppressedAnnouncementIds] = useState<Set<string>>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('hub_suppressed_announcements');
+        if (stored) return new Set(JSON.parse(stored));
+      } catch {}
+    }
+    return new Set();
+  });
+  const suppressedAnnouncementIdsRef = useRef<Set<string>>(suppressedAnnouncementIds);
+  suppressedAnnouncementIdsRef.current = suppressedAnnouncementIds;
   const [notifications, setNotifications] = useState<NotificationItem[]>(() =>
     buildDynamicNotifications({
       currentUser: currentUserMock,
@@ -1013,11 +1058,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      const combinedAnnouncements = Array.from(announcementPostsMap.values()).sort((a, b) => {
-        const tA = new Date(a.createdAt || 0).getTime();
-        const tB = new Date(b.createdAt || 0).getTime();
-        return tB - tA;
-      });
+      const suppressed = suppressedAnnouncementIdsRef.current;
+      const combinedAnnouncements = Array.from(announcementPostsMap.values())
+        .filter((p) => !suppressed.has(p.id))
+        .sort((a, b) => {
+          const tA = new Date(a.createdAt || 0).getTime();
+          const tB = new Date(b.createdAt || 0).getTime();
+          return tB - tA;
+        });
 
       setAnnouncementPosts(combinedAnnouncements);
 
@@ -1276,9 +1324,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const colors: Record<string, string> = {
       booking: '#10B981',
       quota: '#8B5CF6',
-      performer: '#F59E0B',
-      announcement: '#EF4444',
-      general: '#3B82F6'
+      performer: '#EBD457',
+      announcement: '#EF0101',
+      general: '#00B0ED',
     };
 
     const author = {
@@ -1322,7 +1370,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
     setAnnouncementPosts((prev) => [newPost, ...prev.filter((p) => p.id !== newPost.id)]);
 
-    const apiUrl = HALLWAY_LOCAL_API || '/api';
+    const apiUrl = resolveHallwayLocalApi();
     try {
       const res = await fetch(`${apiUrl}/announcements`, {
         method: 'POST',
@@ -1331,33 +1379,63 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           title: title.trim(),
           content: content.trim(),
           type,
+          categoryColor: newPost.categoryColor,
           department,
           author,
-          quotaProgress: quotaProgress || null
-        })
+          quotaProgress: quotaProgress || null,
+        }),
       });
       if (res.ok) {
         const created: FeedPost = await res.json();
         const postWithDate: FeedPost = {
           ...created,
-          createdAt: created.createdAt || nowIso
+          createdAt: created.createdAt || nowIso,
         };
-        setFeedPosts((prev) => [postWithDate, ...prev.filter((p) => p.id !== newPost.id && p.id !== created.id)]);
-        setAnnouncementPosts((prev) => [postWithDate, ...prev.filter((p) => p.id !== newPost.id && p.id !== created.id)]);
+        setFeedPosts((prev) => [
+          postWithDate,
+          ...prev.filter((p) => p.id !== newPost.id && p.id !== created.id),
+        ]);
+        setAnnouncementPosts((prev) => [
+          postWithDate,
+          ...prev.filter((p) => p.id !== newPost.id && p.id !== created.id),
+        ]);
         return postWithDate;
       }
+      const errBody = await res.text().catch(() => '');
+      console.error('Announcement POST failed:', res.status, errBody);
     } catch (err) {
       console.error('Failed to post announcement to server:', err);
     }
+    // Optimistic local post still visible if API is unavailable
     return newPost;
   };
 
   const deleteAnnouncement = async (postId: string): Promise<boolean> => {
+    // Only admins may delete
+    if (!isSuperAdmin(currentUser)) {
+      return false;
+    }
+
     setFeedPosts((prev) => prev.filter((p) => p.id !== postId));
     setAnnouncementPosts((prev) => prev.filter((p) => p.id !== postId));
 
+    // CRM / dynamic snippets: suppress so refreshFeed does not recreate them
+    if (postId.startsWith('crm-') || postId.startsWith('dynamic-sim-')) {
+      setSuppressedAnnouncementIds((prev) => {
+        const next = new Set(prev);
+        next.add(postId);
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('hub_suppressed_announcements', JSON.stringify(Array.from(next)));
+          } catch {}
+        }
+        return next;
+      });
+      return true;
+    }
+
     try {
-      const res = await fetch(`${HALLWAY_LOCAL_API}/announcements/${postId}`, {
+      const res = await fetch(`${resolveHallwayLocalApi()}/announcements/${postId}`, {
         method: 'DELETE',
       });
       return res.ok;

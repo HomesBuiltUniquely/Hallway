@@ -94,28 +94,28 @@ export function getAllowedBroadcastDepartments(
   return ['Sales'];
 }
 
+/** CRM-generated / regenerated feed cards (not durable DB rows). */
+export function isCrmGeneratedAnnouncement(post: Pick<FeedPost, 'id' | 'type'>): boolean {
+  const id = post.id || '';
+  return (
+    post.type === 'quota' ||
+    id.startsWith('crm-') ||
+    id.startsWith('dynamic-sim-')
+  );
+}
+
 /**
- * Super admin can delete ANY announcement.
- * Individuals can delete their own announcements.
+ * Only Admins / Super Admins see/use the Delete button.
+ * Everyone else is read (+ react/comment) only.
+ * Target pacing (quota) cards stay non-deletable.
  */
 export function canDeleteAnnouncement(
   post: FeedPost,
   user?: { role?: string; name?: string; email?: string } | null
 ): boolean {
   if (!user) return false;
-  // System target pacing cards cannot be deleted
   if (post.type === 'quota' || post.id?.startsWith('crm-target-')) return false;
-  if (isSuperAdmin(user)) return true;
-
-  const uName = (user.name || '').toLowerCase().trim();
-  const uEmail = (user.email || '').toLowerCase().trim();
-  const pAuthor = (post.author?.name || '').toLowerCase().trim();
-
-  if (!pAuthor) return false;
-  return Boolean(
-    (uName && uName === pAuthor) ||
-    (uEmail && (uEmail === pAuthor || uEmail.startsWith(pAuthor)))
-  );
+  return isAdmin(user);
 }
 
 /**

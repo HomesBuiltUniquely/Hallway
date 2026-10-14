@@ -1,8 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Tag, Copy, Check, Clock, Sparkles, MapPin, ArrowRight, Pencil } from 'lucide-react';
-import confetti from 'canvas-confetti';
+import { Gift, Clock, Sparkles, MapPin, ArrowRight, Pencil } from 'lucide-react';
 import { openCrmDashboard } from '../../lib/modulePortals';
 import { useApp } from '../../context/AppContext';
 import { isAdmin, isSuperAdmin } from '../../lib/permissions';
@@ -10,7 +9,6 @@ import EditCampaignModal from './EditCampaignModal';
 
 export default function WidgetCampaign() {
   const { currentUser, activeCampaign, updateActiveCampaign } = useApp();
-  const [copied, setCopied] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [timeLeft, setTimeLeft] = useState<{ hours: number; minutes: number; seconds: number }>({
     hours: 48,
@@ -19,16 +17,15 @@ export default function WidgetCampaign() {
   });
 
   const canEdit = isAdmin(currentUser) || isSuperAdmin(currentUser);
+  const campaignBadge = activeCampaign?.discountPercent?.trim();
 
   useEffect(() => {
-    // Dynamic countdown targeting activeCampaign.targetDate
     const calculateTimeRemaining = () => {
       const now = new Date();
       let target: Date;
       if (activeCampaign?.targetDate) {
         target = new Date(activeCampaign.targetDate);
         if (isNaN(target.getTime())) {
-          // Fallback to Sunday 23:59:59
           target = new Date(now);
           const diff = (7 - now.getDay()) % 7;
           target.setDate(now.getDate() + diff);
@@ -55,170 +52,117 @@ export default function WidgetCampaign() {
     return () => clearInterval(interval);
   }, [activeCampaign?.targetDate]);
 
-  const handleCopyCode = async () => {
-    const code = activeCampaign?.voucherCode || 'INDIRA10';
-    try {
-      await navigator.clipboard.writeText(code);
-      setCopied(true);
-
-      if (typeof window !== 'undefined') {
-        confetti({
-          particleCount: 30,
-          spread: 50,
-          origin: { y: 0.7 },
-          colors: ['#10B981', '#34D399', '#059669', '#F59E0B'],
-        });
-      }
-
-      setTimeout(() => setCopied(false), 2400);
-    } catch {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2400);
-    }
-  };
-
   return (
     <>
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-50/70 via-white to-teal-50/40 dark:from-slate-900 dark:via-[#0a1a13] dark:to-slate-900 border border-emerald-300/80 dark:border-emerald-700/60 p-5 shadow-xs hover:shadow-lg hover:shadow-emerald-500/10 dark:hover:shadow-emerald-950/40 transition-all duration-300 group">
-        {/* Top highlight bar */}
-        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400" />
+      <div className="group relative overflow-hidden rounded-2xl border-2 border-accent-gold/60 bg-gradient-to-br from-white via-white to-brand-soft/40 p-5 shadow-xs transition-all duration-300 hover:shadow-lg hover:shadow-brand/10 dark:border-accent-gold/35 dark:from-panel dark:via-[#1A1410] dark:to-surface-muted">
+        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-brand via-accent-gold to-brand" />
 
-        {/* Subtle radiant ambient glows */}
-        <div className="absolute -top-12 -right-12 w-36 h-36 bg-emerald-500/15 dark:bg-emerald-400/20 rounded-full blur-2xl pointer-events-none" />
-        <div className="absolute -bottom-10 -left-10 w-28 h-28 bg-teal-500/10 dark:bg-teal-400/10 rounded-full blur-2xl pointer-events-none" />
+        <div className="pointer-events-none absolute -right-12 -top-12 h-36 w-36 rounded-full bg-brand/10 blur-2xl dark:bg-brand/15" />
+        <div className="pointer-events-none absolute -bottom-10 -left-10 h-28 w-28 rounded-full bg-accent-gold/20 blur-2xl" />
 
-        {/* Header Badges with Admin Edit Action */}
-        <div className="flex items-center justify-between mb-3.5 relative z-10">
+        <div className="relative z-10 mb-3.5 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-brand" />
             </span>
-            <span className="px-2 py-0.5 rounded-md bg-emerald-100/80 dark:bg-emerald-950/70 border border-emerald-300/80 dark:border-emerald-700/60 text-[10px] font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-300 font-sans">
+            <span className="rounded-md border border-accent-gold/50 bg-brand px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-white shadow-sm shadow-brand/20">
               ACTIVE CAMPAIGN
             </span>
           </div>
 
           <div className="flex items-center gap-1.5">
-            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-white dark:bg-slate-800 border border-slate-200/90 dark:border-slate-700/80 text-[10px] font-bold text-slate-700 dark:text-slate-200 shadow-2xs">
-              <MapPin className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
+            <span className="inline-flex items-center gap-1 rounded-md border border-accent-gold/40 bg-white px-2.5 py-0.5 text-[10px] font-bold text-ink shadow-2xs dark:border-accent-gold/25 dark:bg-surface-muted dark:text-slate-200">
+              <MapPin className="h-2.5 w-2.5 text-brand" />
               <span>{activeCampaign?.branchName || 'Indiranagar Branch'}</span>
             </span>
 
-            {/* Admin-Only Edit Action */}
             {canEdit && (
               <button
                 type="button"
                 onClick={() => setIsEditOpen(true)}
-                className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100/70 hover:bg-emerald-200/80 dark:bg-emerald-950/80 dark:hover:bg-emerald-900 border border-emerald-300/80 dark:border-emerald-700 text-[10px] font-bold text-emerald-800 dark:text-emerald-300 transition-colors cursor-pointer"
+                className="flex cursor-pointer items-center gap-1 rounded-md border border-accent-gold/50 bg-brand-soft px-2 py-0.5 text-[10px] font-bold text-brand transition-colors hover:bg-brand hover:text-white dark:border-accent-gold/30"
                 title="Edit active campaign (Admin Only)"
               >
-                <Pencil className="w-2.5 h-2.5" />
+                <Pencil className="h-2.5 w-2.5" />
                 <span>Edit</span>
               </button>
             )}
           </div>
         </div>
 
-        {/* Campaign Title & Hook */}
-        <div className="mb-3 relative z-10">
-          <h3 className="text-base font-black tracking-tight text-slate-900 dark:text-white flex items-center gap-1.5">
+        <div className="relative z-10 mb-3">
+          <h3 className="flex items-center gap-1.5 text-base font-black tracking-tight text-slate-900 dark:text-white">
             <span>{activeCampaign?.title || 'Indiranagar Launch Boost'}</span>
-            <Sparkles className="w-4 h-4 text-emerald-500 fill-emerald-500/30" />
+            <Sparkles className="h-4 w-4 fill-accent-gold/40 text-accent-gold" />
           </h3>
-          <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
+          <p className="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
             {activeCampaign?.description ||
               'Exclusive limited-time discount for all new client deals closed in the new Indiranagar branch before Sunday night.'}
           </p>
         </div>
 
-        {/* Voucher / Coupon Code Card */}
-        <div className="mb-3.5 p-3 rounded-xl bg-white/90 dark:bg-slate-800/80 border border-dashed border-emerald-300 dark:border-emerald-600/70 shadow-2xs flex items-center justify-between gap-3 relative z-10">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-emerald-600 dark:bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-xs shadow-emerald-600/30">
-              <Tag className="w-4 h-4" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <span className="font-mono text-sm font-black tracking-wider text-slate-900 dark:text-white select-all">
-                  {activeCampaign?.voucherCode || 'INDIRA10'}
-                </span>
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-emerald-600 text-white dark:bg-emerald-500">
-                  {activeCampaign?.discountPercent || '10% OFF'}
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                Launch discount voucher
-              </p>
-            </div>
+        {/* Generic spotlight — works for prizes, discounts, launches, festivals */}
+        <div className="relative z-10 mb-3.5 flex items-center gap-3 rounded-xl border border-accent-gold/60 bg-gradient-to-r from-brand-soft/80 via-white to-accent-gold/15 p-3 shadow-2xs dark:border-accent-gold/30 dark:from-brand-soft/20 dark:via-surface-muted dark:to-accent-gold/10">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand text-white shadow-xs shadow-brand/30 ring-1 ring-accent-gold/60">
+            <Gift className="h-4 w-4" />
           </div>
-
-          <button
-            type="button"
-            onClick={handleCopyCode}
-            className={`shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer ${
-              copied
-                ? 'bg-emerald-600 text-white shadow-xs scale-105'
-                : 'bg-emerald-50 dark:bg-slate-700/80 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-slate-700 border border-emerald-200/90 dark:border-emerald-700/80 active:scale-95'
-            }`}
-            title="Copy coupon code"
-          >
-            {copied ? (
-              <>
-                <Check className="w-3.5 h-3.5 text-white" />
-                <span>Copied!</span>
-              </>
-            ) : (
-              <>
-                <Copy className="w-3.5 h-3.5" />
-                <span>Copy</span>
-              </>
-            )}
-          </button>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs font-black tracking-tight text-slate-900 dark:text-white">
+                Campaign spotlight
+              </span>
+              {campaignBadge ? (
+                <span className="rounded-md bg-accent-gold px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-ink">
+                  {campaignBadge}
+                </span>
+              ) : null}
+            </div>
+            <p className="mt-0.5 text-[11px] leading-snug text-slate-500 dark:text-slate-400">
+              Pitch this on every walk-in, site visit & quote follow-up
+            </p>
+          </div>
         </div>
 
-        {/* Time Remaining Block */}
-        <div className="rounded-xl bg-[#091510] text-white p-3.5 mb-3.5 border border-emerald-900/80 relative overflow-hidden shadow-xs">
-          <div className="absolute right-0 top-0 bottom-0 w-32 bg-emerald-500/10 blur-xl pointer-events-none" />
-          <div className="flex items-center justify-between relative z-10">
+        <div className="relative mb-3.5 overflow-hidden rounded-xl border border-brand/40 bg-[#1A0A0A] p-3.5 text-white shadow-xs dark:border-brand/30">
+          <div className="pointer-events-none absolute inset-y-0 right-0 w-32 bg-brand/15 blur-xl" />
+          <div className="relative z-10 flex items-center justify-between">
             <div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400/90 block mb-0.5">
+              <span className="mb-0.5 block text-[10px] font-bold uppercase tracking-wider text-accent-gold">
                 Time Remaining
               </span>
-              <div className="font-mono text-2xl font-black tracking-tight text-emerald-400 flex items-baseline gap-1">
+              <div className="flex items-baseline gap-1 font-mono text-2xl font-black tracking-tight text-white">
                 <span>{timeLeft.hours}h</span>
                 <span>{timeLeft.minutes.toString().padStart(2, '0')}m</span>
-                <span className="text-xs font-semibold text-emerald-500/70">
+                <span className="text-xs font-semibold text-accent-gold/80">
                   {timeLeft.seconds.toString().padStart(2, '0')}s
                 </span>
               </div>
             </div>
-            <div className="w-10 h-10 rounded-full bg-emerald-950/90 border border-emerald-800/80 flex items-center justify-center text-emerald-400 shadow-inner">
-              <Clock className="w-5 h-5 text-emerald-400 animate-pulse" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-accent-gold/40 bg-brand/20 text-accent-gold shadow-inner">
+              <Clock className="h-5 w-5 animate-pulse text-accent-gold" />
             </div>
           </div>
-          <p className="text-[10px] text-emerald-400/70 mt-1 font-medium">
+          <p className="mt-1 text-[10px] font-medium text-white/55">
             Applies to all deals closed before deadline
           </p>
         </div>
 
-        {/* Footer Link & Action */}
-        <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800/80 flex items-center justify-between text-xs relative z-10">
+        <div className="relative z-10 flex items-center justify-between border-t border-accent-gold/25 pt-2 text-xs dark:border-accent-gold/15">
           <span className="text-[11px] text-slate-500 dark:text-slate-400">
             Apply in CRM deal quote
           </span>
           <button
             type="button"
             onClick={() => openCrmDashboard()}
-            className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors cursor-pointer group/btn"
+            className="group/btn inline-flex cursor-pointer items-center gap-1 text-xs font-bold text-brand transition-colors hover:text-brand-hover"
           >
             <span>Open CRM Deals</span>
-            <ArrowRight className="w-3 h-3 group-hover/btn:translate-x-0.5 transition-transform" />
+            <ArrowRight className="h-3 w-3 transition-transform group-hover/btn:translate-x-0.5" />
           </button>
         </div>
       </div>
 
-      {/* Admin Edit Modal */}
       {canEdit && (
         <EditCampaignModal
           isOpen={isEditOpen}

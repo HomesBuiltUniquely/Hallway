@@ -168,28 +168,28 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f3e6dd] dark:bg-[#090d15] text-slate-900 dark:text-slate-100 flex items-center justify-center p-4 relative overflow-hidden font-sans select-none transition-colors duration-700">
+    <div className="min-h-screen bg-surface-login text-app-fg flex items-center justify-center p-4 relative overflow-hidden font-sans select-none transition-colors duration-700">
       {/* Living Room Scene Background */}
       <LivingRoomScene isDark={theme === 'dark'} />
 
       {/* Floating Theme Toggle */}
       <button
         onClick={toggleTheme}
-        className="absolute top-6 right-6 p-2.5 rounded-2xl bg-white/90 dark:bg-slate-800/90 backdrop-blur-md border border-slate-200/80 dark:border-slate-700/80 shadow-sm hover:shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer z-20"
+        className="absolute top-6 right-6 p-2.5 rounded-2xl bg-white/90 dark:bg-panel/90 backdrop-blur-md border border-slate-200/80 dark:border-slate-700/80 shadow-sm hover:shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer z-20"
         title="Toggle Theme"
         aria-label="Toggle Theme"
       >
         {theme === 'dark' ? (
-          <Sun className="w-4 h-4 text-amber-400" />
+          <Sun className="w-4 h-4 text-accent-gold" />
         ) : (
-          <Moon className="w-4 h-4 text-slate-700" />
+          <Moon className="w-4 h-4 text-ink" />
         )}
       </button>
 
       {/* Main Container */}
       <div className="max-w-[480px] w-full z-10">
         {/* Pinterest-style Elevated Card */}
-        <div className="bg-white/98 dark:bg-[#0F1523]/95 backdrop-blur-2xl border border-stone-200/90 dark:border-slate-800/80 rounded-[32px] p-8 sm:p-10 shadow-[0_28px_65px_-12px_rgba(55,40,30,0.16),0_10px_25px_-5px_rgba(55,40,30,0.08),0_0_0_1px_rgba(255,255,255,0.9)] dark:shadow-[0_25px_60px_-15px_rgba(0,0,0,0.7),0_0_1px_1px_rgba(255,255,255,0.05)] space-y-6 sm:space-y-7 transition-all duration-300">
+        <div className="bg-surface/98 dark:bg-panel/95 backdrop-blur-2xl border border-surface-warm/90 dark:border-slate-800/80 rounded-[32px] p-8 sm:p-10 shadow-[0_28px_65px_-12px_rgba(50,38,28,0.16),0_10px_25px_-5px_rgba(50,38,28,0.08),0_0_0_1px_rgba(255,255,255,0.9)] dark:shadow-[0_25px_60px_-15px_rgba(0,0,0,0.7),0_0_1px_1px_rgba(255,255,255,0.05)] space-y-6 sm:space-y-7 transition-all duration-300">
           
           {/* Brand Header */}
           <div className="text-center space-y-3">
@@ -203,7 +203,7 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <h1 className="text-2xl sm:text-[28px] font-extrabold text-slate-900 dark:text-white tracking-tight">
+              <h1 className="text-2xl sm:text-[28px] font-extrabold text-ink dark:text-white tracking-tight">
                 Pulse of HUB
               </h1>
               <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-1 font-medium">
@@ -214,8 +214,8 @@ export default function LoginPage() {
 
           {/* Error Message Alert */}
           {errorMessage && (
-            <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 rounded-2xl flex items-center gap-2.5 text-xs text-red-600 dark:text-red-400 font-medium animate-in fade-in duration-150">
-              <AlertCircle className="w-4 h-4 shrink-0 text-red-500" />
+            <div className="p-3 bg-brand-soft border border-brand/30 rounded-2xl flex items-center gap-2.5 text-xs text-brand font-medium animate-in fade-in duration-150">
+              <AlertCircle className="w-4 h-4 shrink-0 text-brand" />
               <span>{errorMessage}</span>
             </div>
           )}
@@ -224,11 +224,11 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Field 1: Username or Email */}
             <div>
-              <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1.5 ml-0.5 tracking-wide">
+              <label className="block text-xs font-bold text-ink dark:text-slate-200 mb-1.5 ml-0.5 tracking-wide">
                 Username or Email
               </label>
               <div className="relative group">
-                <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-red-500 transition-colors" />
+                <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-brand transition-colors" />
                 <input
                   type="text"
                   required
@@ -237,7 +237,7 @@ export default function LoginPage() {
                     setIdentifier(e.target.value);
                     if (errorMessage) setErrorMessage(null);
                   }}
-                  className="w-full pl-10 pr-4 py-3 bg-slate-50/90 hover:bg-slate-50 dark:bg-slate-800/50 dark:hover:bg-slate-800/80 border border-slate-300 hover:border-slate-400 dark:border-slate-700/80 dark:hover:border-slate-600 rounded-2xl text-xs sm:text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 shadow-[inset_0_1px_2px_rgba(0,0,0,0.02)] dark:shadow-none focus:outline-none focus:bg-white dark:focus:bg-slate-800 focus:border-red-500 focus:ring-4 focus:ring-red-500/15 transition-all font-sans"
+                  className="focus-brand w-full pl-10 pr-4 py-3 bg-surface-muted/90 hover:bg-surface-muted dark:bg-slate-800/50 dark:hover:bg-slate-800/80 border border-slate-300 hover:border-slate-400 dark:border-slate-700/80 dark:hover:border-slate-600 rounded-2xl text-xs sm:text-sm text-ink dark:text-white placeholder-slate-400 dark:placeholder-slate-500 shadow-[inset_0_1px_2px_rgba(0,0,0,0.02)] dark:shadow-none focus:bg-surface dark:focus:bg-slate-800 transition-all font-sans"
                   placeholder="username or abc@hubinterior.com"
                 />
               </div>
@@ -246,12 +246,12 @@ export default function LoginPage() {
             {/* Field 2: Password with timed Eye Preview */}
             <div>
               <div className="flex items-center justify-between mb-1.5 ml-0.5">
-                <label className="text-xs font-bold text-slate-800 dark:text-slate-200 tracking-wide">
+                <label className="text-xs font-bold text-ink dark:text-slate-200 tracking-wide">
                   Password
                 </label>
               </div>
               <div className="relative group">
-                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-red-500 transition-colors" />
+                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-brand transition-colors" />
                 <input
                   type={showPassword ? 'text' : 'password'}
                   required
@@ -260,17 +260,17 @@ export default function LoginPage() {
                     setPassword(e.target.value);
                     if (errorMessage) setErrorMessage(null);
                   }}
-                  className="w-full pl-10 pr-11 py-3 bg-slate-50/90 hover:bg-slate-50 dark:bg-slate-800/50 dark:hover:bg-slate-800/80 border border-slate-300 hover:border-slate-400 dark:border-slate-700/80 dark:hover:border-slate-600 rounded-2xl text-xs sm:text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 shadow-[inset_0_1px_2px_rgba(0,0,0,0.02)] dark:shadow-none focus:outline-none focus:bg-white dark:focus:bg-slate-800 focus:border-red-500 focus:ring-4 focus:ring-red-500/15 transition-all font-sans"
+                  className="focus-brand w-full pl-10 pr-11 py-3 bg-surface-muted/90 hover:bg-surface-muted dark:bg-slate-800/50 dark:hover:bg-slate-800/80 border border-slate-300 hover:border-slate-400 dark:border-slate-700/80 dark:hover:border-slate-600 rounded-2xl text-xs sm:text-sm text-ink dark:text-white placeholder-slate-400 dark:placeholder-slate-500 shadow-[inset_0_1px_2px_rgba(0,0,0,0.02)] dark:shadow-none focus:bg-surface dark:focus:bg-slate-800 transition-all font-sans"
                   placeholder="••••••••"
                 />
                 <button
                   type="button"
                   onClick={toggleShowPassword}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-all cursor-pointer"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:text-ink dark:hover:text-slate-200 hover:bg-surface-muted dark:hover:bg-slate-700/50 transition-all cursor-pointer"
                   title={showPassword ? 'Hide password' : 'View password for a few seconds'}
                   aria-label={showPassword ? 'Hide password' : 'View password'}
                 >
-                  {showPassword ? <EyeOff className="w-4 h-4 text-red-500" /> : <Eye className="w-4 h-4" />}
+                  {showPassword ? <EyeOff className="w-4 h-4 text-brand" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
             </div>
@@ -282,9 +282,9 @@ export default function LoginPage() {
                   type="checkbox"
                   checked={rememberMe}
                   onChange={(e) => setRememberMe(e.target.checked)}
-                  className="w-4 h-4 rounded-md border-slate-300 dark:border-slate-700 text-red-600 accent-red-600 focus:ring-red-500/30 cursor-pointer"
+                  className="w-4 h-4 rounded-md border-slate-300 dark:border-slate-700 text-brand accent-[var(--brand)] focus:ring-brand/30 cursor-pointer"
                 />
-                <span className="group-hover:text-slate-900 dark:group-hover:text-slate-100 transition-colors font-medium">
+                <span className="group-hover:text-ink dark:group-hover:text-slate-100 transition-colors font-medium">
                   Remember me
                 </span>
               </label>
@@ -292,17 +292,17 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => alert('Please contact your System Administrator or IT Support to reset your password.')}
-                className="text-xs font-bold text-slate-600 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400 transition-colors cursor-pointer"
+                className="text-xs font-bold text-slate-600 hover:text-brand dark:text-slate-400 dark:hover:text-brand transition-colors cursor-pointer"
               >
                 Forgot Password?
               </button>
             </div>
 
-            {/* Primary Submit Button */}
+            {/* Primary Submit Button — brand gradient */}
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full mt-2 py-3.5 px-6 bg-gradient-to-r from-[#FF2B34] via-[#EE1D23] to-[#D50C13] hover:from-[#FF3D45] hover:via-[#F3282E] hover:to-[#E0131B] text-white rounded-2xl text-sm font-bold tracking-wide transition-all duration-200 shadow-lg shadow-red-500/25 hover:shadow-xl hover:shadow-red-500/35 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer group"
+              className="btn-brand w-full mt-2 py-3.5 px-6 rounded-2xl text-sm font-bold tracking-wide transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer group"
             >
               {isLoading ? (
                 <>

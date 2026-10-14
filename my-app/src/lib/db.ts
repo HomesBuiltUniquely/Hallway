@@ -36,7 +36,7 @@ export function getPool(): Pool {
 }
 
 export const CATEGORY_COLORS: Record<string, string> = {
-  announcement: '#EF4444',
+  announcement: 'var(--brand)',
   booking: '#10B981',
   quota: '#8B5CF6',
   performer: '#F59E0B',

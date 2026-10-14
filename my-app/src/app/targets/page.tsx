@@ -1,201 +1,173 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
-import {
-  CorridorGate,
-} from '../../components/hallway/CorridorGate';
-import { useCorridorScope } from '../../components/hallway/CorridorScopeBar';
-import DepartmentPills from '../../components/common/DepartmentPills';
-import FeedCard from '../../components/home/FeedCard';
+import { CorridorGate } from '../../components/hallway/CorridorGate';
+import { CorridorScopeBar, useCorridorScope } from '../../components/hallway/CorridorScopeBar';
+import DepartmentPills, {
+  isSalesCrmDepartment,
+} from '../../components/common/DepartmentPills';
 import { FeedPost } from '../../types';
 import EmptyState from '../../components/common/EmptyState';
 
-const defaultTargetPosts: FeedPost[] = [
+type QuotaCard = {
+  id: string;
+  label: string;
+  currentFormatted: string;
+  targetFormatted: string;
+  percentage: number;
+  periodKey: string;
+};
+
+const FALLBACK_CARDS: QuotaCard[] = [
   {
     id: 'crm-target-all-current',
-    type: 'quota',
-    categoryColor: '#8B5CF6',
-    iconEmoji: '🎯',
-    title: 'All Hubs (Overall) : Monthly gross booking: ₹71.67L achieved (14.9%)',
-    timestamp: 'Just now',
-    createdAt: new Date().toISOString(),
-    author: {
-      name: 'Hub Operations',
-      avatar: '',
-      team: 'Operations HQ',
-    },
-    content:
-      'Monthly gross booking pacing across all corridors is at ₹71.67L towards the ₹4.80 Cr target (14.9% achieved).',
-    quotaProgress: {
-      current: 7167288,
-      target: 48000000,
-      label: 'All Hubs (Overall) Target',
-      percentage: 14.9,
-      currentFormatted: '₹71.67L',
-      targetFormatted: '₹4.80 Cr',
-    },
-    reactions: {},
-    commentsCount: 1,
-    comments: [
-      {
-        id: 'c-all-1',
-        authorName: 'Ranjith',
-        authorHandle: 'ranjith',
-        authorAvatar: '',
-        authorRole: 'ADMIN',
-        content: 'Great momentum across all 3 hubs this week! Keep pushing for the 4.80 Cr quota 🚀',
-        createdAt: new Date(Date.now() - 3600000).toISOString(),
-        timestamp: '1 hour ago',
-        likes: 2,
-        userLiked: false,
-      },
-    ],
-    department: 'Sales',
+    label: 'MONTHLY GROSS BOOKING',
+    currentFormatted: '₹71.79L',
+    targetFormatted: '₹4.80 Cr',
+    percentage: 15,
+    periodKey: 'sales_targets - 2026-10',
   },
   {
     id: 'crm-target-JP_NAGAR-current',
-    type: 'quota',
-    categoryColor: '#8B5CF6',
-    iconEmoji: '🎯',
-    title: 'JP Nagar: Monthly gross booking: ₹31.82L achieved (26.5%)',
-    timestamp: 'Just now',
-    createdAt: new Date().toISOString(),
-    author: {
-      name: 'JP Nagar Operations',
-      avatar: '',
-      team: 'JP Nagar Hub',
-    },
-    content:
-      'JP Nagar Hub monthly gross booking pacing is at ₹31.82L towards the ₹1.20 Cr branch target (26.5% achieved).',
-    quotaProgress: {
-      current: 3181997,
-      target: 12000000,
-      label: 'JP Nagar Target',
-      percentage: 26.5,
-      currentFormatted: '₹31.82L',
-      targetFormatted: '₹1.20 Cr',
-    },
-    reactions: {},
-    commentsCount: 0,
-    comments: [],
-    department: 'Sales',
+    label: 'JP NAGAR · MONTHLY GROSS BOOKING',
+    currentFormatted: '₹31.82L',
+    targetFormatted: '₹1.20 Cr',
+    percentage: 26.5,
+    periodKey: 'sales_targets - 2026-10',
   },
   {
     id: 'crm-target-SARJAPUR-current',
-    type: 'quota',
-    categoryColor: '#8B5CF6',
-    iconEmoji: '🎯',
-    title: 'Sarjapura: Monthly gross booking: ₹24.40L achieved (20.3%)',
-    timestamp: 'Just now',
-    createdAt: new Date().toISOString(),
-    author: {
-      name: 'Sarjapura Operations',
-      avatar: '',
-      team: 'Sarjapura Hub',
-    },
-    content:
-      'Sarjapura Hub monthly gross booking pacing is at ₹24.40L towards the ₹1.20 Cr branch target (20.3% achieved).',
-    quotaProgress: {
-      current: 2439911,
-      target: 12000000,
-      label: 'Sarjapura Target',
-      percentage: 20.3,
-      currentFormatted: '₹24.40L',
-      targetFormatted: '₹1.20 Cr',
-    },
-    reactions: {},
-    commentsCount: 0,
-    comments: [],
-    department: 'Sales',
+    label: 'SARJAPURA · MONTHLY GROSS BOOKING',
+    currentFormatted: '₹24.40L',
+    targetFormatted: '₹1.20 Cr',
+    percentage: 20.3,
+    periodKey: 'sales_targets - 2026-10',
   },
   {
     id: 'crm-target-HBR-current',
-    type: 'quota',
-    categoryColor: '#8B5CF6',
-    iconEmoji: '🎯',
-    title: 'HBR Layout: Monthly gross booking: ₹15.45L achieved (6.4%)',
-    timestamp: 'Just now',
-    createdAt: new Date().toISOString(),
-    author: {
-      name: 'HBR Layout Operations',
-      avatar: '',
-      team: 'HBR Layout Hub',
-    },
-    content:
-      'HBR Layout Hub monthly gross booking pacing is at ₹15.45L towards the ₹2.40 Cr branch target (6.4% achieved).',
-    quotaProgress: {
-      current: 1545380,
-      target: 24000000,
-      label: 'HBR Layout Target',
-      percentage: 6.4,
-      currentFormatted: '₹15.45L',
-      targetFormatted: '₹2.40 Cr',
-    },
-    reactions: {},
-    commentsCount: 0,
-    comments: [],
-    department: 'Sales',
+    label: 'HBR LAYOUT · MONTHLY GROSS BOOKING',
+    currentFormatted: '₹15.45L',
+    targetFormatted: '₹2.40 Cr',
+    percentage: 6.4,
+    periodKey: 'sales_targets - 2026-10',
   },
 ];
 
-function TargetsInner() {
-  const { branchId } = useCorridorScope();
-  const { feedPosts } = useApp();
+function toQuotaCard(post: FeedPost): QuotaCard | null {
+  const q = post.quotaProgress;
+  if (!q) return null;
+  const label =
+    q.label?.toUpperCase().includes('GROSS') || q.label?.toUpperCase().includes('TARGET')
+      ? q.label.replace(/Target/i, '').trim().toUpperCase() || 'MONTHLY GROSS BOOKING'
+      : 'MONTHLY GROSS BOOKING';
+  return {
+    id: post.id,
+    label: label.includes('GROSS') ? label : `${label} · MONTHLY GROSS BOOKING`,
+    currentFormatted: q.currentFormatted || `₹${q.current}`,
+    targetFormatted: q.targetFormatted || `₹${q.target}`,
+    percentage: Number(q.percentage) || 0,
+    periodKey: `sales_targets - ${new Date().toISOString().slice(0, 7)}`,
+  };
+}
 
-  // Target posts dynamically from live CRM feed in AppContext
-  const dynamicTargetPosts = feedPosts.filter(
-    (p) => p.type === 'quota' || p.id?.startsWith('crm-target-')
+function TargetQuotaCard({ card }: { card: QuotaCard }) {
+  const pct = Math.max(0, Math.min(100, card.percentage));
+  return (
+    <div className="bg-white dark:bg-panel border border-slate-200/90 dark:border-surface-warm/60 rounded-2xl p-5 sm:p-6 shadow-xs space-y-4">
+      <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">
+        {card.label}
+      </p>
+
+      <div className="flex items-end justify-between gap-4 flex-wrap">
+        <p className="text-3xl sm:text-4xl font-black text-ink dark:text-white tracking-tight font-mono">
+          {card.currentFormatted}
+        </p>
+        <div className="text-right">
+          <p className="text-lg sm:text-xl font-black text-ink dark:text-white">{Math.round(pct)}%</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            Target: <span className="font-semibold text-accent-cyan">{card.targetFormatted}</span>
+          </p>
+        </div>
+      </div>
+
+      <div className="h-2.5 w-full bg-surface-muted dark:bg-surface-warm/40 rounded-full overflow-hidden">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-brand via-brand-hover to-accent-cyan transition-all duration-700"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+
+      <p className="text-[11px] text-slate-400 dark:text-slate-500 font-medium">{card.periodKey}</p>
+    </div>
   );
+}
 
-  const postsToUse = dynamicTargetPosts.length > 0 ? dynamicTargetPosts : defaultTargetPosts;
+function TargetsInner() {
+  const { branchId, setBranchId, salesManagerId, setSalesManagerId, options } = useCorridorScope();
+  const { feedPosts, activeDepartment } = useApp();
 
-  // Filter based on corridor scope if a specific branch is selected
-  const displayedPosts = postsToUse.filter((post) => {
-    if (!branchId || branchId === 'all') return true;
-    const b = branchId.toLowerCase();
-    const pid = post.id.toLowerCase();
-    const ptitle = post.title.toLowerCase();
-    const pcontent = post.content.toLowerCase();
-    return (
-      pid.includes(b) ||
-      ptitle.includes(b) ||
-      pcontent.includes(b) ||
-      pid.includes('overall') ||
-      pid.includes('all')
-    );
-  });
+  const cards = useMemo(() => {
+    const dynamic = (feedPosts || [])
+      .filter((p) => p.type === 'quota' || p.id?.startsWith('crm-target-'))
+      .map(toQuotaCard)
+      .filter((c): c is QuotaCard => Boolean(c));
+
+    const source = dynamic.length > 0 ? dynamic : FALLBACK_CARDS;
+
+    return source.filter((card) => {
+      if (!branchId || branchId === 'all') return true;
+      const b = branchId.toLowerCase();
+      const id = card.id.toLowerCase();
+      const label = card.label.toLowerCase();
+      return (
+        id.includes(b) ||
+        label.includes(b) ||
+        id.includes('overall') ||
+        id.includes('all') ||
+        label.includes('all hubs')
+      );
+    });
+  }, [feedPosts, branchId]);
 
   return (
     <div className="space-y-6">
-      {/* Department Filter Pills */}
+      {/* Page title — matches Operating Targets & Quotas reference */}
+      <div className="pb-1 border-b border-slate-200/80 dark:border-surface-warm/50">
+        <h1 className="text-2xl sm:text-3xl font-black text-ink dark:text-white tracking-tight">
+          Operating Targets &amp; Quotas
+        </h1>
+        <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1.5 max-w-2xl">
+          Monthly gross booking vs Hub incentives target. Progress comes from CRM.
+        </p>
+      </div>
+
       <DepartmentPills />
 
-      {/* Target Section Header exactly matching the reference screenshot */}
-      <div className="flex items-center justify-between pb-1">
-        <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-violet-600 dark:bg-violet-400 shrink-0" />
-          <h2 className="text-sm sm:text-base font-extrabold uppercase tracking-wider text-slate-800 dark:text-slate-100">
-            MONTHLY TARGETS
-          </h2>
-        </div>
-        <span className="text-xs sm:text-sm text-slate-400 font-medium">
-          Corridor pacing in real-time
-        </span>
-      </div>
+      <CorridorScopeBar
+        branchId={branchId}
+        salesManagerId={salesManagerId}
+        options={options}
+        onBranch={setBranchId}
+        onManager={setSalesManagerId}
+      />
 
-      {/* Clean vertical stack of dynamic target cards */}
-      <div className="space-y-4">
-        {displayedPosts.map((post) => (
-          <FeedCard key={post.id} post={post} />
-        ))}
-      </div>
-
-      {displayedPosts.length === 0 && (
+      {!isSalesCrmDepartment(activeDepartment) ? (
+        <EmptyState
+          title="No individual standings yet"
+          description="Live sales velocity ranks will appear here when CRM returns people for this period."
+        />
+      ) : cards.length === 0 ? (
         <EmptyState
           title="No targets matching scope"
           description="Select 'All branches' or adjust corridor filters to inspect branch quotas."
         />
+      ) : (
+        <div className="space-y-4">
+          {cards.map((card) => (
+            <TargetQuotaCard key={card.id} card={card} />
+          ))}
+        </div>
       )}
     </div>
   );

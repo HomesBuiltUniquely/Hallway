@@ -28,7 +28,7 @@ function TrendIcon({ trend }: { trend?: string }) {
 function ConversionTile({ card }: { card: ConversionCard }) {
   const tone = card.tone || 'neutral';
   return (
-    <div className="bg-white dark:bg-[#0D1829] border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-xs">
+    <div className="bg-white dark:bg-panel border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-xs">
       <p className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 mb-2">
         {card.title}
       </p>
@@ -82,7 +82,7 @@ export function PerformanceCards({
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-      <div className="bg-white dark:bg-[#0D1829] border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-xs">
+      <div className="bg-white dark:bg-panel border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-xs">
         <p className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 mb-2">
           {booking.title}
         </p>
@@ -103,7 +103,7 @@ export function PerformanceCards({
         </div>
       </div>
 
-      <div className="bg-white dark:bg-[#0D1829] border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-xs">
+      <div className="bg-white dark:bg-panel border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-xs">
         <p className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 mb-2">
           {pipeline.title}
         </p>

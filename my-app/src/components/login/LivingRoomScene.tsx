@@ -61,9 +61,9 @@ export const LivingRoomScene: React.FC<LivingRoomSceneProps> = ({ isDark = false
           <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
         </linearGradient>
 
-        {/* Ambient Wall Light Gradient (Dark Mode) */}
+        {/* Ambient Wall Light Gradient (Dark Mode) — brand primary glow */}
         <radialGradient id="night-ambient" cx="20%" cy="25%" r="65%">
-          <stop offset="0%" stopColor="#e8201c" stopOpacity="0.12" />
+          <stop offset="0%" stopColor="#EF0101" stopOpacity="0.12" />
           <stop offset="60%" stopColor="#0b0f19" stopOpacity="0.0" />
         </radialGradient>
 

@@ -7,7 +7,7 @@ import type { HallwayFeedItem } from '../../types/hallway';
 
 function DealCard({ item }: { item: HallwayFeedItem }) {
   return (
-    <div className="bg-white dark:bg-[#0D1829] border border-slate-200/90 dark:border-slate-800/90 rounded-2xl p-5 shadow-xs">
+    <div className="bg-white dark:bg-panel border border-slate-200/90 dark:border-slate-800/90 rounded-2xl p-5 shadow-xs">
       <div className="flex items-start justify-between gap-3 mb-2.5">
         <div className="flex items-center gap-2.5 min-w-0">
           <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-emerald-500" />

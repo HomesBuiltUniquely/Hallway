@@ -11,7 +11,10 @@ import {
   CorridorSkeleton,
 } from '../../components/hallway/CorridorGate';
 import { CorridorScopeBar, useCorridorScope } from '../../components/hallway/CorridorScopeBar';
-import DepartmentPills from '../../components/common/DepartmentPills';
+import DepartmentPills, {
+  isSalesCrmDepartment,
+} from '../../components/common/DepartmentPills';
+import { useApp } from '../../context/AppContext';
 
 // Authentic Google Profile Avatar (deterministic saturated Material palette + clean initials)
 function GoogleProfileAvatar({
@@ -30,15 +33,15 @@ function GoogleProfileAvatar({
       ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
       : (clean[0] || 'U').toUpperCase();
 
-  // Vibrant Material Google colors
+  // HUB brand palette
   const palette = [
-    'bg-[#1a73e8]', // Google Blue
-    'bg-[#0d904f]', // Google Green
-    'bg-[#d93025]', // Google Red
-    'bg-[#e37400]', // Google Amber/Orange
-    'bg-[#9334e6]', // Google Purple
-    'bg-[#12b5cb]', // Google Teal
-    'bg-[#e52592]', // Google Rose
+    'bg-brand',
+    'bg-ink',
+    'bg-accent-cyan',
+    'bg-[color:var(--accent-gold)]',
+    'bg-[#32261C]',
+    'bg-[#00B0ED]',
+    'bg-[#EF0101]',
   ];
 
   let hash = 0;
@@ -184,6 +187,7 @@ const ALL_TIME_VERIFIED_TEAMS: RankedTeamRecord[] = [
 ];
 
 function RecordsInner() {
+  const { activeDepartment } = useApp();
   const { branchId, setBranchId, options } = useCorridorScope();
   const { data, loading, error, refetch: refetchRecords } = useRecords(branchId);
 
@@ -301,10 +305,10 @@ function RecordsInner() {
       {/* Header */}
       <div className="space-y-2">
         <div className="flex items-center gap-2.5">
-          <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center border border-amber-500/20 shadow-xs">
+          <div className="w-10 h-10 rounded-2xl bg-brand-soft text-brand flex items-center justify-center border border-brand/20 shadow-xs">
             <Trophy className="w-5 h-5" />
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight uppercase">
+          <h1 className="text-2xl sm:text-3xl font-black text-ink dark:text-white tracking-tight uppercase">
             HUB BOOK OF RECORDS
           </h1>
         </div>
@@ -316,6 +320,13 @@ function RecordsInner() {
       {/* Department Filter Pills */}
       <DepartmentPills />
 
+      {!isSalesCrmDepartment(activeDepartment) ? (
+        <EmptyState
+          title="No individual standings yet"
+          description="Live sales velocity ranks will appear here when CRM returns people for this period."
+        />
+      ) : (
+        <>
       <CorridorScopeBar
         branchId={branchId}
         options={options}
@@ -324,7 +335,7 @@ function RecordsInner() {
       />
 
       {combinedError ? (
-        <div className="rounded-2xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/70 dark:bg-amber-950/30 px-4 py-3 text-xs flex items-center justify-between gap-3 text-amber-800 dark:text-amber-200">
+        <div className="rounded-2xl border border-brand/25 dark:border-brand/40 bg-brand-soft px-4 py-3 text-xs flex items-center justify-between gap-3 text-brand">
           <div className="flex items-center gap-2">
             <span className="text-sm">⏳</span>
             <span>
@@ -338,7 +349,7 @@ function RecordsInner() {
           <button
             type="button"
             onClick={handleRetry}
-            className="px-3 py-1 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-[11px] uppercase tracking-wider transition-colors shadow-xs"
+            className="px-3 py-1 rounded-xl bg-brand hover:bg-brand-hover text-white font-bold text-[11px] uppercase tracking-wider transition-colors shadow-xs"
           >
             Retry
           </button>
@@ -376,7 +387,7 @@ function RecordsInner() {
                 <div
                   key={record.id}
                   onClick={() => setSelectedRecord(record)}
-                  className="bg-white dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800/80 rounded-3xl p-6 shadow-[0_2px_12px_-4px_rgba(15,23,42,0.04)] hover:shadow-[0_20px_35px_-10px_rgba(15,23,42,0.1),0_1px_3px_rgba(15,23,42,0.04)] dark:hover:shadow-[0_20px_35px_-10px_rgba(0,0,0,0.5)] hover:-translate-y-1.5 transition-all duration-300 ease-[cubic-bezier(0.25,1,0.5,1)] cursor-pointer group relative flex flex-col justify-between"
+                  className="bg-white dark:bg-panel border border-slate-200/80 dark:border-slate-800/80 rounded-3xl p-6 shadow-[0_2px_12px_-4px_rgba(15,23,42,0.04)] hover:shadow-[0_20px_35px_-10px_rgba(15,23,42,0.1),0_1px_3px_rgba(15,23,42,0.04)] dark:hover:shadow-[0_20px_35px_-10px_rgba(0,0,0,0.5)] hover:-translate-y-1.5 transition-all duration-300 ease-[cubic-bezier(0.25,1,0.5,1)] cursor-pointer group relative flex flex-col justify-between"
                 >
                   <div>
                     {/* Category Label */}
@@ -390,7 +401,7 @@ function RecordsInner() {
                         <div className="ring-4 ring-slate-100 dark:ring-slate-800/70 rounded-full shadow-xs">
                           <GoogleProfileAvatar name={displayName} size={68} />
                         </div>
-                        <div className="absolute -bottom-1 -right-1 p-1.5 bg-amber-400 text-slate-950 rounded-full shadow-xs ring-2 ring-white dark:ring-slate-900 flex items-center justify-center">
+                        <div className="absolute -bottom-1 -right-1 p-1.5 bg-accent-gold text-ink rounded-full shadow-xs ring-2 ring-white dark:ring-slate-900 flex items-center justify-center">
                           <Star className="w-3 h-3 fill-slate-950" />
                         </div>
                       </div>
@@ -416,7 +427,7 @@ function RecordsInner() {
                     </div>
 
                     {/* Metric Value Box */}
-                    <div className="text-center py-3 px-3 bg-slate-50/80 dark:bg-slate-800/50 rounded-2xl mb-4 border border-slate-100 dark:border-slate-800/70 group-hover:bg-amber-500/5 group-hover:border-amber-500/20 transition-all duration-200">
+                    <div className="text-center py-3 px-3 bg-slate-50/80 dark:bg-slate-800/50 rounded-2xl mb-4 border border-slate-100 dark:border-slate-800/70 group-hover:bg-brand-soft group-hover:border-brand/20 transition-all duration-200">
                       <p className="font-mono font-black text-2xl text-slate-900 dark:text-white tracking-tight">
                         {record.value}
                       </p>
@@ -431,7 +442,7 @@ function RecordsInner() {
                   {/* Verification Tag */}
                   <div className="pt-1 flex justify-center">
                     {record.verified ? (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-amber-400/15 text-amber-600 dark:text-amber-400 border border-amber-400/30 shadow-2xs group-hover:bg-amber-400 group-hover:text-slate-950 transition-all duration-200">
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-accent-gold/20 text-ink dark:text-accent-gold border border-accent-gold/40 shadow-2xs group-hover:bg-accent-gold group-hover:text-ink transition-all duration-200">
                         <Trophy className="w-3 h-3" />
                         <span>Verified</span>
                       </span>
@@ -471,7 +482,7 @@ function RecordsInner() {
               const rankBadge =
                 rank === 1
                   ? {
-                      bg: 'bg-amber-400/15 text-amber-600 dark:text-amber-400 border-amber-400/30',
+                      bg: 'bg-accent-gold/20 text-ink dark:text-accent-gold border-accent-gold/40',
                       label: '🥇 1st Rank',
                     }
                   : rank === 2
@@ -487,7 +498,7 @@ function RecordsInner() {
               return (
                 <div
                   key={teamRec.id || `${teamRec.teamName}-${rank}`}
-                  className="bg-white dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800/80 rounded-3xl p-6 shadow-[0_2px_12px_-4px_rgba(15,23,42,0.04)] hover:shadow-[0_20px_35px_-10px_rgba(15,23,42,0.1),0_1px_3px_rgba(15,23,42,0.04)] dark:hover:shadow-[0_20px_35px_-10px_rgba(0,0,0,0.5)] hover:-translate-y-1.5 transition-all duration-300 ease-[cubic-bezier(0.25,1,0.5,1)] flex flex-col justify-between space-y-4 group"
+                  className="bg-white dark:bg-panel border border-slate-200/80 dark:border-slate-800/80 rounded-3xl p-6 shadow-[0_2px_12px_-4px_rgba(15,23,42,0.04)] hover:shadow-[0_20px_35px_-10px_rgba(15,23,42,0.1),0_1px_3px_rgba(15,23,42,0.04)] dark:hover:shadow-[0_20px_35px_-10px_rgba(0,0,0,0.5)] hover:-translate-y-1.5 transition-all duration-300 ease-[cubic-bezier(0.25,1,0.5,1)] flex flex-col justify-between space-y-4 group"
                 >
                   <div>
                     {/* Header Row with Metric Label & Rank Badge */}
@@ -522,7 +533,7 @@ function RecordsInner() {
                   </div>
 
                   {/* Revenue Value Box */}
-                  <div className="py-3 px-4 bg-slate-50/80 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800/70 group-hover:bg-amber-500/5 group-hover:border-amber-500/20 transition-all duration-200">
+                  <div className="py-3 px-4 bg-slate-50/80 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800/70 group-hover:bg-brand-soft group-hover:border-brand/20 transition-all duration-200">
                     <p className="font-mono font-black text-2xl text-slate-900 dark:text-white">
                       {teamRec.value}
                     </p>
@@ -530,8 +541,8 @@ function RecordsInner() {
 
                   {/* Verified Record Badge */}
                   {teamRec.verified && (
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                      <ShieldCheck className="w-4 h-4 text-emerald-500" />
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-accent-cyan">
+                      <ShieldCheck className="w-4 h-4 text-accent-cyan" />
                       <span>Verified Record</span>
                     </div>
                   )}
@@ -553,8 +564,8 @@ function RecordsInner() {
             className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl animate-in zoom-in-95 duration-200"
           >
             <div className="flex items-center justify-between pb-3.5 border-b border-slate-100 dark:border-slate-800 mb-5">
-              <div className="flex items-center gap-2.5 text-amber-500">
-                <div className="w-8 h-8 rounded-xl bg-amber-500/10 flex items-center justify-center">
+              <div className="flex items-center gap-2.5 text-brand">
+                <div className="w-8 h-8 rounded-xl bg-brand-soft flex items-center justify-center">
                   <Trophy className="w-4 h-4" />
                 </div>
                 <h3 className="font-black text-slate-900 dark:text-white text-base tracking-tight">
@@ -597,7 +608,7 @@ function RecordsInner() {
                   {selectedRecord.value}
                 </p>
                 {selectedRecord.subValue && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400 font-bold uppercase tracking-wider">
+                  <p className="text-xs text-brand font-bold uppercase tracking-wider">
                     {selectedRecord.id === 'fastest_deal_close' && selectedRecord.subValue === 'M-777'
                       ? 'Lead #M-777 • Marketing Lead'
                       : selectedRecord.subValue}
@@ -613,7 +624,7 @@ function RecordsInner() {
 
               {selectedRecord.verified && (
                 <div className="pt-1 flex justify-center">
-                  <span className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-[11px] font-extrabold uppercase tracking-wider bg-amber-400/15 text-amber-600 dark:text-amber-400 border border-amber-400/30">
+                  <span className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-[11px] font-extrabold uppercase tracking-wider bg-accent-gold/20 text-ink dark:text-accent-gold border border-accent-gold/40">
                     <Trophy className="w-3.5 h-3.5" />
                     <span>Officially Verified Benchmark</span>
                   </span>
@@ -622,6 +633,8 @@ function RecordsInner() {
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

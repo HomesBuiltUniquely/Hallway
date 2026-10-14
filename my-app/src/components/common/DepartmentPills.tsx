@@ -12,6 +12,11 @@ export const DEPARTMENTS = [
   'Finance',
 ] as const;
 
+/** Hallway currently only has CRM Sales data; other dept tabs show an empty state. */
+export function isSalesCrmDepartment(department: string | null | undefined): boolean {
+  return !department || department === 'All Departments' || department === 'Sales';
+}
+
 export default function DepartmentPills({ className = '' }: { className?: string }) {
   const { activeDepartment, setActiveDepartment } = useApp();
 
@@ -26,8 +31,8 @@ export default function DepartmentPills({ className = '' }: { className?: string
             onClick={() => setActiveDepartment(dept)}
             className={`px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold whitespace-nowrap shrink-0 transition-all cursor-pointer ${
               isActive
-                ? 'bg-[#00E676] text-slate-950 font-bold shadow-xs hover:bg-[#00c853]'
-                : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700/80 hover:bg-slate-100 dark:hover:bg-slate-700'
+                ? 'bg-brand text-white font-bold shadow-xs hover:bg-brand-hover'
+                : 'bg-white dark:bg-panel text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700/80 hover:bg-surface-muted dark:hover:bg-slate-700'
             }`}
           >
             {dept}

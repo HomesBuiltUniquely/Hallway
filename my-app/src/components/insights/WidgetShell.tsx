@@ -22,7 +22,7 @@ export function WidgetShell({
   children: React.ReactNode;
 }) {
   return (
-    <section className="bg-white dark:bg-[#0D1829] border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-xs min-h-[220px] flex flex-col">
+    <section className="bg-white dark:bg-panel border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-xs min-h-[220px] flex flex-col">
       <div className="flex items-start justify-between gap-3 mb-4">
         <div>
           <h3 className="text-sm font-black text-slate-900 dark:text-white tracking-tight">{title}</h3>

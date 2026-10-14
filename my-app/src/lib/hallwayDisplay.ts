@@ -221,6 +221,22 @@ export function formatExactDateIst(dateInput = new Date()): string {
   });
 }
 
+/** IST calendar date as YYYY-MM-DD (e.g. "2026-10-14") — TODAY widget header */
+export function formatIsoDateIst(dateInput = new Date()): string {
+  const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+  if (isNaN(d.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(d);
+  const y = parts.find((p) => p.type === 'year')?.value || '';
+  const m = parts.find((p) => p.type === 'month')?.value || '';
+  const day = parts.find((p) => p.type === 'day')?.value || '';
+  return `${y}-${m}-${day}`;
+}
+
 /**
  * Returns both exact IST timestamp and relative time for feed posts & notifications
  */

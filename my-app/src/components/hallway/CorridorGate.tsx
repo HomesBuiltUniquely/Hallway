@@ -27,7 +27,7 @@ export function CorridorBanner({ error }: { error: unknown }) {
   const message = corridorErrorMessage(error);
   if (!message) return null;
   return (
-    <div className="rounded-2xl border border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/30 px-4 py-3 text-xs font-semibold text-rose-600">
+    <div className="rounded-2xl border border-brand/25 dark:border-brand/40 bg-brand-soft px-4 py-3 text-xs font-semibold text-brand">
       {message}
     </div>
   );
