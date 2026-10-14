@@ -21,22 +21,20 @@ export default function NotificationsPage() {
   const { notifications, notificationsCount, markAllNotificationsRead, markNotificationRead } =
     useApp();
   const [activeTab, setActiveTab] = useState<TabId>('all');
-  const [showUnreadOnly, setShowUnreadOnly] = useState(false);
 
-  const unreadByType = useMemo(() => {
-    const unread = notifications.filter((n) => !n.read);
-    return {
-      all: unread.length,
-      leads: unread.filter((n) => n.type === 'lead').length,
-      deals: unread.filter((n) => n.type === 'deal').length,
-      meetings: unread.filter((n) => n.type === 'meeting').length,
-      tasks: unread.filter((n) => n.type === 'task').length,
-      urgent: unread.filter((n) => n.type === 'urgent').length,
-    };
-  }, [notifications]);
+  const unreadByType = useMemo(
+    () => ({
+      all: notifications.length,
+      leads: notifications.filter((n) => n.type === 'lead').length,
+      deals: notifications.filter((n) => n.type === 'deal').length,
+      meetings: notifications.filter((n) => n.type === 'meeting').length,
+      tasks: notifications.filter((n) => n.type === 'task').length,
+      urgent: notifications.filter((n) => n.type === 'urgent').length,
+    }),
+    [notifications]
+  );
 
   const filtered = notifications.filter((n) => {
-    if (showUnreadOnly && n.read) return false;
     if (activeTab === 'leads') return n.type === 'lead';
     if (activeTab === 'deals') return n.type === 'deal';
     if (activeTab === 'meetings') return n.type === 'meeting';
@@ -67,22 +65,11 @@ export default function NotificationsPage() {
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
             {notificationsCount > 0
-              ? `${notificationsCount} unread for your session`
+              ? `${notificationsCount} live alert${notificationsCount === 1 ? '' : 's'} · tap to dismiss`
               : 'You are caught up'}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setShowUnreadOnly((v) => !v)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
-              showUnreadOnly
-                ? 'bg-brand text-white border-brand'
-                : 'bg-white dark:bg-panel text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800'
-            }`}
-          >
-            Unread only
-          </button>
           {notificationsCount > 0 && (
             <button
               type="button"
@@ -90,7 +77,7 @@ export default function NotificationsPage() {
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer"
             >
               <Check className="w-3.5 h-3.5" />
-              Mark all read
+              Clear all
             </button>
           )}
         </div>
@@ -181,11 +168,8 @@ function NotificationRow({
     <button
       type="button"
       onClick={() => onRead(item.id)}
-      className={`w-full text-left group px-3 py-2.5 rounded-xl transition-all cursor-pointer flex items-center justify-between gap-3 ${
-        item.read
-          ? 'hover:bg-neutral-50 dark:hover:bg-slate-800/40 opacity-70'
-          : 'bg-sky-50/40 dark:bg-slate-800/50 hover:bg-neutral-100/70 dark:hover:bg-slate-800/80'
-      }`}
+      title="Dismiss"
+      className="w-full text-left group px-3 py-2.5 rounded-xl transition-all cursor-pointer flex items-center justify-between gap-3 bg-sky-50/40 dark:bg-slate-800/50 hover:bg-neutral-100/70 dark:hover:bg-slate-800/80"
     >
       <div className="shrink-0">
         <div className={`w-9 h-9 rounded-full flex items-center justify-center shadow-2xs ${style.avatarBg}`}>
@@ -193,13 +177,7 @@ function NotificationRow({
         </div>
       </div>
       <div className="flex-1 min-w-0 pr-1">
-        <h4
-          className={`text-[13px] truncate leading-snug ${
-            item.read
-              ? 'font-medium text-neutral-600 dark:text-neutral-300'
-              : 'font-bold text-neutral-900 dark:text-neutral-100'
-          }`}
-        >
+        <h4 className="text-[13px] truncate leading-snug font-bold text-neutral-900 dark:text-neutral-100">
           {item.title}
         </h4>
         <p className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate mt-0.5 leading-tight">
@@ -216,7 +194,7 @@ function NotificationRow({
           {formatRelativeTime(item.timestamp)}
         </span>
         <div className="flex items-center gap-2 mt-auto">
-          {!item.read && <span className="w-2 h-2 rounded-full bg-brand" title="Unread" />}
+          <span className="w-2 h-2 rounded-full bg-brand" title="Active" />
           <ChevronRight className="w-3.5 h-3.5 text-neutral-400" />
         </div>
       </div>

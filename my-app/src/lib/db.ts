@@ -64,6 +64,8 @@ export const DEFAULT_REACTIONS: Record<string, any> = {
   userParty: false,
   userHundred: false,
   userRocket: false,
+  /** Map of viewer key → reaction type (per-user WhatsApp semantics) */
+  byUser: {} as Record<string, string>,
 };
 
 export function parseReactions(raw: any) {
@@ -146,12 +148,66 @@ function saveJsonAnnouncements(data: any[]): boolean {
 }
 
 // ==========================================
+// Schema bootstrap (hallway_db)
+// ==========================================
+
+let _schemaReady: Promise<void> | null = null;
+
+/** Ensure announcements + comments tables exist before any write/read. */
+export async function ensureHallwaySchema(): Promise<void> {
+  if (_schemaReady) return _schemaReady;
+  _schemaReady = (async () => {
+    const pool = getPool();
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS announcements (
+        id VARCHAR(191) PRIMARY KEY,
+        type VARCHAR(64) NOT NULL DEFAULT 'announcement',
+        category_color VARCHAR(64) NULL,
+        title TEXT NOT NULL,
+        timestamp_text VARCHAR(128) NULL,
+        author_name VARCHAR(255) NULL,
+        author_avatar TEXT NULL,
+        author_team VARCHAR(255) NULL,
+        content MEDIUMTEXT NULL,
+        quota_progress JSON NULL,
+        reactions JSON NULL,
+        comments_count INT NOT NULL DEFAULT 0,
+        department VARCHAR(128) NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_announcements_created (created_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS comments (
+        id VARCHAR(191) PRIMARY KEY,
+        announcement_id VARCHAR(191) NOT NULL,
+        author_name VARCHAR(255) NULL,
+        author_handle VARCHAR(255) NULL,
+        author_avatar TEXT NULL,
+        author_role VARCHAR(255) NULL,
+        content MEDIUMTEXT NOT NULL,
+        timestamp_text VARCHAR(128) NULL,
+        likes INT NOT NULL DEFAULT 0,
+        user_liked TINYINT(1) NOT NULL DEFAULT 0,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_comments_announcement (announcement_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+  })().catch((err) => {
+    _schemaReady = null;
+    throw err;
+  });
+  return _schemaReady;
+}
+
+// ==========================================
 // Database / Persistent CRUD Operations
 // ==========================================
 
 export async function getAnnouncements() {
   try {
     const pool = getPool();
+    await ensureHallwaySchema();
     const [rows] = await pool.query<any[]>(
       'SELECT * FROM announcements ORDER BY created_at DESC, id DESC'
     );
@@ -244,6 +300,7 @@ export async function getAnnouncements() {
 export async function getAnnouncementById(id: string) {
   try {
     const pool = getPool();
+    await ensureHallwaySchema();
     const [rows] = await pool.query<any[]>('SELECT * FROM announcements WHERE id = ?', [id]);
     if (rows.length > 0) {
       const row = rows[0];
@@ -333,6 +390,7 @@ export async function createAnnouncement(data: CreateAnnouncementInput) {
 
   try {
     const pool = getPool();
+    await ensureHallwaySchema();
     await pool.query(
       `INSERT INTO announcements (
         id, type, category_color, title, timestamp_text,
@@ -416,6 +474,7 @@ export async function ensureAnnouncementExists(
     author?: { name?: string; avatar?: string; team?: string };
   }
 ) {
+  await ensureHallwaySchema();
   const [rows] = await pool.query<any[]>('SELECT id, title, content FROM announcements WHERE id = ?', [id]);
   if (rows.length === 0) {
     const type = defaults?.type || 'booking';
@@ -554,43 +613,38 @@ export async function addComment(
   let createdComment: any = null;
   let announcementResult: any = null;
 
-  try {
-    const pool = getPool();
-    // Guarantee that announcement row exists in MySQL before foreign key check
-    await ensureAnnouncementExists(pool, announcementId, postMetadata);
+  const pool = getPool();
+  await ensureAnnouncementExists(pool, announcementId, postMetadata);
 
-    await pool.query(
-      `INSERT INTO comments (
-        id, announcement_id, author_name, author_handle, author_avatar,
-        author_role, content, timestamp_text, likes, user_liked, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        commentId,
-        announcementId,
-        name,
-        handle,
-        commentData.authorAvatar || '',
-        commentData.authorRole || 'CRM Lead',
-        commentData.content.trim(),
-        'Just now',
-        0,
-        0,
-        now,
-      ]
-    );
+  await pool.query(
+    `INSERT INTO comments (
+      id, announcement_id, author_name, author_handle, author_avatar,
+      author_role, content, timestamp_text, likes, user_liked, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      commentId,
+      announcementId,
+      name,
+      handle,
+      commentData.authorAvatar || '',
+      commentData.authorRole || 'CRM Lead',
+      commentData.content.trim(),
+      'Just now',
+      0,
+      0,
+      now,
+    ]
+  );
 
-    await pool.query(
-      'UPDATE announcements SET comments_count = (SELECT COUNT(*) FROM comments WHERE announcement_id = ?) WHERE id = ?',
-      [announcementId, announcementId]
-    );
+  await pool.query(
+    'UPDATE announcements SET comments_count = (SELECT COUNT(*) FROM comments WHERE announcement_id = ?) WHERE id = ?',
+    [announcementId, announcementId]
+  );
 
-    announcementResult = await getAnnouncementById(announcementId);
-    createdComment = announcementResult?.comments?.find((c: any) => c.id === commentId);
-  } catch (err: any) {
-    console.error('MySQL error in addComment:', err?.message || err);
-  }
+  announcementResult = await getAnnouncementById(announcementId);
+  createdComment = announcementResult?.comments?.find((c: any) => c.id === commentId);
 
-  // Also sync to JSON storage
+  // Mirror to JSON after MySQL success (not a substitute for hallway_db)
   try {
     const list = getJsonAnnouncements();
     let post = list.find((a) => a.id === announcementId);
@@ -617,13 +671,6 @@ export async function addComment(
       post.commentsCount = post.comments.length;
       saveJsonAnnouncements(list);
     }
-
-    if (!announcementResult) {
-      announcementResult = post;
-    }
-    if (!createdComment) {
-      createdComment = jsonComment;
-    }
   } catch (err) {
     console.error('JSON sync error in addComment:', err);
   }
@@ -631,60 +678,105 @@ export async function addComment(
   return { comment: createdComment, announcement: announcementResult };
 }
 
+const REACTION_COUNT_KEYS = [
+  'thumbsUp',
+  'clap',
+  'heart',
+  'joy',
+  'surprised',
+  'pray',
+  'fire',
+  'party',
+  'hundred',
+  'rocket',
+] as const;
+
+function userReactionKey(reactionType: string) {
+  return 'user' + reactionType.charAt(0).toUpperCase() + reactionType.slice(1);
+}
+
+/** Project global user* flags for a specific viewer from byUser map. */
+export function withViewerReactionFlags(raw: any, userKey?: string | null) {
+  const reactions = parseReactions(raw);
+  const byUser =
+    reactions.byUser && typeof reactions.byUser === 'object' ? reactions.byUser : {};
+  reactions.byUser = byUser;
+  const key = (userKey || '').toLowerCase().trim();
+  const mine = key && byUser[key] ? String(byUser[key]) : null;
+  for (const k of REACTION_COUNT_KEYS) {
+    reactions[userReactionKey(k)] = mine === k;
+  }
+  return reactions;
+}
+
+/**
+ * WhatsApp-style: one reaction per user — toggle off or replace.
+ * Counts + byUser map are shared; user* flags are set for this viewer.
+ */
+export function applyWhatsAppReaction(raw: any, reactionType: string, userKey?: string | null) {
+  const reactions = parseReactions(raw);
+  const byUser: Record<string, string> = {
+    ...(reactions.byUser && typeof reactions.byUser === 'object' ? reactions.byUser : {}),
+  };
+  const key = (userKey || 'anonymous').toLowerCase().trim() || 'anonymous';
+  const current = byUser[key] || null;
+
+  // Legacy migration: if no byUser entry but a global user* flag is set, treat as this user
+  let legacy: string | null = current;
+  if (!legacy) {
+    for (const k of REACTION_COUNT_KEYS) {
+      if (reactions[userReactionKey(k)]) {
+        legacy = k;
+        break;
+      }
+    }
+  }
+
+  if (legacy === reactionType) {
+    reactions[reactionType] = Math.max(0, (Number(reactions[reactionType]) || 0) - 1);
+    delete byUser[key];
+  } else {
+    if (legacy) {
+      reactions[legacy] = Math.max(0, (Number(reactions[legacy]) || 0) - 1);
+    }
+    reactions[reactionType] = (Number(reactions[reactionType]) || 0) + 1;
+    byUser[key] = reactionType;
+  }
+
+  reactions.byUser = byUser;
+  return withViewerReactionFlags(reactions, key);
+}
+
 export async function toggleReaction(
   announcementId: string,
   reactionType: string,
-  postMetadata?: any
+  postMetadata?: any,
+  userKey?: string | null
 ) {
-  let updatedReactions: any = null;
+  const pool = getPool();
+  await ensureAnnouncementExists(pool, announcementId, postMetadata);
 
-  try {
-    const pool = getPool();
-    // Guarantee that announcement row exists in MySQL
-    await ensureAnnouncementExists(pool, announcementId, postMetadata);
-
-    const [rows] = await pool.query<any[]>('SELECT reactions FROM announcements WHERE id = ?', [announcementId]);
-    if (rows.length > 0) {
-      const reactions = parseReactions(rows[0].reactions);
-
-      const userKey = 'user' + reactionType.charAt(0).toUpperCase() + reactionType.slice(1);
-      const currentVal = reactions[reactionType] || 0;
-      const alreadyReacted = Boolean(reactions[userKey]);
-
-      reactions[reactionType] = Math.max(0, currentVal + (alreadyReacted ? -1 : 1));
-      reactions[userKey] = !alreadyReacted;
-
-      await pool.query('UPDATE announcements SET reactions = ? WHERE id = ?', [
-        JSON.stringify(reactions),
-        announcementId,
-      ]);
-
-      updatedReactions = reactions;
-    }
-  } catch (err: any) {
-    console.error('MySQL error in toggleReaction:', err?.message || err);
+  const [rows] = await pool.query<any[]>('SELECT reactions FROM announcements WHERE id = ?', [
+    announcementId,
+  ]);
+  if (rows.length === 0) {
+    throw new Error('Announcement not found in hallway_db');
   }
 
-  // Also sync to JSON storage
+  const updatedReactions = applyWhatsAppReaction(rows[0].reactions, reactionType, userKey);
+  await pool.query('UPDATE announcements SET reactions = ? WHERE id = ?', [
+    JSON.stringify(updatedReactions),
+    announcementId,
+  ]);
+
+  // Mirror to JSON after MySQL success
   try {
     const list = getJsonAnnouncements();
     let post = list.find((a) => a.id === announcementId);
     if (!post) {
       post = ensureJsonAnnouncement(announcementId, postMetadata);
     }
-    if (updatedReactions) {
-      post.reactions = updatedReactions;
-    } else {
-      const reactions = parseReactions(post.reactions);
-      const userKey = 'user' + reactionType.charAt(0).toUpperCase() + reactionType.slice(1);
-      const currentVal = reactions[reactionType] || 0;
-      const alreadyReacted = Boolean(reactions[userKey]);
-
-      reactions[reactionType] = Math.max(0, currentVal + (alreadyReacted ? -1 : 1));
-      reactions[userKey] = !alreadyReacted;
-      post.reactions = reactions;
-      updatedReactions = reactions;
-    }
+    post.reactions = updatedReactions;
     saveJsonAnnouncements(list);
   } catch (err) {
     console.error('JSON sync error in toggleReaction:', err);

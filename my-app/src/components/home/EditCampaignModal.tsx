@@ -71,11 +71,13 @@ export default function EditCampaignModal({
     }
 
     onSave({
+      id: campaign.id || `camp-${Date.now()}`,
       title: title.trim() || campaign.title,
       branchName: branchName.trim() || 'All Hubs',
       description: description.trim(),
       discountPercent: discountPercent.trim(),
       targetDate: isoDate,
+      isActive: true,
     });
 
     setSavedSuccess(true);

@@ -18,6 +18,7 @@ export default function WidgetCampaign() {
 
   const canEdit = isAdmin(currentUser) || isSuperAdmin(currentUser);
   const campaignBadge = activeCampaign?.discountPercent?.trim();
+  const hasCampaign = Boolean(activeCampaign?.isActive && activeCampaign?.title?.trim());
 
   useEffect(() => {
     const calculateTimeRemaining = () => {
@@ -52,8 +53,11 @@ export default function WidgetCampaign() {
     return () => clearInterval(interval);
   }, [activeCampaign?.targetDate]);
 
+  if (!hasCampaign && !canEdit) return null;
+
   return (
     <>
+      {hasCampaign ? (
       <div className="group relative overflow-hidden rounded-2xl border-2 border-accent-gold/60 bg-gradient-to-br from-white via-white to-brand-soft/40 p-5 shadow-xs transition-all duration-300 hover:shadow-lg hover:shadow-brand/10 dark:border-accent-gold/35 dark:from-panel dark:via-[#1A1410] dark:to-surface-muted">
         <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-brand via-accent-gold to-brand" />
 
@@ -72,10 +76,12 @@ export default function WidgetCampaign() {
           </div>
 
           <div className="flex items-center gap-1.5">
-            <span className="inline-flex items-center gap-1 rounded-md border border-accent-gold/40 bg-white px-2.5 py-0.5 text-[10px] font-bold text-ink shadow-2xs dark:border-accent-gold/25 dark:bg-surface-muted dark:text-slate-200">
-              <MapPin className="h-2.5 w-2.5 text-brand" />
-              <span>{activeCampaign?.branchName || 'Indiranagar Branch'}</span>
-            </span>
+            {activeCampaign?.branchName ? (
+              <span className="inline-flex items-center gap-1 rounded-md border border-accent-gold/40 bg-white px-2.5 py-0.5 text-[10px] font-bold text-ink shadow-2xs dark:border-accent-gold/25 dark:bg-surface-muted dark:text-slate-200">
+                <MapPin className="h-2.5 w-2.5 text-brand" />
+                <span>{activeCampaign.branchName}</span>
+              </span>
+            ) : null}
 
             {canEdit && (
               <button
@@ -93,13 +99,14 @@ export default function WidgetCampaign() {
 
         <div className="relative z-10 mb-3">
           <h3 className="flex items-center gap-1.5 text-base font-black tracking-tight text-slate-900 dark:text-white">
-            <span>{activeCampaign?.title || 'Indiranagar Launch Boost'}</span>
+            <span>{activeCampaign.title}</span>
             <Sparkles className="h-4 w-4 fill-accent-gold/40 text-accent-gold" />
           </h3>
-          <p className="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
-            {activeCampaign?.description ||
-              'Exclusive limited-time discount for all new client deals closed in the new Indiranagar branch before Sunday night.'}
-          </p>
+          {activeCampaign.description ? (
+            <p className="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+              {activeCampaign.description}
+            </p>
+          ) : null}
         </div>
 
         {/* Generic spotlight — works for prizes, discounts, launches, festivals */}
@@ -162,6 +169,15 @@ export default function WidgetCampaign() {
           </button>
         </div>
       </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setIsEditOpen(true)}
+          className="w-full rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 px-4 py-6 text-xs font-semibold text-slate-500 hover:border-brand hover:text-brand cursor-pointer transition-colors"
+        >
+          Set active campaign
+        </button>
+      )}
 
       {canEdit && (
         <EditCampaignModal

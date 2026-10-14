@@ -41,7 +41,13 @@ import {
 import { isSuperAdmin } from '../lib/permissions';
 import { getPersonalizedActions } from '../lib/hallwayPersonalization';
 
-function mergeReactions(serverReactions?: any, localReactions?: any) {
+function reactionViewerKey(user?: { email?: string; id?: string | number; name?: string } | null) {
+  return String(user?.email || user?.id || user?.name || '')
+    .toLowerCase()
+    .trim();
+}
+
+function withViewerReactionFlags(raw: any, userKey?: string) {
   const blank = {
     thumbsUp: 0,
     clap: 0,
@@ -63,22 +69,43 @@ function mergeReactions(serverReactions?: any, localReactions?: any) {
     userParty: false,
     userHundred: false,
     userRocket: false,
+    byUser: {} as Record<string, string>,
   };
-  const base = { ...blank, ...(serverReactions || {}) };
-  if (!localReactions) return base;
-
+  const base = { ...blank, ...(raw || {}) };
+  const byUser = base.byUser && typeof base.byUser === 'object' ? base.byUser : {};
+  base.byUser = byUser;
+  const key = (userKey || '').toLowerCase().trim();
+  const mine = key && byUser[key] ? String(byUser[key]) : null;
   const reactionKeys = [
     'thumbsUp', 'clap', 'heart', 'joy', 'surprised', 'pray',
-    'fire', 'party', 'hundred', 'rocket'
+    'fire', 'party', 'hundred', 'rocket',
   ] as const;
   for (const k of reactionKeys) {
     const userK = `user${k.charAt(0).toUpperCase()}${k.slice(1)}`;
-    if (localReactions[userK] !== undefined) {
-      base[userK] = localReactions[userK];
-    }
-    base[k] = Math.max(Number(base[k]) || 0, Number(localReactions[k]) || 0);
+    base[userK] = mine === k;
   }
   return base;
+}
+
+function mergeReactions(serverReactions?: any, localReactions?: any, userKey?: string) {
+  const reactionKeys = [
+    'thumbsUp', 'clap', 'heart', 'joy', 'surprised', 'pray',
+    'fire', 'party', 'hundred', 'rocket',
+  ] as const;
+  const merged: any = {
+    ...(serverReactions || {}),
+    byUser: {
+      ...(serverReactions?.byUser || {}),
+      ...(localReactions?.byUser || {}),
+    },
+  };
+  for (const k of reactionKeys) {
+    merged[k] = Math.max(
+      Number(serverReactions?.[k]) || 0,
+      Number(localReactions?.[k]) || 0
+    );
+  }
+  return withViewerReactionFlags(merged, userKey);
 }
 
 function mergeComments(serverComments?: any[], localComments?: any[]) {
@@ -267,6 +294,11 @@ function resolveCrmAvatar(_name?: string): string {
   return '';
 }
 
+/**
+ * Notifications are ephemeral views of live Hallway CRM data (meetings, deals,
+ * actions, targets). They are NOT persisted as rows — after the user reads one
+ * we dismiss it (local dismiss set only) so it leaves the inbox.
+ */
 function buildDynamicNotifications(params: {
   currentUser: User;
   todayEvents: any[];
@@ -274,10 +306,11 @@ function buildDynamicNotifications(params: {
   announcements: FeedPost[];
   branchTargets: any[];
   overallTargets: any[];
-  readIds: Set<string>;
+  dismissedIds: Set<string>;
 }): NotificationItem[] {
   const notifs: NotificationItem[] = [];
-  const { currentUser, todayEvents, actions, announcements, branchTargets, readIds } = params;
+  const { currentUser, todayEvents, actions, announcements, branchTargets, dismissedIds } =
+    params;
 
   const roleLower = (currentUser?.role || '').toLowerCase();
   const deptLower = (currentUser?.department || '').toLowerCase();
@@ -285,13 +318,6 @@ function buildDynamicNotifications(params: {
   const isDesigner = deptLower === 'design' || roleLower.includes('design');
   const isSales = deptLower === 'sales' || roleLower.includes('sales') || roleLower.includes('crm');
   const isAdmin = isSuperAdmin(currentUser);
-
-  const now = Date.now();
-  const timeToday17m = new Date(now - 17 * 60 * 1000).toISOString();
-  const timeToday1h = new Date(now - 65 * 60 * 1000).toISOString();
-  const timeYesterday17h = new Date(now - 17 * 60 * 60 * 1000).toISOString();
-  const timeYesterday18h = new Date(now - 18 * 60 * 60 * 1000).toISOString();
-  const timeYesterday20h = new Date(now - 20 * 60 * 60 * 1000).toISOString();
 
   const firstName = nameLower.split(' ')[0] || '';
   const eventMentionsUser = (event: any) => {
@@ -305,7 +331,12 @@ function buildDynamicNotifications(params: {
     );
   };
 
-  // 1. Live meetings — only the logged-in person's schedule (admins also get company-wide meetings)
+  const pushIfActive = (item: NotificationItem) => {
+    if (dismissedIds.has(item.id)) return;
+    notifs.push({ ...item, read: false });
+  };
+
+  // 1. Live meetings
   if (Array.isArray(todayEvents)) {
     for (const event of todayEvents) {
       const isRelevant = isAdmin || eventMentionsUser(event);
@@ -314,43 +345,43 @@ function buildDynamicNotifications(params: {
       const client = event.clientName ? event.clientName : 'Client';
       const designerStr = event.designerName ? ` · Designer ${event.designerName}` : '';
       const id = `notif-evt-${event.id}`;
-      const timeIso = event.startAt || timeToday17m;
+      const timeIso = event.startAt || new Date().toISOString();
 
-      notifs.push({
+      pushIfActive({
         id,
         type: 'meeting',
-        title: event.title || 'Showroom Visit in 45m',
+        title: event.title || 'Showroom consultation',
         subtitle: `${client}${designerStr} · Showroom Consultation`,
         message: `Consultation with ${client} scheduled for ${event.time || 'today'}.`,
         categoryTag: 'Meeting',
         timestamp: timeIso,
         exactIstTime: formatExactIstTimestamp(timeIso),
-        read: readIds.has(id),
+        read: false,
       });
     }
   }
 
-  // 2. Bookings — sales + admin see corridor deals; designers skip deal noise
+  // 2. Live bookings from announcements feed
   if (Array.isArray(announcements) && (isSales || isAdmin)) {
     for (const post of announcements) {
       if (post.type !== 'booking') continue;
       const id = `notif-deal-${post.id}`;
-      const timeIso = post.createdAt || timeToday1h;
-      notifs.push({
+      const timeIso = post.createdAt || new Date().toISOString();
+      pushIfActive({
         id,
         type: 'deal',
-        title: post.title.replace(/^[🎯🚀🔥👏🎉🏡📢]+\s*/, '').slice(0, 42),
+        title: post.title.replace(/^[🎯🚀🔥👏🎉🏡📢]+\s*/u, '').slice(0, 42),
         subtitle: `Verified Booking · Accounts confirmed advance receipt`,
         message: post.content,
         categoryTag: 'Deal',
         timestamp: timeIso,
         exactIstTime: formatExactIstTimestamp(timeIso),
-        read: readIds.has(id),
+        read: false,
       });
     }
   }
 
-  // 3. Action items — use personalized action groups for this user only
+  // 3. Live action items for this user
   const personalizedActions = getPersonalizedActions(
     Array.isArray(actions) ? actions : [],
     currentUser,
@@ -358,161 +389,48 @@ function buildDynamicNotifications(params: {
   );
   for (const group of personalizedActions) {
     const items = Array.isArray(group.items) ? group.items : [];
-    for (const item of items.slice(0, 3)) {
+    for (const item of items.slice(0, 5)) {
       const id = `notif-act-${item.id}`;
       const isUrgent = group.urgent || Boolean(item.xpPenaltyWarning);
       const timeIso =
         typeof item.dueTime === 'string' && item.dueTime.includes('T')
           ? item.dueTime
-          : timeYesterday17h;
-      notifs.push({
+          : new Date().toISOString();
+      pushIfActive({
         id,
         type: isUrgent ? 'urgent' : isDesigner ? 'task' : 'lead',
-        title: isUrgent ? `Urgent Action: ${item.name}` : item.name || 'New lead in Pre-10%',
+        title: isUrgent ? `Urgent Action: ${item.name}` : item.name || 'Pipeline action',
         subtitle: item.detail || `${item.name} · Action required`,
         message: item.detail || 'Pipeline action required in active corridor.',
         categoryTag: isUrgent ? 'Urgent' : isDesigner ? 'Task' : 'Lead',
         timestamp: timeIso,
         exactIstTime: formatExactIstTimestamp(timeIso),
-        read: readIds.has(id),
+        read: false,
       });
     }
   }
 
-  // 4. Branch pacing — admins + sales see milestones; designers do not
+  // 4. Live branch pacing milestones
   if (Array.isArray(branchTargets) && (isAdmin || isSales)) {
     for (const target of branchTargets) {
       if (Number(target.progress) < 20) continue;
-      const id = `notif-target-${target.branchId || 'overall'}`;
-      const timeIso = timeYesterday18h;
-      notifs.push({
+      const id = `notif-target-${target.branchId || 'overall'}-${target.yearMonth || 'current'}`;
+      const timeIso = new Date().toISOString();
+      pushIfActive({
         id,
         type: 'milestone',
-        title: `${target.branchName} Corridor Milestone 🔥`,
+        title: `${target.branchName} Corridor Milestone`,
         subtitle: `${target.branchName} Hub · ${target.progress}% achieved towards quota`,
         message: `${target.branchName} Hub pacing reached ${target.progress}%.`,
         categoryTag: 'Milestone',
         timestamp: timeIso,
         exactIstTime: formatExactIstTimestamp(timeIso),
-        read: readIds.has(id),
+        read: false,
       });
     }
   }
 
-  // 5. Smart role-based fallback items if list is short
-  if (notifs.length < 4) {
-    if (isDesigner) {
-      notifs.push(
-        {
-          id: 'notif-fb-des-1',
-          type: 'urgent',
-          title: 'XP SLA Warning: Villa 402',
-          subtitle: 'Villa 402 · 2 hours left to submit 3D concept (-20 XP)',
-          message: 'Submit 3D concept before SLA expiry.',
-          categoryTag: 'Urgent',
-          timestamp: timeToday17m,
-          exactIstTime: formatExactIstTimestamp(timeToday17m),
-          read: readIds.has('notif-fb-des-1'),
-        },
-        {
-          id: 'notif-fb-des-2',
-          type: 'task',
-          title: 'Factory DQC Drawing Approved',
-          subtitle: 'Penthouse 1204 · Modular kitchen CAD ready for prod',
-          message: 'CAD drawing approved for production.',
-          categoryTag: 'Task',
-          timestamp: timeYesterday18h,
-          exactIstTime: formatExactIstTimestamp(timeYesterday18h),
-          read: readIds.has('notif-fb-des-2'),
-        }
-      );
-    } else if (isAdmin) {
-      notifs.push(
-        {
-          id: 'notif-fb-adm-1',
-          type: 'urgent',
-          title: 'Commercial Discount Escalation',
-          subtitle: 'Prestige Willow · 4% margin deviation sign-off required',
-          message: 'Quote requires Admin sign-off.',
-          categoryTag: 'Urgent',
-          timestamp: timeToday17m,
-          exactIstTime: formatExactIstTimestamp(timeToday17m),
-          read: readIds.has('notif-fb-adm-1'),
-        },
-        {
-          id: 'notif-fb-adm-2',
-          type: 'deal',
-          title: 'High-Value Project Closed: ₹31.82L',
-          subtitle: 'Priti Dutta · Gross booking closure at JP Nagar Hub',
-          message: 'Gross booking closure verified.',
-          categoryTag: 'Deal',
-          timestamp: timeToday1h,
-          exactIstTime: formatExactIstTimestamp(timeToday1h),
-          read: readIds.has('notif-fb-adm-2'),
-        }
-      );
-    } else {
-      notifs.push(
-        {
-          id: 'notif-fb-crm-1',
-          type: 'meeting',
-          title: 'Showroom Visit in 45m',
-          subtitle: 'Somya biswal · Gulshi Ar. · Showroom Consultation',
-          message: 'Client consultation with Somya biswal in 45 mins.',
-          categoryTag: 'Meeting',
-          timestamp: timeToday17m,
-          exactIstTime: formatExactIstTimestamp(timeToday17m),
-          read: readIds.has('notif-fb-crm-1'),
-        },
-        {
-          id: 'notif-fb-crm-2',
-          type: 'deal',
-          title: 'Token Advance Verified: ₹1.00L',
-          subtitle: 'Lead #1240 · Accounts confirmed advance receipt',
-          message: 'Advance payment received for Lead #1240.',
-          categoryTag: 'Deal',
-          timestamp: timeToday1h,
-          exactIstTime: formatExactIstTimestamp(timeToday1h),
-          read: readIds.has('notif-fb-crm-2'),
-        },
-        {
-          id: 'notif-fb-crm-3',
-          type: 'lead',
-          title: 'New lead in Pre-10%',
-          subtitle: 'Divya · Stage: Pre-10% · Showroom Visit',
-          message: 'High-intent enquiry assigned to your queue.',
-          categoryTag: 'Lead',
-          timestamp: timeYesterday17h,
-          exactIstTime: formatExactIstTimestamp(timeYesterday17h),
-          read: readIds.has('notif-fb-crm-3'),
-        },
-        {
-          id: 'notif-fb-crm-4',
-          type: 'milestone',
-          title: 'Moved Up to #2 on Board! 🔥',
-          subtitle: 'Top Closer pacing · 26.5% monthly quota achieved',
-          message: 'Leaderboard rank changed to #2.',
-          categoryTag: 'Milestone',
-          timestamp: timeYesterday18h,
-          exactIstTime: formatExactIstTimestamp(timeYesterday18h),
-          read: readIds.has('notif-fb-crm-4'),
-        },
-        {
-          id: 'notif-fb-crm-5',
-          type: 'lead',
-          title: 'Hot Lead in Pre-10%',
-          subtitle: 'Ambrish · Stage: Pre-10% · Showroom Visit',
-          message: 'New lead assigned for JP Nagar corridor.',
-          categoryTag: 'Lead',
-          timestamp: timeYesterday20h,
-          exactIstTime: formatExactIstTimestamp(timeYesterday20h),
-          read: readIds.has('notif-fb-crm-5'),
-        }
-      );
-    }
-  }
-
-  // Deduplicate by ID and sort chronologically (newest first)
+  // Deduplicate + newest first. No fake/sample fallbacks — empty inbox is fine.
   const seen = new Set<string>();
   const deduped: NotificationItem[] = [];
   for (const n of notifs) {
@@ -527,6 +445,32 @@ function buildDynamicNotifications(params: {
     const tB = new Date(b.timestamp).getTime() || 0;
     return tB - tA;
   });
+}
+
+const DISMISSED_NOTIFS_KEY = 'hub_dismissed_notifications';
+const LEGACY_READ_NOTIFS_KEY = 'hub_read_notifications';
+
+function loadDismissedNotificationIds(): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const primary = localStorage.getItem(DISMISSED_NOTIFS_KEY);
+    if (primary) return new Set(JSON.parse(primary));
+    // Migrate older "read" set → dismissed (same intent: leave the inbox)
+    const legacy = localStorage.getItem(LEGACY_READ_NOTIFS_KEY);
+    if (legacy) {
+      const set = new Set<string>(JSON.parse(legacy));
+      localStorage.setItem(DISMISSED_NOTIFS_KEY, JSON.stringify(Array.from(set)));
+      return set;
+    }
+  } catch {}
+  return new Set();
+}
+
+function persistDismissedNotificationIds(ids: Set<string>) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(DISMISSED_NOTIFS_KEY, JSON.stringify(Array.from(ids)));
+  } catch {}
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -550,17 +494,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [actionItems, setActionItems] = useState<ActionItem[]>(actionItemsMock);
   const [crmLeads, setCrmLeads] = useState<CrmLeadItem[]>(crmLeadsMock);
   const [designProjects, setDesignProjects] = useState<DesignProject[]>(designProjectsMock);
-  const [readNotificationIds, setReadNotificationIds] = useState<Set<string>>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = localStorage.getItem('hub_read_notifications');
-        if (stored) return new Set(JSON.parse(stored));
-      } catch {}
-    }
-    return new Set();
-  });
-  const readNotificationIdsRef = useRef<Set<string>>(readNotificationIds);
-  readNotificationIdsRef.current = readNotificationIds;
+  const [dismissedNotificationIds, setDismissedNotificationIds] = useState<Set<string>>(() =>
+    loadDismissedNotificationIds()
+  );
+  const dismissedNotificationIdsRef = useRef<Set<string>>(dismissedNotificationIds);
+  dismissedNotificationIdsRef.current = dismissedNotificationIds;
 
   /** Admin-deleted CRM snippet IDs — persist so regenerating feed does not bring them back */
   const [suppressedAnnouncementIds, setSuppressedAnnouncementIds] = useState<Set<string>>(() => {
@@ -582,10 +520,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       announcements: [],
       branchTargets: [],
       overallTargets: [],
-      readIds: readNotificationIdsRef.current,
+      dismissedIds: dismissedNotificationIdsRef.current,
     })
   );
-  const notificationsCount = notifications.filter((n) => !readNotificationIds.has(n.id)).length;
+  // Inbox only holds active (undismissed) live alerts
+  const notificationsCount = notifications.length;
   const [activeTimeframe, setActiveTimeframe] = useState<'Today' | 'MTD' | 'QTD'>('Today');
   const [activeLeaderboardView, setActiveLeaderboardView] = useState<'Individual' | 'Team'>('Individual');
 
@@ -762,62 +701,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             team: 'Operations HQ',
           });
         }
-      } else {
-        // Resilient fallback for All Hubs pacing
-        overallTargets.push({
-          branchId: 'all',
-          branchName: 'All Hubs (Overall)',
-          team: 'Operations HQ',
-          title: 'Monthly gross booking',
-          current: '₹71.67L',
-          target: '₹4.80 Cr',
-          progress: 14.9,
-          currentInr: 7167288,
-          targetInr: 48000000,
-        });
       }
+      // Empty overall/branch targets is fine — UI shows live empty state (no synthetic pacing)
 
       // b. Out of 3 branches (Sarjapura, JP Nagar, HBR), order by achieved target descending
       const branchTargets: any[] = [];
       for (const list of branchTargetsArrays) {
         if (Array.isArray(list)) branchTargets.push(...list);
-      }
-      if (branchTargets.length === 0) {
-        branchTargets.push(
-          {
-            branchId: 'JP_NAGAR',
-            branchName: 'JP Nagar',
-            team: 'JP Nagar Hub',
-            title: 'Monthly gross booking',
-            current: '₹31.82L',
-            target: '₹1.20 Cr',
-            progress: 26.5,
-            currentInr: 3181997,
-            targetInr: 12000000,
-          },
-          {
-            branchId: 'SARJAPUR',
-            branchName: 'Sarjapura',
-            team: 'Sarjapura Hub',
-            title: 'Monthly gross booking',
-            current: '₹24.40L',
-            target: '₹1.20 Cr',
-            progress: 20.3,
-            currentInr: 2439911,
-            targetInr: 12000000,
-          },
-          {
-            branchId: 'HBR',
-            branchName: 'HBR Layout',
-            team: 'HBR Layout Hub',
-            title: 'Monthly gross booking',
-            current: '₹15.45L',
-            target: '₹2.40 Cr',
-            progress: 6.4,
-            currentInr: 1545380,
-            targetInr: 24000000,
-          }
-        );
       }
 
       // Sort branches: whichever branch has achieved more target is displayed first, then 2nd highest, then 3rd.
@@ -831,6 +721,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return cB - cA;
       });
 
+      const viewerKey = reactionViewerKey(currentUser);
       const announcementsMap = new Map<string, FeedPost>();
       if (Array.isArray(announcementsData)) {
         for (const a of announcementsData) {
@@ -850,7 +741,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             const prev = currentPostsMap.get(p.id);
             currentPostsMap.set(p.id, {
               ...p,
-              reactions: mergeReactions(prev?.reactions, p.reactions),
+              reactions: mergeReactions(prev?.reactions, p.reactions, viewerKey),
               comments: mergeComments(prev?.comments, p.comments),
             });
           }
@@ -862,7 +753,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             const prev = currentPostsMap.get(a.id);
             currentPostsMap.set(a.id, {
               ...a,
-              reactions: mergeReactions(a.reactions, prev?.reactions),
+              reactions: mergeReactions(a.reactions, prev?.reactions, viewerKey),
               comments: mergeComments(a.comments, prev?.comments),
             });
           }
@@ -879,7 +770,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (seenIds.has(id)) continue;
         const existing = announcementsMap.get(id);
         const existingLocal = currentPostsMap.get(id);
-        const reactions = mergeReactions(existing?.reactions, existingLocal?.reactions);
+        const reactions = mergeReactions(existing?.reactions, existingLocal?.reactions, viewerKey);
         const comments = mergeComments(existing?.comments, existingLocal?.comments);
         const commentsCount = Math.max(existing?.commentsCount || 0, comments.length, existingLocal?.commentsCount || 0);
 
@@ -1003,7 +894,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             continue;
           }
           const existingLocal = currentPostsMap.get(post.id);
-          const reactions = mergeReactions(post.reactions, existingLocal?.reactions);
+          const reactions = mergeReactions(post.reactions, existingLocal?.reactions, viewerKey);
           const comments = mergeComments(post.comments, existingLocal?.comments);
           const commentsCount = Math.max(post.comments?.length || post.commentsCount || 0, comments.length, existingLocal?.commentsCount || 0);
 
@@ -1024,7 +915,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       for (const s of dynamicCrmSnippets) {
         const dbPost = announcementsMap.get(s.id);
         const localPost = currentPostsMap.get(s.id);
-        const reactions = mergeReactions(s.reactions, mergeReactions(dbPost?.reactions, localPost?.reactions));
+        const reactions = mergeReactions(
+          s.reactions,
+          mergeReactions(dbPost?.reactions, localPost?.reactions, viewerKey),
+          viewerKey
+        );
         const comments = mergeComments(s.comments, mergeComments(dbPost?.comments, localPost?.comments));
         announcementPostsMap.set(s.id, {
           ...s,
@@ -1040,7 +935,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           const existing = announcementPostsMap.get(b.id)!;
           announcementPostsMap.set(b.id, {
             ...existing,
-            reactions: mergeReactions(existing.reactions, b.reactions),
+            reactions: mergeReactions(existing.reactions, b.reactions, viewerKey),
             comments: mergeComments(existing.comments, b.comments),
             commentsCount: Math.max(existing.commentsCount, b.comments?.length || 0),
           });
@@ -1069,16 +964,44 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       setAnnouncementPosts(combinedAnnouncements);
 
-      const dynamicNotifs = buildDynamicNotifications({
+      const liveNotifs = buildDynamicNotifications({
         currentUser,
         todayEvents: Array.isArray(todayEventsData) ? todayEventsData : [],
         actions: Array.isArray(crmActionsData) ? crmActionsData : [],
         announcements: combinedAnnouncements,
         branchTargets,
         overallTargets,
-        readIds: readNotificationIdsRef.current,
+        dismissedIds: dismissedNotificationIdsRef.current,
       });
-      setNotifications(dynamicNotifs);
+      setNotifications(liveNotifs);
+
+      // Keep dismiss IDs only while the live source still exists (no permanent notif store)
+      const liveSourceIds = new Set<string>();
+      for (const e of Array.isArray(todayEventsData) ? todayEventsData : []) {
+        if (e?.id) liveSourceIds.add(`notif-evt-${e.id}`);
+      }
+      for (const p of combinedAnnouncements) {
+        if (p?.type === 'booking' && p.id) liveSourceIds.add(`notif-deal-${p.id}`);
+      }
+      for (const a of Array.isArray(crmActionsData) ? crmActionsData : []) {
+        const items = Array.isArray(a?.items) ? a.items : [];
+        for (const item of items) {
+          if (item?.id) liveSourceIds.add(`notif-act-${item.id}`);
+        }
+      }
+      for (const t of branchTargets) {
+        liveSourceIds.add(
+          `notif-target-${t.branchId || 'overall'}-${t.yearMonth || 'current'}`
+        );
+      }
+      setDismissedNotificationIds((prev) => {
+        const pruned = new Set<string>();
+        for (const id of prev) {
+          if (liveSourceIds.has(id)) pruned.add(id);
+        }
+        if (pruned.size !== prev.size) persistDismissedNotificationIds(pruned);
+        return pruned.size !== prev.size ? pruned : prev;
+      });
     } catch {
       // Offline fallback preserved in state
     }
@@ -1130,22 +1053,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const addReaction = async (postId: string, reactionType: string) => {
     const targetPost =
       feedPosts.find((p) => p.id === postId) || announcementPosts.find((p) => p.id === postId);
+    const viewerKey = reactionViewerKey(currentUser);
 
-    // Optimistic UI update for both feeds
+    // WhatsApp-style optimistic update: one reaction per user (keyed in byUser)
     const updatePost = (post: FeedPost) => {
       if (post.id !== postId) return post;
-      const userKey = 'user' + reactionType.charAt(0).toUpperCase() + reactionType.slice(1);
-      const alreadyReacted = Boolean(post.reactions[userKey]);
-      const currentCount = post.reactions[reactionType] || 0;
-
-      return {
-        ...post,
-        reactions: {
-          ...post.reactions,
-          [reactionType]: Math.max(0, currentCount + (alreadyReacted ? -1 : 1)),
-          [userKey]: !alreadyReacted,
-        },
-      };
+      const prev = (post.reactions || {}) as any;
+      const byUser: Record<string, string> = { ...(prev.byUser || {}) };
+      const current = viewerKey && byUser[viewerKey] ? byUser[viewerKey] : null;
+      const next: any = { ...prev, byUser };
+      if (current === reactionType) {
+        next[reactionType] = Math.max(0, (Number(next[reactionType]) || 0) - 1);
+        if (viewerKey) delete byUser[viewerKey];
+      } else {
+        if (current) {
+          next[current] = Math.max(0, (Number(next[current]) || 0) - 1);
+        }
+        next[reactionType] = (Number(next[reactionType]) || 0) + 1;
+        if (viewerKey) byUser[viewerKey] = reactionType;
+      }
+      next.byUser = byUser;
+      return { ...post, reactions: withViewerReactionFlags(next, viewerKey) };
     };
 
     setFeedPosts((prev) => prev.map(updatePost));
@@ -1158,6 +1086,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           reactionType,
+          userKey: viewerKey,
+          userEmail: currentUser?.email,
           postMetadata: targetPost
             ? {
                 title: targetPost.title,
@@ -1180,18 +1110,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             if (post.id !== postId) return post;
             return {
               ...post,
-              reactions: {
-                ...post.reactions,
-                ...data.reactions,
-              },
+              reactions: withViewerReactionFlags(
+                { ...(post.reactions || {}), ...data.reactions },
+                viewerKey
+              ),
             };
           };
           setFeedPosts((prev) => prev.map(syncReactionPost));
           setAnnouncementPosts((prev) => prev.map(syncReactionPost));
         }
+      } else {
+        void refreshFeed();
       }
     } catch {
-      // Silent catch for offline
+      void refreshFeed();
     }
   };
 
@@ -1307,9 +1239,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setFeedPosts((prev) => prev.map(syncCommentPost));
           setAnnouncementPosts((prev) => prev.map(syncCommentPost));
         }
+      } else {
+        void refreshFeed();
       }
     } catch {
-      // Offline fallback preserved in state
+      void refreshFeed();
     }
   };
 
@@ -1637,14 +1571,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const [activeCampaign, setActiveCampaign] = useState<ActiveCampaign>({
-    id: 'camp-indiranagar-launch',
-    title: 'Indiranagar Launch Boost',
-    branchName: 'Indiranagar Branch',
-    description: 'Exclusive limited-time discount for all new client deals closed in the new Indiranagar branch before Sunday night.',
-    voucherCode: 'INDIRA10',
-    discountPercent: '10% OFF',
-    targetDate: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000 + 12 * 60 * 60 * 1000).toISOString(),
-    isActive: true,
+    id: '',
+    title: '',
+    branchName: '',
+    description: '',
+    voucherCode: '',
+    discountPercent: '',
+    targetDate: '',
+    isActive: false,
   });
 
   useEffect(() => {
@@ -1653,11 +1587,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
-          if (parsed && parsed.title) {
+          if (parsed && parsed.title && parsed.isActive !== false) {
             setActiveCampaign(parsed);
           }
         } catch {
-          // fallback to default
+          // ignore corrupt campaign cache
         }
       }
     }
@@ -1675,28 +1609,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  const markAllNotificationsRead = () => {
-    const allIds = notifications.map((n) => n.id);
-    const nextSet = new Set([...Array.from(readNotificationIds), ...allIds]);
-    setReadNotificationIds(nextSet);
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem('hub_read_notifications', JSON.stringify(Array.from(nextSet)));
-      } catch {}
-    }
+  /** Read = dismiss: drop from inbox. Source data stays on Hallway; notif is not stored. */
+  const markNotificationRead = (id: string) => {
+    setDismissedNotificationIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      persistDismissedNotificationIds(next);
+      return next;
+    });
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
   };
 
-  const markNotificationRead = (id: string) => {
-    const nextSet = new Set(readNotificationIds);
-    nextSet.add(id);
-    setReadNotificationIds(nextSet);
-    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem('hub_read_notifications', JSON.stringify(Array.from(nextSet)));
-      } catch {}
-    }
+  const markAllNotificationsRead = () => {
+    setDismissedNotificationIds((prev) => {
+      const next = new Set(prev);
+      for (const n of notifications) next.add(n.id);
+      persistDismissedNotificationIds(next);
+      return next;
+    });
+    setNotifications([]);
   };
 
   const clearNotifications = markAllNotificationsRead;

@@ -70,6 +70,7 @@ function saveDiskCacheEntry(key: string, expiresAt: number, payload: UpstreamPay
   }
 }
 
+
 const ALL_TIME_LEADERBOARD_INDIVIDUALS = [
   {
     id: '23',
@@ -1393,19 +1394,18 @@ export async function proxyToCrm(request: Request, pathParts: string[]): Promise
 
       const actionsBody = JSON.stringify({
         dayBasis: 'today',
-        actions: [
-          {
-            id: 'crm-pipeline-actions',
-            title: 'Lead Follow-ups Due Today',
-            count: leadItems.length || 3,
-            urgent: true,
-            items: leadItems.length > 0 ? leadItems : [
-              { id: 'act-1', name: 'Follow up with Satya (Prestige Lakeside)', detail: 'Quote requested · ₹18.5L', done: false },
-              { id: 'act-2', name: 'Token verification for Sobha Dream project', detail: 'Token ₹1.0L received', done: false },
-              { id: 'act-3', name: 'Site Visit Schedule for Mr. Rajesh', detail: 'HBR Corridor · 3:00 PM', done: false },
-            ],
-          },
-        ],
+        actions:
+          leadItems.length > 0
+            ? [
+                {
+                  id: 'crm-pipeline-actions',
+                  title: 'Lead Follow-ups Due Today',
+                  count: leadItems.length,
+                  urgent: true,
+                  items: leadItems,
+                },
+              ]
+            : [],
       });
       const buf = Buffer.from(actionsBody, 'utf-8');
       const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
@@ -1494,29 +1494,7 @@ export async function proxyToCrm(request: Request, pathParts: string[]): Promise
       return toResponse(cached.payload.status, cached.payload.contentType, cached.payload.body);
     }
 
-    // 3. Cold start for People Directory: return pre-bundled seed snapshot in 0ms and revalidate in background
-    if (isPeopleApi) {
-      const seedBuf = Buffer.from(SEED_PEOPLE_JSON, 'utf-8');
-      const seedAb = seedBuf.buffer.slice(seedBuf.byteOffset, seedBuf.byteOffset + seedBuf.byteLength);
-      const seedPayload: UpstreamPayload = { status: 200, contentType: 'application/json', body: seedAb };
-      const seedExpiry = now + ttl;
-      getCache.set(key, { expiresAt: seedExpiry, payload: seedPayload });
-      saveDiskCacheEntry(key, seedExpiry, seedPayload);
-
-      void (async () => {
-        try {
-          let fresh = await fetchWithFallback(path, incoming.search, method, body, preferToken);
-          if (fresh.status === 200) {
-            fresh = sanitizeHallwayPeoplePayload(fresh);
-            const nextExpires = Date.now() + ttl;
-            getCache.set(key, { expiresAt: nextExpires, payload: fresh });
-            saveDiskCacheEntry(key, nextExpires, fresh);
-          }
-        } catch {}
-      })();
-
-      return toResponse(200, 'application/json', seedAb);
-    }
+    // Cold start: wait for live CRM — never paint SEED_PEOPLE as the roster
   }
 
   try {

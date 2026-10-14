@@ -4,7 +4,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { Search, Bell, X, Megaphone, Users, Award, Briefcase, Sun, Moon, PanelLeft, LogOut } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { leaderboardMembersMock, individualRecordsMock } from '../../data/mockData';
+import { usePeople } from '../../hooks/usePeople';
+import { useRecords } from '../../hooks/useRecords';
 import LoginAuthIcon from '../common/LoginAuthIcon';
 import ModuleLauncher from './ModuleLauncher';
 import UserAvatar from '../common/UserAvatar';
@@ -28,6 +29,8 @@ export default function Header() {
     logout,
     currentUser,
   } = useApp();
+  const { data: peopleData } = usePeople();
+  const { data: recordsData } = useRecords();
 
   const isExpanded = !sidebarCollapsed || isSidebarHovered;
 
@@ -102,21 +105,22 @@ export default function Header() {
     : [];
 
   const matchingMembers = q
-    ? leaderboardMembersMock.filter(
+    ? (peopleData?.people || []).filter(
         (m) =>
-          m.name.toLowerCase().includes(q) ||
-          m.role.toLowerCase().includes(q) ||
-          m.department.toLowerCase().includes(q)
-      )
+          (m.name || '').toLowerCase().includes(q) ||
+          (m.role || '').toLowerCase().includes(q) ||
+          (m.department || '').toLowerCase().includes(q) ||
+          (m.email || '').toLowerCase().includes(q)
+      ).slice(0, 8)
     : [];
 
   const matchingRecords = q
-    ? individualRecordsMock.filter(
+    ? (recordsData?.individualRecords || []).filter(
         (r) =>
-          r.title.toLowerCase().includes(q) ||
-          r.holderName.toLowerCase().includes(q) ||
-          r.value.toLowerCase().includes(q)
-      )
+          (r.title || '').toLowerCase().includes(q) ||
+          (r.holderName || '').toLowerCase().includes(q) ||
+          (r.value || '').toLowerCase().includes(q)
+      ).slice(0, 8)
     : [];
 
   const matchingLeads = q
@@ -265,12 +269,12 @@ export default function Header() {
                                 {m.name}
                               </p>
                               <p className="text-[10px] text-slate-400 truncate">
-                                {m.role} • {m.department}
+                                {m.role || 'Team'} • {m.department || m.branchId || 'HUB'}
                               </p>
                             </div>
                           </div>
                           <span className="text-[11px] font-mono font-bold text-slate-700 dark:text-slate-300 shrink-0">
-                            {m.revenueFormatted}
+                            {m.revenueFormatted || ''}
                           </span>
                         </div>
                       ))}
@@ -297,7 +301,8 @@ export default function Header() {
                               {r.title}
                             </p>
                             <p className="text-[10px] text-slate-400 truncate">
-                              Record Holder: {r.holderName} ({r.department})
+                              Record Holder: {r.holderName}
+                              {r.department ? ` (${r.department})` : ''}
                             </p>
                           </div>
                           <span className="text-xs font-mono font-black text-amber-600 dark:text-amber-400 shrink-0">

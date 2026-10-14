@@ -1,22 +1,23 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
-import { Send, KeyRound, Trophy, Target, Megaphone } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { KeyRound, Trophy, Target, Megaphone, SmilePlus, Trash2 } from 'lucide-react';
 import { FeedPost } from '../../types/index';
 import { useApp } from '../../context/AppContext';
 import { cleanPostContent, formatRelativeTime } from '../../lib/hallwayDisplay';
-import { canDeleteAnnouncement } from '../../lib/permissions';
+import { canDeleteAnnouncement, canDeleteComment } from '../../lib/permissions';
 import UserAvatar from '../common/UserAvatar';
 
 const AVAILABLE_REACTIONS = [
+  { id: 'thumbsUp', emoji: '👍', label: 'Like' },
+  { id: 'heart', emoji: '❤️', label: 'Love' },
   { id: 'clap', emoji: '👏', label: 'Applause' },
   { id: 'fire', emoji: '🔥', label: 'Fire' },
-  { id: 'thumbsUp', emoji: '👍', label: 'Like' },
-  { id: 'heart', emoji: '❤️', label: 'Heart' },
   { id: 'party', emoji: '🎉', label: 'Celebrate' },
   { id: 'hundred', emoji: '💯', label: '100' },
   { id: 'rocket', emoji: '🚀', label: 'Rocket' },
-];
+  { id: 'joy', emoji: '😂', label: 'Joy' },
+] as const;
 
 type CardKind = 'booking' | 'performer' | 'quota' | 'announcement';
 
@@ -98,7 +99,6 @@ function boostMeta(kind: CardKind) {
   return { Icon: Megaphone, tone: 'text-brand' };
 }
 
-/** Large ghost object that flies across the whole left-rail background. */
 function RailBgMotion({ kind }: { kind: CardKind }) {
   const { Icon, tone } = boostMeta(kind);
   return (
@@ -108,7 +108,6 @@ function RailBgMotion({ kind }: { kind: CardKind }) {
   );
 }
 
-/** Moving object parked at the start of the category title. */
 function TitleBoost({ kind }: { kind: CardKind }) {
   const { Icon, tone } = boostMeta(kind);
   return (
@@ -118,12 +117,18 @@ function TitleBoost({ kind }: { kind: CardKind }) {
   );
 }
 
+function userKeyFor(id: string) {
+  return `user${id.charAt(0).toUpperCase()}${id.slice(1)}`;
+}
+
 export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
-  const { currentUser, addReaction, addComment, deleteAnnouncement } = useApp();
+  const { currentUser, addReaction, addComment, deleteAnnouncement, deleteComment } = useApp();
   const [showComments, setShowComments] = useState(false);
   const [newCommentText, setNewCommentText] = useState('');
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const [showReactionPicker, setShowReactionPicker] = useState(false);
+  const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
+  const pickerRef = useRef<HTMLDivElement>(null);
 
   const kind = resolveKind(post);
   const category = categoryMeta(kind);
@@ -142,12 +147,42 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
     [post.createdAt, post.timestamp]
   );
 
+  const reactions = post.reactions || {};
+  const activeReactionChips = useMemo(
+    () =>
+      AVAILABLE_REACTIONS.map((r) => ({
+        ...r,
+        count: Number(reactions[r.id]) || 0,
+        mine: Boolean(reactions[userKeyFor(r.id)]),
+      })).filter((r) => r.count > 0 || r.mine),
+    [reactions]
+  );
+
+  const myReaction = useMemo(
+    () => AVAILABLE_REACTIONS.find((r) => reactions[userKeyFor(r.id)]) || null,
+    [reactions]
+  );
+
   const commentsList = post.comments || [];
   const commentsCount = Math.max(commentsList.length, post.commentsCount || 0);
 
+  useEffect(() => {
+    if (!showReactionPicker) return;
+    const onDoc = (e: MouseEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setShowReactionPicker(false);
+      }
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [showReactionPicker]);
+
   const handleToggleReaction = async (reactionKey: string) => {
-    await addReaction(post.id, reactionKey);
-    setShowReactionPicker(false);
+    try {
+      await addReaction(post.id, reactionKey);
+    } finally {
+      setShowReactionPicker(false);
+    }
   };
 
   const handleCommentSubmit = async (e: React.FormEvent) => {
@@ -163,11 +198,19 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
     }
   };
 
+  const handleDeleteComment = async (commentId: string) => {
+    if (deletingCommentId) return;
+    setDeletingCommentId(commentId);
+    try {
+      await deleteComment(post.id, commentId);
+    } finally {
+      setDeletingCommentId(null);
+    }
+  };
+
   return (
     <article className="relative isolate w-full shrink-0 overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm dark:border-slate-800/90 dark:bg-panel">
-      {/* Two-column from md up — stacks cleanly on narrow viewports */}
       <div className="grid grid-cols-1 md:grid-cols-[11rem_minmax(0,1fr)]">
-        {/* Left metric rail — bg motion + title leading icon */}
         <aside
           className={`relative overflow-hidden border-b border-slate-100 px-4 py-4 md:border-b-0 md:border-r dark:border-slate-800 ${category.railBg}`}
         >
@@ -189,7 +232,6 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
           </div>
         </aside>
 
-        {/* Right story column */}
         <div className="flex min-w-0 flex-col bg-white px-4 py-4 md:px-5 dark:bg-panel">
           <h3 className="text-[15px] font-bold leading-snug tracking-tight text-slate-900 sm:text-base dark:text-white">
             {displayTitle}
@@ -198,97 +240,161 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
             {cleanPostContent(post.content)}
           </p>
 
-          <div className="mt-4 flex items-center justify-between gap-2 border-t border-slate-100 pt-3 dark:border-slate-800">
-            <div className="flex items-center gap-4 text-sm text-slate-500 dark:text-slate-400">
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setShowReactionPicker(!showReactionPicker)}
-                  className="cursor-pointer transition-colors hover:text-brand"
-                >
-                  React
-                </button>
-                {showReactionPicker && (
-                  <div className="absolute bottom-full left-0 z-30 mb-1.5 flex items-center gap-1 rounded-full border border-slate-200 bg-white p-1 shadow-lg dark:border-slate-800 dark:bg-panel">
-                    {AVAILABLE_REACTIONS.map((r) => (
+          {/* Chips + React + comment + delete — one row */}
+          <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-slate-100 pt-3 dark:border-slate-800">
+            {activeReactionChips.map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => handleToggleReaction(r.id)}
+                className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[12px] transition-all ${
+                  r.mine
+                    ? 'border-brand/40 bg-brand-soft text-ink shadow-xs dark:text-white'
+                    : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200'
+                }`}
+                title={r.mine ? 'Remove your reaction' : `React with ${r.label}`}
+              >
+                <span>{r.emoji}</span>
+                <span className="text-[11px] font-bold tabular-nums">{r.count}</span>
+              </button>
+            ))}
+
+            <div className="relative" ref={pickerRef}>
+              <button
+                type="button"
+                onClick={() => setShowReactionPicker((v) => !v)}
+                className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 ${
+                  myReaction ? 'text-brand' : 'text-slate-500'
+                }`}
+                aria-label="Add reaction"
+              >
+                {myReaction ? (
+                  <span className="text-sm leading-none">{myReaction.emoji}</span>
+                ) : (
+                  <SmilePlus className="h-4 w-4" />
+                )}
+                <span className="text-xs font-semibold">React</span>
+              </button>
+
+              {showReactionPicker && (
+                <div className="absolute bottom-full left-0 z-40 mb-2 flex items-center gap-0.5 rounded-full border border-slate-200 bg-white p-1.5 shadow-xl dark:border-slate-700 dark:bg-panel">
+                  {AVAILABLE_REACTIONS.map((r) => {
+                    const mine = Boolean(reactions[userKeyFor(r.id)]);
+                    return (
                       <button
                         key={r.id}
                         type="button"
                         onClick={() => handleToggleReaction(r.id)}
-                        className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full text-sm transition-all hover:scale-125 hover:bg-slate-100 dark:hover:bg-slate-800"
-                        title={r.label}
+                        className={`flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-lg transition-transform hover:scale-125 ${
+                          mine
+                            ? 'bg-brand-soft ring-1 ring-brand/30'
+                            : 'hover:bg-slate-100 dark:hover:bg-slate-800'
+                        }`}
+                        title={mine ? `Remove ${r.label}` : r.label}
                       >
                         {r.emoji}
                       </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowComments(!showComments)}
-                className="cursor-pointer transition-colors hover:text-brand"
-              >
-                {commentsCount} {commentsCount === 1 ? 'comment' : 'comments'}
-              </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
+
+            <button
+              type="button"
+              onClick={() => setShowComments((v) => !v)}
+              className="cursor-pointer text-xs font-semibold text-slate-500 transition-colors hover:text-slate-800 dark:hover:text-slate-200"
+            >
+              {commentsCount > 0
+                ? `View all ${commentsCount} ${commentsCount === 1 ? 'comment' : 'comments'}`
+                : 'Add a comment…'}
+            </button>
 
             {canDeleteAnnouncement(post, currentUser) && (
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (window.confirm(`Are you sure you want to delete "${post.title}"?`)) {
+                  if (window.confirm(`Delete "${post.title}"?`)) {
                     void deleteAnnouncement(post.id);
                   }
                 }}
-                className="cursor-pointer text-sm text-slate-400 transition-colors hover:text-brand"
+                className="ml-auto cursor-pointer p-1 text-slate-300 transition-colors hover:text-slate-500 dark:text-slate-600 dark:hover:text-slate-400"
+                title="Delete post"
               >
-                Delete
+                <Trash2 className="h-3.5 w-3.5" />
               </button>
             )}
           </div>
         </div>
       </div>
 
+      {/* Instagram-style comment thread */}
       {showComments && (
-        <div className="space-y-2.5 border-t border-slate-100 px-4 pb-4 dark:border-slate-800">
-          {commentsList.length > 0 && (
-            <div className="max-h-40 space-y-2 overflow-y-auto pt-3">
-              {commentsList.map((comm) => (
-                <div
-                  key={comm.id}
-                  className="flex items-start gap-2 rounded-xl bg-slate-50 p-2 text-xs dark:bg-surface-muted"
-                >
-                  <UserAvatar name={comm.authorName} avatar={comm.authorAvatar} size={24} className="mt-0.5" />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="truncate text-[11px] font-bold text-slate-900 dark:text-white">
-                        {comm.authorName}
-                      </span>
-                      <span className="text-[10px] text-slate-400">{comm.timestamp}</span>
+        <div className="border-t border-slate-100 bg-[#fafafa] dark:border-slate-800 dark:bg-black/20">
+          <div className="max-h-60 space-y-3 overflow-y-auto px-4 py-3">
+            {commentsList.length === 0 ? (
+              <p className="py-3 text-center text-xs text-slate-400">
+                No comments yet.
+              </p>
+            ) : (
+              commentsList.map((comm) => {
+                const canDelete = canDeleteComment(comm, currentUser);
+                return (
+                  <div key={comm.id} className="group flex items-start gap-3">
+                    <UserAvatar
+                      name={comm.authorName}
+                      avatar={comm.authorAvatar}
+                      size={32}
+                      className="mt-0.5 shrink-0"
+                    />
+                    <div className="min-w-0 flex-1 pt-0.5">
+                      <p className="text-[13px] leading-5 text-slate-800 dark:text-slate-200">
+                        <span className="font-semibold text-slate-900 dark:text-white">
+                          {comm.authorName}
+                        </span>
+                        <span className="mx-1.5 font-normal">{comm.content}</span>
+                      </p>
+                      <p className="mt-1 text-[11px] text-slate-400">
+                        {comm.timestamp || formatRelativeTime(comm.createdAt)}
+                      </p>
                     </div>
-                    <p className="mt-0.5 text-[11px] text-slate-600 dark:text-slate-300">{comm.content}</p>
+                    {canDelete && (
+                      <button
+                        type="button"
+                        disabled={deletingCommentId === comm.id}
+                        onClick={() => void handleDeleteComment(comm.id)}
+                        className="mt-1 shrink-0 rounded-full p-1.5 text-slate-300 opacity-70 transition-all hover:bg-slate-200/80 hover:text-brand group-hover:opacity-100 dark:hover:bg-slate-800"
+                        title="Delete your comment"
+                        aria-label="Delete comment"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
-          <form onSubmit={handleCommentSubmit} className="flex items-center gap-1.5 pt-1">
-            <UserAvatar name={currentUser.name} avatar={currentUser.avatar} size={24} />
+                );
+              })
+            )}
+          </div>
+
+          <form
+            onSubmit={handleCommentSubmit}
+            className="flex items-center gap-3 border-t border-slate-200/80 bg-white px-4 py-3 dark:border-slate-800 dark:bg-panel"
+          >
+            <UserAvatar name={currentUser.name} avatar={currentUser.avatar} size={32} />
             <input
               type="text"
               value={newCommentText}
               onChange={(e) => setNewCommentText(e.target.value)}
-              placeholder="Cheer or write a comment..."
-              className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs focus:outline-hidden focus:ring-1 focus:ring-brand dark:border-slate-700 dark:bg-surface-muted"
+              placeholder="Add a comment…"
+              className="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-slate-800 placeholder:text-slate-400 focus:outline-none dark:text-slate-100"
             />
             <button
               type="submit"
               disabled={!newCommentText.trim() || isSubmittingComment}
-              className="cursor-pointer rounded-xl bg-brand p-1.5 text-white hover:bg-brand-hover disabled:opacity-50"
+              className="shrink-0 text-[13px] font-semibold text-brand disabled:opacity-30"
             >
-              <Send className="h-3 w-3" />
+              {isSubmittingComment ? '…' : 'Post'}
             </button>
           </form>
         </div>

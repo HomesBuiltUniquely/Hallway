@@ -629,7 +629,9 @@ export function generateCrmAnnouncements({
           avatar: meghanaAvatar,
           team: 'HBR Hub',
         },
-        content: `${meghanaHolder} set the benchmark with an outstanding ${meghanaValue} interior contract (${meghanaBookingToken} booking fee) for Project #HBR-1798. Built one closure at a time.`,
+        content: `${meghanaHolder} set the benchmark with an outstanding ${meghanaValue} interior contract${
+          meghanaBookingToken ? ` (${meghanaBookingToken} booking fee)` : ''
+        }${highestDealRecord.subValue ? ` · ${highestDealRecord.subValue}` : ''}. Built one closure at a time.`,
         reactions,
         commentsCount,
         comments,
@@ -640,76 +642,79 @@ export function generateCrmAnnouncements({
   }
 
   // -------------------------------------------------------------------------
-  // Scenario #9: Top Performer (Option B: Rank #1 from live MTD / weekly CRM leaderboard)
+  // Scenario #9: Top Performer — live MTD leaderboard #1 only (no invented names/metrics)
   // -------------------------------------------------------------------------
-  const mtdLeader = (topPerformers || [])[0] || (people || []).find((p) => p.name.toLowerCase().includes('priti')) || {
-    id: 197,
-    name: 'Priti Dutta',
-    revenueFormatted: '₹9.16L',
-    conversionRate: 7.7,
-    avatar: null,
-  };
-  const mtdLeaderName = mtdLeader.name || 'Priti Dutta';
-  const mtdLeaderRev = mtdLeader.revenueFormatted || '₹9.16L';
-  const mtdLeaderConv = mtdLeader.conversionRate ? `${mtdLeader.conversionRate}%` : '7.7%';
-  const mtdLeaderPerson = (people || []).find((p) => String(p.id) === String(mtdLeader.id));
-  const mtdLeaderBranch = cleanBranchName(mtdLeaderPerson?.branchId || (mtdLeader as any).branchId || 'JP Nagar');
-  const mtdLeaderAvatar = resolveAvatarForPerson(mtdLeaderName, mtdLeader.avatar);
-  const mtdPerformerId = 'crm-announcement-top-performer-mtd';
+  const mtdLeader = (topPerformers || [])[0];
+  if (mtdLeader?.name) {
+    const mtdLeaderName = mtdLeader.name;
+    const mtdLeaderRev = mtdLeader.revenueFormatted || '';
+    const mtdLeaderConv = mtdLeader.conversionRate ? `${mtdLeader.conversionRate}%` : '';
+    const mtdLeaderPerson = (people || []).find((p) => String(p.id) === String(mtdLeader.id));
+    const mtdLeaderBranch = cleanBranchName(
+      mtdLeaderPerson?.branchId || (mtdLeader as any).branchId || ''
+    );
+    const mtdLeaderAvatar = resolveAvatarForPerson(mtdLeaderName, mtdLeader.avatar);
+    const mtdPerformerId = 'crm-announcement-top-performer-mtd';
 
-  if (!seenIds.has(mtdPerformerId)) {
-    const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(mtdPerformerId);
-    posts.push({
-      id: mtdPerformerId,
-      type: 'performer',
-      categoryColor: '#EAB308',
-      iconEmoji: '🏅',
-      title: `This Week’s Top Performer: ${mtdLeaderName}`,
-      timestamp: '1 hour ago',
-      createdAt: new Date(now - 60 * 60000).toISOString(),
-      author: {
-        name: mtdLeaderName,
-        avatar: mtdLeaderAvatar,
-        team: `${mtdLeaderBranch} Hub`,
-      },
-      content: `${mtdLeaderName} leads the board with ${mtdLeaderRev} in closures and a ${mtdLeaderConv} conversion rate. Outstanding velocity for ${mtdLeaderBranch} Hub!`,
-      reactions,
-      commentsCount,
-      comments,
-      department: 'Sales',
-    });
-    seenIds.add(mtdPerformerId);
+    if (!seenIds.has(mtdPerformerId) && mtdLeaderRev) {
+      const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(mtdPerformerId);
+      const convBit = mtdLeaderConv ? ` and a ${mtdLeaderConv} conversion rate` : '';
+      const hubBit = mtdLeaderBranch ? ` for ${mtdLeaderBranch} Hub` : '';
+      posts.push({
+        id: mtdPerformerId,
+        type: 'performer',
+        categoryColor: '#EAB308',
+        iconEmoji: '🏅',
+        title: `This Week’s Top Performer: ${mtdLeaderName}`,
+        timestamp: '1 hour ago',
+        createdAt: new Date(now - 60 * 60000).toISOString(),
+        author: {
+          name: mtdLeaderName,
+          avatar: mtdLeaderAvatar,
+          team: mtdLeaderBranch ? `${mtdLeaderBranch} Hub` : 'Sales Hub',
+        },
+        content: `${mtdLeaderName} leads the board with ${mtdLeaderRev} in closures${convBit}. Outstanding velocity${hubBit}!`,
+        reactions,
+        commentsCount,
+        comments,
+        department: 'Sales',
+      });
+      seenIds.add(mtdPerformerId);
+    }
   }
 
   // -------------------------------------------------------------------------
-  // Scenario #21: Book of Records Entry (Option B: All-time record entry verified in CRM records)
+  // Scenario #21: Book of Records — only from live CRM all-time / highest-deal records
   // -------------------------------------------------------------------------
-  const meghanaPerson = (people || []).find((p) => p.name.toLowerCase().includes('meghana'));
-  const meghanaRev = meghanaPerson?.revenueFormatted || '₹1.79 Cr';
-  const allTimeMvpId = 'crm-announcement-all-time-mvp';
-
-  if (!seenIds.has(allTimeMvpId)) {
-    const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(allTimeMvpId);
-    posts.push({
-      id: allTimeMvpId,
-      type: 'performer',
-      categoryColor: '#7C3AED',
-      iconEmoji: '📖',
-      title: 'A New HUB Record Has Been Written',
-      timestamp: '5 hours ago',
-      createdAt: new Date(now - 300 * 60000).toISOString(),
-      author: {
-        name: 'Leadership Office',
-        avatar: resolveAvatarForPerson('Leadership Office'),
-        team: 'Operations HQ',
-      },
-      content: `Meghana leads the HUB All-Time leaderboard with 23 closed deals and ${meghanaRev} in total revenue—the newest entry in the HUB Book of Records.`,
-      reactions,
-      commentsCount,
-      comments,
-      department: 'Sales',
-    });
-    seenIds.add(allTimeMvpId);
+  const allTimeRecord =
+    (records || []).find((r) => /all.?time|mvp|most.?bookings|highest.?revenue/i.test(String(r.id || '') + String(r.title || ''))) ||
+    (records || []).find((r) => r.id === 'highest_deal_value');
+  if (allTimeRecord?.holderName && allTimeRecord?.value) {
+    const allTimeMvpId = 'crm-announcement-all-time-mvp';
+    if (!seenIds.has(allTimeMvpId)) {
+      const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(allTimeMvpId);
+      const sub = allTimeRecord.subValue ? ` (${allTimeRecord.subValue})` : '';
+      posts.push({
+        id: allTimeMvpId,
+        type: 'performer',
+        categoryColor: '#7C3AED',
+        iconEmoji: '📖',
+        title: 'A New HUB Record Has Been Written',
+        timestamp: 'Verified record',
+        createdAt: new Date(now - 300 * 60000).toISOString(),
+        author: {
+          name: 'Leadership Office',
+          avatar: resolveAvatarForPerson('Leadership Office'),
+          team: 'Operations HQ',
+        },
+        content: `${allTimeRecord.holderName} enters the HUB Book of Records with ${allTimeRecord.value}${sub}.`,
+        reactions,
+        commentsCount,
+        comments,
+        department: 'Sales',
+      });
+      seenIds.add(allTimeMvpId);
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -747,58 +752,71 @@ export function generateCrmAnnouncements({
   }
 
   // -------------------------------------------------------------------------
-  // Scenario #7: Company Revenue Milestone (Option B: Live Monthly Target Corridor + Milestone thresholds)
+  // Scenario #7: Company Revenue Milestone — live overall target only
   // -------------------------------------------------------------------------
   const overallTarget = (overallTargets || [])[0];
-  const grossCurrentInr = overallTarget?.currentInr || 1761463;
-  let milestoneText: string | null = null;
-  if (grossCurrentInr >= 20000000) {
-    milestoneText = '₹2 Crore';
-  } else if (grossCurrentInr >= 10000000) {
-    milestoneText = '₹1 Crore';
-  } else if (grossCurrentInr >= 5000000) {
-    milestoneText = '₹50 Lakhs';
-  }
-
-  const grossCurrent = overallTarget?.current || formatInrToLakhsOrCrores(grossCurrentInr);
-  const grossTarget = overallTarget?.target || formatInrToLakhsOrCrores(overallTarget?.targetInr || 54000000);
-  const grossProgress = typeof overallTarget?.progress === 'number' ? overallTarget.progress : 22.4;
-  const milestoneHeadline = milestoneText ? `HUB Crosses ${milestoneText}!` : `October Milestone: ${grossCurrent} Booked`;
-  const milestoneContent = milestoneText
-    ? `The company has crossed ${milestoneText} in bookings this month. Built one closure at a time.`
-    : `HUB has recorded ${grossCurrent} in gross bookings this month towards the ${grossTarget} monthly corridor target (${grossProgress}% achieved). Every closure counts toward our corridor target.`;
-
   const monthlyGrossId = 'crm-announcement-monthly-gross-target';
-  if (!seenIds.has(monthlyGrossId)) {
-    const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(monthlyGrossId);
-    posts.push({
-      id: monthlyGrossId,
-      type: 'quota',
-      categoryColor: '#0284C7',
-      iconEmoji: '🎯',
-      title: milestoneHeadline,
-      timestamp: '3 hours ago',
-      createdAt: new Date(now - 180 * 60000).toISOString(),
-      author: {
-        name: 'Operations HQ',
-        avatar: resolveAvatarForPerson('Operations HQ'),
-        team: 'Executive Board',
-      },
-      content: milestoneContent,
-      quotaProgress: {
-        current: grossCurrentInr,
-        target: overallTarget?.targetInr || 54000000,
-        label: 'Monthly Gross Booking Quota',
-        percentage: grossProgress,
-        currentFormatted: grossCurrent,
-        targetFormatted: grossTarget,
-      },
-      reactions,
-      commentsCount,
-      comments,
-      department: 'Sales',
-    });
-    seenIds.add(monthlyGrossId);
+  if (overallTarget && (overallTarget.currentInr != null || overallTarget.current) && !seenIds.has(monthlyGrossId)) {
+    const grossCurrentInr = Number(overallTarget.currentInr) || 0;
+    let milestoneText: string | null = null;
+    if (grossCurrentInr >= 20000000) {
+      milestoneText = '₹2 Crore';
+    } else if (grossCurrentInr >= 10000000) {
+      milestoneText = '₹1 Crore';
+    } else if (grossCurrentInr >= 5000000) {
+      milestoneText = '₹50 Lakhs';
+    }
+
+    const grossCurrent =
+      overallTarget.current || (grossCurrentInr ? formatInrToLakhsOrCrores(grossCurrentInr) : '');
+    const grossTarget =
+      overallTarget.target ||
+      (overallTarget.targetInr ? formatInrToLakhsOrCrores(overallTarget.targetInr) : '');
+    const grossProgress = typeof overallTarget.progress === 'number' ? overallTarget.progress : null;
+    const milestoneHeadline = milestoneText
+      ? `HUB Crosses ${milestoneText}!`
+      : grossCurrent
+        ? `Monthly Milestone: ${grossCurrent} Booked`
+        : null;
+    const milestoneContent = milestoneText
+      ? `The company has crossed ${milestoneText} in bookings this month. Built one closure at a time.`
+      : grossCurrent && grossTarget
+        ? `HUB has recorded ${grossCurrent} in gross bookings this month towards the ${grossTarget} monthly corridor target${
+            grossProgress != null ? ` (${grossProgress}% achieved)` : ''
+          }. Every closure counts toward our corridor target.`
+        : null;
+
+    if (milestoneHeadline && milestoneContent) {
+      const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(monthlyGrossId);
+      posts.push({
+        id: monthlyGrossId,
+        type: 'quota',
+        categoryColor: '#0284C7',
+        iconEmoji: '🎯',
+        title: milestoneHeadline,
+        timestamp: '3 hours ago',
+        createdAt: new Date(now - 180 * 60000).toISOString(),
+        author: {
+          name: 'Operations HQ',
+          avatar: resolveAvatarForPerson('Operations HQ'),
+          team: 'Executive Board',
+        },
+        content: milestoneContent,
+        quotaProgress: {
+          current: grossCurrentInr,
+          target: Number(overallTarget.targetInr) || 0,
+          label: 'Monthly Gross Booking Quota',
+          percentage: grossProgress ?? 0,
+          currentFormatted: grossCurrent,
+          targetFormatted: grossTarget,
+        },
+        reactions,
+        commentsCount,
+        comments,
+        department: 'Sales',
+      });
+      seenIds.add(monthlyGrossId);
+    }
   }
 
   // -------------------------------------------------------------------------

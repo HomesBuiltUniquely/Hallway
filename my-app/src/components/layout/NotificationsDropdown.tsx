@@ -56,22 +56,10 @@ export default function NotificationsDropdown({
     });
   };
 
-  // Unread counts for tab badges (mark-all-as-read zeros these)
-  const unreadCounts = useMemo(() => {
-    const unread = notifications.filter((n) => !n.read);
-    return {
-      all: unread.length,
-      leads: unread.filter((n) => n.type === 'lead').length,
-      deals: unread.filter((n) => n.type === 'deal').length,
-      meetings: unread.filter((n) => n.type === 'meeting').length,
-      tasks: unread.filter((n) => n.type === 'task').length,
-      urgent: unread.filter((n) => n.type === 'urgent').length,
-    };
-  }, [notifications]);
-
-  // Total items per type (keep tab visible if category has any items, even if all read)
-  const totalByType = useMemo(
+  // Active (undismissed) counts — inbox only holds live alerts
+  const unreadCounts = useMemo(
     () => ({
+      all: notifications.length,
       leads: notifications.filter((n) => n.type === 'lead').length,
       deals: notifications.filter((n) => n.type === 'deal').length,
       meetings: notifications.filter((n) => n.type === 'meeting').length,
@@ -80,6 +68,8 @@ export default function NotificationsDropdown({
     }),
     [notifications]
   );
+
+  const totalByType = unreadCounts;
 
   if (!isOpen) return null;
 
@@ -150,11 +140,8 @@ export default function NotificationsDropdown({
       <div
         key={item.id}
         onClick={() => markNotificationRead(item.id)}
-        className={`group px-3 py-2.5 rounded-xl transition-all cursor-pointer flex items-center justify-between gap-3 ${
-          item.read
-            ? 'hover:bg-neutral-50 dark:hover:bg-slate-800/40 opacity-65'
-            : 'bg-sky-50/40 dark:bg-slate-800/50 hover:bg-neutral-100/70 dark:hover:bg-slate-800/80 ring-1 ring-sky-100/80 dark:ring-slate-700/60'
-        }`}
+        className="group px-3 py-2.5 rounded-xl transition-all cursor-pointer flex items-center justify-between gap-3 bg-sky-50/40 dark:bg-slate-800/50 hover:bg-neutral-100/70 dark:hover:bg-slate-800/80 ring-1 ring-sky-100/80 dark:ring-slate-700/60"
+        title="Dismiss"
       >
         <div className="shrink-0">
           <div className={`w-9 h-9 rounded-full flex items-center justify-center shadow-2xs ${avatarBg}`}>
@@ -163,13 +150,7 @@ export default function NotificationsDropdown({
         </div>
 
         <div className="flex-1 min-w-0 pr-1">
-          <h4
-            className={`text-[13px] truncate leading-snug ${
-              item.read
-                ? 'font-medium text-neutral-600 dark:text-neutral-300'
-                : 'font-bold text-neutral-900 dark:text-neutral-100'
-            }`}
-          >
+          <h4 className="text-[13px] truncate leading-snug font-bold text-neutral-900 dark:text-neutral-100">
             {item.title}
           </h4>
           <p className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate mt-0.5 leading-tight">
@@ -179,9 +160,6 @@ export default function NotificationsDropdown({
             <span className={`text-[10px] font-medium px-2 py-0.5 rounded shadow-2xs ${badgeStyle}`}>
               {item.categoryTag || item.type.toUpperCase()}
             </span>
-            {item.read && (
-              <span className="text-[10px] text-neutral-400 font-medium">Read</span>
-            )}
           </div>
         </div>
 
@@ -190,9 +168,7 @@ export default function NotificationsDropdown({
             {formatRelativeTime(item.timestamp)}
           </span>
           <div className="flex items-center gap-2 mt-auto">
-            {!item.read && (
-              <span className="w-2 h-2 rounded-full bg-brand" title="Unread" />
-            )}
+            <span className="w-2 h-2 rounded-full bg-brand" title="Active" />
             <ChevronRight className="w-3.5 h-3.5 text-neutral-400 group-hover:text-neutral-600 dark:group-hover:text-neutral-200 transition-colors" />
           </div>
         </div>
@@ -245,7 +221,7 @@ export default function NotificationsDropdown({
           </h2>
           {notificationsCount > 0 && (
             <span className="bg-brand text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs">
-              {notificationsCount > 99 ? '99+ unread' : `${notificationsCount} unread`}
+              {notificationsCount > 99 ? '99+' : notificationsCount}
             </span>
           )}
         </div>
@@ -256,7 +232,7 @@ export default function NotificationsDropdown({
               type="button"
               onClick={markAllNotificationsRead}
               className="w-7 h-7 rounded-lg hover:bg-neutral-100 dark:hover:bg-slate-800 flex items-center justify-center text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors cursor-pointer"
-              title="Mark all as read"
+              title="Clear all"
             >
               <Check className="w-4 h-4 text-neutral-500 dark:text-neutral-400" />
             </button>

@@ -129,17 +129,22 @@ export function canDeleteComment(
   if (!user) return false;
   if (isSuperAdmin(user)) return true;
 
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
   const uName = (user.name || '').toLowerCase().trim();
   const uEmail = (user.email || '').toLowerCase().trim();
   const uHandle = uName.replace(/\s+/g, '.');
+  const uNorm = norm(user.name || '');
 
   const cName = (comment.authorName || '').toLowerCase().trim();
   const cHandle = (comment.authorHandle || '').toLowerCase().trim();
+  const cNorm = norm(comment.authorName || '');
 
   return Boolean(
     (uName && cName && uName === cName) ||
-    (uEmail && cName && uEmail === cName) ||
-    (uHandle && cHandle && uHandle === cHandle)
+      (uEmail && cName && uEmail === cName) ||
+      (uHandle && cHandle && uHandle === cHandle) ||
+      (uNorm && cNorm && uNorm === cNorm) ||
+      (uEmail && cHandle && norm(uEmail.split('@')[0] || '') === norm(cHandle))
   );
 }
 
