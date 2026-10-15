@@ -193,6 +193,19 @@ export async function ensureHallwaySchema(): Promise<void> {
         INDEX idx_comments_announcement (announcement_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS active_campaign (
+        id VARCHAR(191) PRIMARY KEY,
+        title VARCHAR(512) NOT NULL,
+        branch_name VARCHAR(255) NULL,
+        description MEDIUMTEXT NULL,
+        voucher_code VARCHAR(128) NULL,
+        discount_percent VARCHAR(64) NULL,
+        target_date DATETIME NULL,
+        is_active TINYINT(1) NOT NULL DEFAULT 1,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
   })().catch((err) => {
     _schemaReady = null;
     throw err;
@@ -897,3 +910,118 @@ export async function deleteComment(announcementId: string, commentId: string): 
 
   return deletedFromMysql;
 }
+
+// ==========================================
+// Company-wide Active Campaign (shared for all members)
+// ==========================================
+
+export type HallwayActiveCampaign = {
+  id: string;
+  title: string;
+  branchName: string;
+  description: string;
+  voucherCode: string;
+  discountPercent: string;
+  targetDate: string;
+  isActive: boolean;
+};
+
+const DEFAULT_ACTIVE_CAMPAIGN: HallwayActiveCampaign = {
+  id: 'camp-company-active',
+  title: 'Indiranagar Launch Boost',
+  branchName: 'Indiranagar Branch',
+  description:
+    'Exclusive limited-time discount for all new client deals closed in the new Indiranagar branch before Sunday night.',
+  voucherCode: 'INDIRA10',
+  discountPercent: '10% OFF',
+  targetDate: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000 + 12 * 60 * 60 * 1000).toISOString(),
+  isActive: true,
+};
+
+function rowToCampaign(row: any): HallwayActiveCampaign {
+  return {
+    id: row.id,
+    title: row.title || '',
+    branchName: row.branch_name || '',
+    description: row.description || '',
+    voucherCode: row.voucher_code || '',
+    discountPercent: row.discount_percent || '',
+    targetDate: row.target_date ? new Date(row.target_date).toISOString() : '',
+    isActive: Boolean(row.is_active),
+  };
+}
+
+/** Load the single company campaign — seeded once if missing. Visible to every member. */
+export async function getActiveCampaign(): Promise<HallwayActiveCampaign> {
+  const pool = getPool();
+  await ensureHallwaySchema();
+  const [rows] = await pool.query<any[]>(
+    'SELECT * FROM active_campaign ORDER BY updated_at DESC LIMIT 1'
+  );
+  if (rows.length > 0) {
+    return rowToCampaign(rows[0]);
+  }
+
+  await pool.query(
+    `INSERT INTO active_campaign (
+      id, title, branch_name, description, voucher_code, discount_percent, target_date, is_active
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      DEFAULT_ACTIVE_CAMPAIGN.id,
+      DEFAULT_ACTIVE_CAMPAIGN.title,
+      DEFAULT_ACTIVE_CAMPAIGN.branchName,
+      DEFAULT_ACTIVE_CAMPAIGN.description,
+      DEFAULT_ACTIVE_CAMPAIGN.voucherCode,
+      DEFAULT_ACTIVE_CAMPAIGN.discountPercent,
+      new Date(DEFAULT_ACTIVE_CAMPAIGN.targetDate),
+      1,
+    ]
+  );
+  return { ...DEFAULT_ACTIVE_CAMPAIGN };
+}
+
+/** Upsert company campaign (admin-only at API layer). */
+export async function upsertActiveCampaign(
+  data: Partial<HallwayActiveCampaign> & { title?: string }
+): Promise<HallwayActiveCampaign> {
+  const pool = getPool();
+  await ensureHallwaySchema();
+  const current = await getActiveCampaign();
+  const next: HallwayActiveCampaign = {
+    id: data.id || current.id || DEFAULT_ACTIVE_CAMPAIGN.id,
+    title: (data.title ?? current.title).trim() || current.title,
+    branchName: (data.branchName ?? current.branchName).trim(),
+    description: (data.description ?? current.description).trim(),
+    voucherCode: (data.voucherCode ?? current.voucherCode).trim(),
+    discountPercent: (data.discountPercent ?? current.discountPercent).trim(),
+    targetDate: data.targetDate || current.targetDate || DEFAULT_ACTIVE_CAMPAIGN.targetDate,
+    isActive: data.isActive !== undefined ? Boolean(data.isActive) : true,
+  };
+
+  await pool.query(
+    `INSERT INTO active_campaign (
+      id, title, branch_name, description, voucher_code, discount_percent, target_date, is_active
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE
+      title = VALUES(title),
+      branch_name = VALUES(branch_name),
+      description = VALUES(description),
+      voucher_code = VALUES(voucher_code),
+      discount_percent = VALUES(discount_percent),
+      target_date = VALUES(target_date),
+      is_active = VALUES(is_active)`,
+    [
+      next.id,
+      next.title,
+      next.branchName,
+      next.description,
+      next.voucherCode,
+      next.discountPercent,
+      next.targetDate ? new Date(next.targetDate) : null,
+      next.isActive ? 1 : 0,
+    ]
+  );
+
+  return next;
+}
+

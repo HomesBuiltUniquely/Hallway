@@ -1002,6 +1002,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (pruned.size !== prev.size) persistDismissedNotificationIds(pruned);
         return pruned.size !== prev.size ? pruned : prev;
       });
+
+      // Keep company campaign in sync for every member (not device-local)
+      void loadActiveCampaign();
     } catch {
       // Offline fallback preserved in state
     }
@@ -1581,30 +1584,63 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     isActive: false,
   });
 
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('hallway_active_campaign');
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          if (parsed && parsed.title && parsed.isActive !== false) {
-            setActiveCampaign(parsed);
-          }
-        } catch {
-          // ignore corrupt campaign cache
-        }
+  /** Company-wide campaign from hallway_db — same for every member/device. */
+  const loadActiveCampaign = async () => {
+    const apiUrl = HALLWAY_LOCAL_API || '/api';
+    try {
+      const res = await fetch(`${apiUrl}/campaign`, { cache: 'no-store' });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data?.title) {
+        setActiveCampaign({
+          id: data.id || 'camp-company-active',
+          title: data.title,
+          branchName: data.branchName || '',
+          description: data.description || '',
+          voucherCode: data.voucherCode || '',
+          discountPercent: data.discountPercent || '',
+          targetDate: data.targetDate || '',
+          isActive: data.isActive !== false,
+        });
       }
+    } catch {
+      // keep current state if offline
     }
+  };
+
+  useEffect(() => {
+    void loadActiveCampaign();
   }, []);
 
   const updateActiveCampaign = (updated: Partial<ActiveCampaign>) => {
     setActiveCampaign((prev) => {
-      const next = { ...prev, ...updated };
-      if (typeof window !== 'undefined') {
-        try {
-          localStorage.setItem('hallway_active_campaign', JSON.stringify(next));
-        } catch {}
-      }
+      const next = { ...prev, ...updated, isActive: updated.isActive !== false };
+      const apiUrl = HALLWAY_LOCAL_API || '/api';
+      void fetch(`${apiUrl}/campaign`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...next,
+          actor: {
+            name: currentUser?.name,
+            email: currentUser?.email,
+            role: currentUser?.role,
+          },
+        }),
+      })
+        .then(async (res) => {
+          if (!res.ok) {
+            void loadActiveCampaign();
+            return;
+          }
+          const data = await res.json();
+          if (data?.campaign?.title) {
+            setActiveCampaign(data.campaign);
+          }
+        })
+        .catch(() => {
+          void loadActiveCampaign();
+        });
       return next;
     });
   };
