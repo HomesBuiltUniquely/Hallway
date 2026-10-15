@@ -283,8 +283,10 @@ export default function TargetsPaceBoard({ rows }: { rows: TargetQuotaRow[] }) {
               <div className="mt-2 text-[26px] font-black tracking-tight text-ink dark:text-white">
                 {hub.attainment.toFixed(1)}%
               </div>
-              <p className="text-xs text-slate-400 dark:text-slate-500">
-                {hub.currentFmt} of {hub.targetFmt}
+              <p className="mt-0.5 text-[13px] font-bold tracking-tight text-ink dark:text-slate-100">
+                <span className="text-brand dark:text-red-400">{hub.currentFmt}</span>
+                <span className="mx-1 font-semibold text-slate-400 dark:text-slate-500">of</span>
+                <span>{hub.targetFmt}</span>
               </p>
 
               <div className="mt-3">
@@ -315,8 +317,10 @@ export default function TargetsPaceBoard({ rows }: { rows: TargetQuotaRow[] }) {
           <div className="mt-2 text-[26px] font-black tracking-tight text-ink dark:text-white">
             {overall.attainment.toFixed(1)}%
           </div>
-          <p className="text-xs text-slate-400">
-            {overall.currentFmt} of {overall.targetFmt}
+          <p className="mt-0.5 text-[13px] font-bold tracking-tight text-ink dark:text-slate-100">
+            <span className="text-brand dark:text-red-400">{overall.currentFmt}</span>
+            <span className="mx-1 font-semibold text-slate-400 dark:text-slate-500">of</span>
+            <span>{overall.targetFmt}</span>
           </p>
           <div className="mt-3">
             <PaceBar attainment={overall.attainment} pacePct={pace.pacePct} />
