@@ -42,7 +42,7 @@ const DEPARTMENTS = [
 function LeaderboardsInner() {
   const { activeDepartment, setActiveDepartment } = useApp();
   const { branchId, setBranchId, salesManagerId, setSalesManagerId, options } = useCorridorScope();
-  const [period, setPeriod] = useState<LeaderboardPeriod>('all_time');
+  const [period, setPeriod] = useState<LeaderboardPeriod>('mtd');
   const [view, setView] = useState<'Individual' | 'Team'>('Individual');
   const [localSearch, setLocalSearch] = useState('');
   const [showFullRosterModal, setShowFullRosterModal] = useState(false);

@@ -31,7 +31,7 @@ type RackPerson = {
 
 const METRICS: { key: MetricKey; label: string }[] = [
   { key: 'gross', label: 'Gross bookings' },
-  { key: 'count', label: 'Bookings' },
+  { key: 'count', label: 'Deals closed' },
   { key: 'rate', label: 'Conversion %' },
 ];
 
@@ -68,7 +68,7 @@ function formatGap(leader: number, current: number, metric: MetricKey, mode: 'in
   if (d <= 0) return 'Leader';
   if (metric === 'gross') return formatInrGap(d);
   if (metric === 'count') {
-    const unit = mode === 'team' ? (d === 1 ? 'deal' : 'deals') : d === 1 ? 'booking' : 'bookings';
+    const unit = d === 1 ? 'deal' : 'deals';
     return `-${d} ${unit} behind`;
   }
   return `-${d.toFixed(1)} pts behind`;
@@ -131,7 +131,7 @@ function toIndividuals(items: HallwayLeaderboardIndividual[]): RackPerson[] {
       gross,
       grossLabel: m.revenueFormatted || '₹0',
       count: Number(m.bookings) || 0,
-      countLabel: `${Number(m.bookings) || 0} bookings`,
+      countLabel: `${Number(m.bookings) || 0} deals closed`,
       rate: Number(m.conversionRate) || 0,
       rateLabel: displayRate(m.conversionRate),
     };
@@ -147,7 +147,7 @@ function toTeams(items: HallwayLeaderboardTeam[]): RackPerson[] {
       gross,
       grossLabel: t.totalRevenue || '₹0',
       count: Number(t.dealsClosed) || 0,
-      countLabel: `${Number(t.dealsClosed) || 0} deals`,
+      countLabel: `${Number(t.dealsClosed) || 0} deals closed`,
       rate: Number(t.winRate) || 0,
       rateLabel: displayRate(t.winRate),
     };
