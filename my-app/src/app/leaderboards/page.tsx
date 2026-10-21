@@ -295,7 +295,7 @@ function LeaderboardsInner() {
           <div className="bg-white dark:bg-panel border border-slate-200 dark:border-slate-800 rounded-2xl max-w-2xl w-full p-6 shadow-2xl animate-in zoom-in-95">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800 mb-4">
               <h3 className="font-bold text-slate-900 dark:text-white text-base">
-                Operating Division Roster
+                {view === 'Team' ? 'Full team leaderboard' : 'Full individual leaderboard'}
               </h3>
               <button
                 type="button"
@@ -306,7 +306,37 @@ function LeaderboardsInner() {
               </button>
             </div>
             <div className="space-y-3 max-h-80 overflow-y-auto">
-              {individuals.length === 0 ? (
+              {view === 'Team' ? (
+                teams.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-8">No teams yet.</p>
+                ) : (
+                  teams.map((team) => (
+                    <div
+                      key={team.id}
+                      className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 text-xs"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="font-bold text-slate-400 w-4">{team.rank ?? '-'}</span>
+                        <PersonAvatar name={team.leadName || team.teamName} src={team.avatar} size={32} />
+                        <div>
+                          <p className="font-bold text-slate-900 dark:text-white">
+                            {team.teamName.replace(/_/g, ' ')}
+                          </p>
+                          <p className="text-[11px] text-slate-400">
+                            {team.leadName ? `Led by ${team.leadName}` : 'Team'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right font-mono">
+                        <p className="font-bold text-slate-900 dark:text-white">{team.totalRevenue}</p>
+                        <p className="text-[11px] text-emerald-500 font-semibold">
+                          {team.dealsClosed} deals closed · {displayRate(team.winRate)} win rate
+                        </p>
+                      </div>
+                    </div>
+                  ))
+                )
+              ) : individuals.length === 0 ? (
                 <p className="text-xs text-slate-400 text-center py-8">No roster members yet.</p>
               ) : (
                 individuals.map((member) => (
