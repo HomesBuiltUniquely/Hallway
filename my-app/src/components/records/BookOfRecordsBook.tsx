@@ -168,7 +168,7 @@ function buildSpreads(
       id: 'team_all_time',
       tab: 'Team records',
       label: 'TEAM RECORD',
-      title: lead.metricLabel || 'Highest All-Time Team Gross',
+      title: lead.metricLabel || 'Highest Team Gross',
       definition:
         'The highest all-time gross bookings held by a single Hub team, verified from the company ledger.',
       holdersName: leadTitle,

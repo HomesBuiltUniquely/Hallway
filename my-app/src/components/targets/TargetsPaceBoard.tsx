@@ -106,9 +106,10 @@ function enrich(row: TargetQuotaRow, pace: ReturnType<typeof monthPace>): Enrich
         ? (current / target) * 100
         : 0;
   const rem = Math.max(target - current, 0);
-  const needPerDay = rem / pace.left;
+  const closed = pace.left <= 0;
+  const needPerDay = closed ? 0 : rem / pace.left;
   const curPerDay = current / Math.max(pace.day, 1);
-  const forecast = curPerDay * pace.dim;
+  const forecast = closed ? current : curPerDay * pace.dim;
   const forecastPct = target > 0 ? (forecast / target) * 100 : 0;
   const ratio = attainment / Math.max(pace.pacePct, 1);
 
@@ -176,8 +177,38 @@ function PaceBar({ attainment, pacePct }: { attainment: number; pacePct: number 
   );
 }
 
-export default function TargetsPaceBoard({ rows }: { rows: TargetQuotaRow[] }) {
-  const pace = useMemo(() => monthPace(), []);
+export type TargetPaceWindow = {
+  label: string;
+  day: number;
+  dim: number;
+  left: number;
+  pacePct: number;
+  closed: boolean;
+  showQuota: boolean;
+};
+
+export default function TargetsPaceBoard({
+  rows,
+  window,
+}: {
+  rows: TargetQuotaRow[];
+  window?: TargetPaceWindow;
+}) {
+  const pace = useMemo(() => {
+    if (!window) {
+      const live = monthPace();
+      return { ...live, closed: false, showQuota: true };
+    }
+    return {
+      monthLabel: window.label,
+      day: window.day,
+      dim: window.dim,
+      left: window.left,
+      pacePct: window.pacePct,
+      closed: window.closed,
+      showQuota: window.showQuota,
+    };
+  }, [window]);
 
   const hubs = useMemo(() => rows.map((r) => enrich(r, pace)), [rows, pace]);
 
@@ -187,48 +218,77 @@ export default function TargetsPaceBoard({ rows }: { rows: TargetQuotaRow[] }) {
 
   if (!overall) return null;
 
-  const kpis = [
-    {
-      label: 'Achieved',
-      value: overall.currentFmt,
-      hint: overall.name,
-      warn: false,
-    },
-    {
-      label: 'Target',
-      value: overall.targetFmt,
-      hint: 'Monthly gross booking',
-      warn: false,
-    },
-    {
-      label: 'Attainment',
-      value: `${overall.attainment.toFixed(1)}%`,
-      hint: `Pace today ${pace.pacePct.toFixed(0)}%`,
-      warn: false,
-    },
-    {
-      label: 'Needed per day',
-      value: formatInrToLakhsOrCrores(overall.needPerDay),
-      hint: `${pace.left} days left`,
-      warn: true,
-    },
-    {
-      label: 'Month-end forecast',
-      value: formatInrToLakhsOrCrores(overall.forecast),
-      hint: `${overall.forecastPct.toFixed(0)}% of target`,
-      warn: false,
-    },
-  ];
+  const kpis = pace.showQuota
+    ? [
+        {
+          label: 'Achieved',
+          value: overall.currentFmt,
+          hint: overall.name,
+          warn: false,
+        },
+        {
+          label: 'Target',
+          value: overall.targetFmt,
+          hint: 'Monthly gross booking',
+          warn: false,
+        },
+        {
+          label: 'Attainment',
+          value: `${overall.attainment.toFixed(1)}%`,
+          hint: pace.closed ? 'Month closed' : `Pace today ${pace.pacePct.toFixed(0)}%`,
+          warn: false,
+        },
+        pace.closed
+          ? {
+              label: 'Shortfall',
+              value: formatInrToLakhsOrCrores(overall.rem),
+              hint: overall.rem <= 0 ? 'Quota met' : 'Under the month quota',
+              warn: overall.rem > 0,
+            }
+          : {
+              label: 'Needed per day',
+              value: formatInrToLakhsOrCrores(overall.needPerDay),
+              hint: `${pace.left} days left`,
+              warn: true,
+            },
+        pace.closed
+          ? {
+              label: 'Final gross',
+              value: overall.currentFmt,
+              hint: 'Nothing further in this month',
+              warn: false,
+            }
+          : {
+              label: 'Month-end forecast',
+              value: formatInrToLakhsOrCrores(overall.forecast),
+              hint: `${overall.forecastPct.toFixed(0)}% of target`,
+              warn: false,
+            },
+      ]
+    : [
+        {
+          label: 'Achieved',
+          value: overall.currentFmt,
+          hint: 'Gross booking in this range',
+          warn: false,
+        },
+      ];
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
           <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-400">
-            {pace.monthLabel} · day {pace.day} of {pace.dim}
+            {pace.monthLabel}
+            {pace.showQuota && !pace.closed ? ` · day ${pace.day} of ${pace.dim}` : ''}
+            {pace.closed ? ' · closed' : ''}
           </p>
           <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-            Status compares attainment with calendar pace. Tick on each bar = expected today.
+            {pace.showQuota
+              ? pace.closed
+                ? 'Attainment is gross booking against that month’s quota.'
+                : 'Status compares attainment with calendar pace. Tick on each bar = expected today.'
+              : 'Gross booking for the dates you picked. A partial range is not scored against the full month quota.'}
           </p>
         </div>
       </div>
@@ -275,31 +335,49 @@ export default function TargetsPaceBoard({ rows }: { rows: TargetQuotaRow[] }) {
             >
               <div className="flex items-center gap-2">
                 <h3 className="text-[13px] font-extrabold text-ink dark:text-white">{hub.name}</h3>
-                <span className="ml-auto">
-                  <StatusChip status={hub.status} label={hub.statusLabel} />
-                </span>
+                {pace.showQuota && (
+                  <span className="ml-auto">
+                    <StatusChip status={hub.status} label={hub.statusLabel} />
+                  </span>
+                )}
               </div>
 
-              <div className="mt-2 text-[26px] font-black tracking-tight text-ink dark:text-white">
-                {hub.attainment.toFixed(1)}%
-              </div>
-              <p className="mt-0.5 text-[13px] font-bold tracking-tight text-ink dark:text-slate-100">
-                <span className="text-brand dark:text-red-400">{hub.currentFmt}</span>
-                <span className="mx-1 font-semibold text-slate-400 dark:text-slate-500">of</span>
-                <span>{hub.targetFmt}</span>
-              </p>
-
-              <div className="mt-3">
-                <PaceBar attainment={hub.attainment} pacePct={pace.pacePct} />
-              </div>
-
-              <p className="mt-3 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                Needs {formatInrToLakhsOrCrores(hub.needPerDay)} a day for {pace.left} days
-              </p>
-              <p className="mt-0.5 text-[10px] text-slate-400 dark:text-slate-500">
-                Forecast {formatInrToLakhsOrCrores(hub.forecast)} ({hub.forecastPct.toFixed(0)}% of
-                target) · so far {formatInrToLakhsOrCrores(hub.curPerDay)}/day
-              </p>
+              {pace.showQuota ? (
+                <>
+                  <div className="mt-2 text-[26px] font-black tracking-tight text-ink dark:text-white">
+                    {hub.attainment.toFixed(1)}%
+                  </div>
+                  <p className="mt-0.5 text-[13px] font-bold tracking-tight text-ink dark:text-slate-100">
+                    <span className="text-brand dark:text-red-400">{hub.currentFmt}</span>
+                    <span className="mx-1 font-semibold text-slate-400 dark:text-slate-500">of</span>
+                    <span>{hub.targetFmt}</span>
+                  </p>
+                  <div className="mt-3">
+                    <PaceBar attainment={hub.attainment} pacePct={pace.pacePct} />
+                  </div>
+                  {pace.closed ? (
+                    <p className="mt-3 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                      {hub.rem <= 0
+                        ? 'Quota met'
+                        : `${formatInrToLakhsOrCrores(hub.rem)} short of quota`}
+                    </p>
+                  ) : (
+                    <>
+                      <p className="mt-3 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                        Needs {formatInrToLakhsOrCrores(hub.needPerDay)} a day for {pace.left} days
+                      </p>
+                      <p className="mt-0.5 text-[10px] text-slate-400 dark:text-slate-500">
+                        Forecast {formatInrToLakhsOrCrores(hub.forecast)} ({hub.forecastPct.toFixed(0)}% of
+                        target) · so far {formatInrToLakhsOrCrores(hub.curPerDay)}/day
+                      </p>
+                    </>
+                  )}
+                </>
+              ) : (
+                <div className="mt-2 text-[26px] font-black tracking-tight text-ink dark:text-white">
+                  {hub.currentFmt}
+                </div>
+              )}
             </article>
           ))}
         </div>
@@ -326,7 +404,11 @@ export default function TargetsPaceBoard({ rows }: { rows: TargetQuotaRow[] }) {
             <PaceBar attainment={overall.attainment} pacePct={pace.pacePct} />
           </div>
           <p className="mt-3 text-[11px] font-semibold text-slate-500">
-            Needs {formatInrToLakhsOrCrores(overall.needPerDay)} a day for {pace.left} days
+            {pace.closed
+              ? overall.rem <= 0
+                ? 'Quota met'
+                : `${formatInrToLakhsOrCrores(overall.rem)} short of quota`
+              : `Needs ${formatInrToLakhsOrCrores(overall.needPerDay)} a day for ${pace.left} days`}
           </p>
         </article>
       )}

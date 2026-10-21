@@ -85,7 +85,7 @@ function RecordsInner() {
       teamName: formatTeamTitle(t.teamName),
       leadName: t.leadName || undefined,
       value: t.totalRevenue || '₹0',
-      metricLabel: 'Highest All-Time Team Gross',
+      metricLabel: 'Highest Team Gross',
       department: t.department || 'Sales',
       verified: true,
       dealsClosed: Number(t.dealsClosed) || 0,

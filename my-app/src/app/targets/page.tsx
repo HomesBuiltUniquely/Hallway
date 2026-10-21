@@ -12,11 +12,13 @@ import DepartmentPills, {
 } from '../../components/common/DepartmentPills';
 import EmptyState from '../../components/common/EmptyState';
 import TargetsPaceBoard, {
+  type TargetPaceWindow,
   type TargetQuotaRow,
 } from '../../components/targets/TargetsPaceBoard';
-import { fetchTargets } from '../../lib/crmApi';
+import { fetchInsightsDashboard } from '../../lib/crmApi';
 import { formatInrToLakhsOrCrores } from '../../lib/crmAnnouncementsGenerator';
-import type { HallwayTargetCard } from '../../types/hallway';
+import { istYmd } from '../../lib/hallwayDisplay';
+import type { DateRangeKey } from '../../types/crmInsights';
 
 const BRANCH_TARGET_CONFIGS = [
   { id: 'JP_NAGAR', name: 'JP Nagar' },
@@ -24,46 +26,99 @@ const BRANCH_TARGET_CONFIGS = [
   { id: 'HBR', name: 'HBR Layout' },
 ] as const;
 
-type TargetCardWithBranch = HallwayTargetCard & {
-  branchId?: string;
-  branchName?: string;
-};
+type RangeKind = 'this_month' | 'previous_month' | 'custom';
 
-function toRow(card: TargetCardWithBranch, index: number): TargetQuotaRow {
-  const currentInr =
-    typeof card.currentInr === 'number' && card.currentInr > 0 ? card.currentInr : undefined;
-  const targetInr =
-    typeof card.targetInr === 'number' && card.targetInr > 0 ? card.targetInr : undefined;
-  const currentFormatted =
-    currentInr != null
-      ? formatInrToLakhsOrCrores(currentInr)
-      : card.current || '₹0';
-  const targetFormatted =
-    targetInr != null
-      ? formatInrToLakhsOrCrores(targetInr)
-      : card.target || '₹0';
+type AppliedRange =
+  | { kind: 'this_month' }
+  | { kind: 'previous_month' }
+  | { kind: 'custom'; from: string; to: string };
 
-  const isOverall =
-    !card.branchId ||
-    card.branchId === 'all' ||
-    /overall|all hubs/i.test(card.branchName || '') ||
-    /overall|all hubs/i.test(card.title || '');
+function pad(n: number) {
+  return String(n).padStart(2, '0');
+}
 
-  const label = isOverall
-    ? (card.title || 'MONTHLY GROSS BOOKING').toUpperCase()
-    : `${(card.branchName || card.branchId || 'HUB').toUpperCase()} · ${(card.title || 'MONTHLY GROSS BOOKING').toUpperCase()}`;
+function ymd(y: number, m: number, d: number) {
+  return `${y}-${pad(m)}-${pad(d)}`;
+}
 
+function parseYmd(value: string) {
+  const [y, m, d] = value.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function inclusiveDays(from: string, to: string) {
+  const ms = parseYmd(to).getTime() - parseYmd(from).getTime();
+  return Math.floor(ms / 86_400_000) + 1;
+}
+
+function monthTitle(y: number, m: number) {
+  return new Date(y, m - 1, 1).toLocaleString('en-IN', { month: 'long', year: 'numeric' });
+}
+
+function prettyDate(value: string) {
+  return parseYmd(value).toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+function thisMonthParts() {
+  const [y, m, d] = istYmd().split('-').map(Number);
+  const dim = new Date(y, m, 0).getDate();
+  const day = Math.min(Math.max(d, 1), dim);
+  return { y, m, day, dim };
+}
+
+function previousMonthRange() {
+  const { y, m } = thisMonthParts();
+  const prev = new Date(y, m - 2, 1);
+  const py = prev.getFullYear();
+  const pm = prev.getMonth() + 1;
+  const dim = new Date(py, pm, 0).getDate();
+  return { from: ymd(py, pm, 1), to: ymd(py, pm, dim), y: py, m: pm, dim };
+}
+
+function paceFor(applied: AppliedRange): TargetPaceWindow {
+  if (applied.kind === 'previous_month') {
+    const prev = previousMonthRange();
+    return {
+      label: monthTitle(prev.y, prev.m),
+      day: prev.dim,
+      dim: prev.dim,
+      left: 0,
+      pacePct: 100,
+      closed: true,
+      showQuota: true,
+    };
+  }
+  if (applied.kind === 'custom') {
+    const dim = Math.max(inclusiveDays(applied.from, applied.to), 1);
+    const today = istYmd();
+    const closed = applied.to < today;
+    const elapsedEnd = today < applied.to ? today : applied.to;
+    const day = closed ? dim : Math.max(inclusiveDays(applied.from, elapsedEnd), 1);
+    const left = Math.max(dim - day, 0);
+    return {
+      label: `${prettyDate(applied.from)} – ${prettyDate(applied.to)}`,
+      day,
+      dim,
+      left,
+      pacePct: closed ? 100 : (day / dim) * 100,
+      closed,
+      showQuota: false,
+    };
+  }
+  const now = thisMonthParts();
+  const left = Math.max(now.dim - now.day, 0);
   return {
-    id: `crm-target-${card.branchId || 'all'}-${card.yearMonth || 'current'}-${index}`,
-    label,
-    currentFormatted,
-    targetFormatted,
-    percentage: Number(card.progress) || 0,
-    currentInr,
-    targetInr,
-    periodKey: card.yearMonth
-      ? `sales_targets - ${card.yearMonth}`
-      : `sales_targets - ${new Date().toISOString().slice(0, 7)}`,
+    label: monthTitle(now.y, now.m),
+    day: now.day,
+    dim: now.dim,
+    left: left === 0 ? 0 : left,
+    pacePct: (now.day / now.dim) * 100,
+    closed: false,
+    showQuota: true,
   };
 }
 
@@ -72,60 +127,73 @@ function TargetsInner() {
   const [rows, setRows] = useState<TargetQuotaRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [applied, setApplied] = useState<AppliedRange>({ kind: 'this_month' });
+  const [customOpen, setCustomOpen] = useState(false);
+  const monthNow = thisMonthParts();
+  const [draftFrom, setDraftFrom] = useState(() => ymd(monthNow.y, monthNow.m, 1));
+  const [draftTo, setDraftTo] = useState(() => istYmd());
+  const [draftError, setDraftError] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+    const dateRange: DateRangeKey =
+      applied.kind === 'previous_month'
+        ? 'previous_month'
+        : applied.kind === 'custom'
+          ? 'custom'
+          : 'current_month';
     try {
-      const overallRes = await fetchTargets('', {});
-      const overallCards = (overallRes?.cards || []).map((card, i) =>
-        toRow({ ...card, branchId: 'all', branchName: 'All Hubs (Overall)' }, i)
-      );
-
-      const branchArrays = await Promise.all(
-        BRANCH_TARGET_CONFIGS.map(async (b) => {
+      const scopes = [
+        { id: 'all', name: 'All Hubs (Overall)' },
+        ...BRANCH_TARGET_CONFIGS.map((b) => ({ id: b.id, name: b.name })),
+      ];
+      const loaded = await Promise.all(
+        scopes.map(async (scope) => {
           try {
-            const res = await fetchTargets('', { branchId: b.id });
-            return (res?.cards || []).map((card, i) =>
-              toRow({ ...card, branchId: b.id, branchName: b.name }, i + 10)
-            );
+            const data = await fetchInsightsDashboard({
+              dateRange,
+              dateFrom: applied.kind === 'custom' ? applied.from : undefined,
+              dateTo: applied.kind === 'custom' ? applied.to : undefined,
+              branchId: scope.id === 'all' ? undefined : scope.id,
+              teamPeriod: 'monthly',
+              funnelMode: 'inventory',
+              pathFilter: 'all',
+            });
+            const forecast = data.revenueForecast;
+            const currentInr = Number(forecast?.actual) || 0;
+            const targetInr = Number(forecast?.target) || 0;
+            const percentage = targetInr > 0 ? (currentInr / targetInr) * 100 : 0;
+            return {
+              id: `crm-target-${scope.id}-${forecast?.targetYearMonth || dateRange}`,
+              label:
+                scope.id === 'all'
+                  ? 'MONTHLY GROSS BOOKING'
+                  : `${scope.name.toUpperCase()} · MONTHLY GROSS BOOKING`,
+              currentFormatted: formatInrToLakhsOrCrores(currentInr),
+              targetFormatted: formatInrToLakhsOrCrores(targetInr),
+              percentage,
+              currentInr,
+              targetInr,
+              periodKey: forecast?.targetYearMonth || dateRange,
+            } satisfies TargetQuotaRow;
           } catch {
-            return [] as TargetQuotaRow[];
+            return null;
           }
         })
       );
-
-      const branchRows = branchArrays.flat();
-      // Prefer one overall card, then one card per branch (highest progress if duplicates)
-      const byBranch = new Map<string, TargetQuotaRow>();
-      for (const row of [...overallCards, ...branchRows]) {
-        const key = row.id.includes('-all-')
-          ? 'all'
-          : row.label.split('·')[0]?.trim().toUpperCase() || row.id;
-        const prev = byBranch.get(key);
-        if (!prev || row.percentage >= prev.percentage) byBranch.set(key, row);
+      const next = loaded.filter((row): row is TargetQuotaRow => row != null && (row.currentInr || 0) >= 0);
+      if (next.length === 0) {
+        throw new Error('Failed to load CRM targets');
       }
-
-      const ordered: TargetQuotaRow[] = [];
-      const all = byBranch.get('all') || overallCards[0];
-      if (all) ordered.push(all);
-      for (const b of BRANCH_TARGET_CONFIGS) {
-        const hit = byBranch.get(b.name.toUpperCase()) || byBranch.get(b.id);
-        if (hit && hit !== all) ordered.push(hit);
-      }
-      // Any remaining CRM cards not matched above
-      for (const row of byBranch.values()) {
-        if (!ordered.includes(row)) ordered.push(row);
-      }
-
-      setRows(ordered);
+      setRows(next);
     } catch (err) {
       setError(err instanceof Error ? err : new Error('Failed to load CRM targets'));
       setRows([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [applied]);
 
   useEffect(() => {
     void load();
@@ -138,9 +206,94 @@ function TargetsInner() {
           Operating Targets &amp; Quotas
         </h1>
         <p className="max-w-2xl text-xs font-medium text-slate-500 dark:text-slate-400 sm:text-sm">
-          Live monthly gross booking vs Hub target from CRM — pace, forecast, and which corridor
-          needs attention.
+          Live gross booking vs the Hub quota from CRM. This month, previous month, or any dates you choose.
         </p>
+      </div>
+
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="flex p-1 bg-surface-muted dark:bg-slate-800 rounded-xl text-xs">
+          {(
+            [
+              ['this_month', 'This month'],
+              ['previous_month', 'Previous month'],
+              ['custom', 'Custom range'],
+            ] as const
+          ).map(([id, label]) => {
+            const selected = id === 'custom' ? customOpen || applied.kind === 'custom' : !customOpen && applied.kind === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => {
+                  if (id === 'custom') {
+                    setCustomOpen(true);
+                    setDraftError('');
+                    return;
+                  }
+                  setCustomOpen(false);
+                  setDraftError('');
+                  setApplied({ kind: id });
+                }}
+                className={`px-3 py-1.5 font-bold rounded-lg transition-all ${
+                  selected
+                    ? 'bg-white dark:bg-panel text-brand shadow-xs ring-1 ring-brand/20'
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
+        {customOpen && (
+          <form
+            className="flex flex-wrap items-end gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!draftFrom || !draftTo) {
+                setDraftError('Choose a start and an end date.');
+                return;
+              }
+              if (draftFrom > draftTo) {
+                setDraftError('The start date has to be on or before the end date.');
+                return;
+              }
+              setDraftError('');
+              setApplied({ kind: 'custom', from: draftFrom, to: draftTo });
+            }}
+          >
+            <label className="space-y-1">
+              <span className="block text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
+                From
+              </span>
+              <input
+                type="date"
+                value={draftFrom}
+                onChange={(e) => setDraftFrom(e.target.value)}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-ink dark:border-slate-700 dark:bg-panel dark:text-white"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="block text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
+                To
+              </span>
+              <input
+                type="date"
+                value={draftTo}
+                onChange={(e) => setDraftTo(e.target.value)}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-ink dark:border-slate-700 dark:bg-panel dark:text-white"
+              />
+            </label>
+            <button
+              type="submit"
+              className="rounded-xl bg-brand px-3 py-1.5 text-xs font-bold text-white shadow-sm shadow-brand/20"
+            >
+              Apply
+            </button>
+          </form>
+        )}
+        {draftError ? <p className="text-xs font-semibold text-brand">{draftError}</p> : null}
       </div>
 
       <DepartmentPills />
@@ -174,7 +327,7 @@ function TargetsInner() {
               description="Branch quotas will appear here when CRM publishes monthly gross booking targets."
             />
           ) : (
-            <TargetsPaceBoard rows={rows} />
+            <TargetsPaceBoard rows={rows} window={paceFor(applied)} />
           )}
         </>
       )}

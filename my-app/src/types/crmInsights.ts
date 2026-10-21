@@ -262,6 +262,7 @@ export interface RevenueForecast {
   actualScope?: string;
   actualRule?: string;
   projectedRule?: string;
+  targetYearMonth?: string;
 }
 
 export interface InsightsDashboard {
