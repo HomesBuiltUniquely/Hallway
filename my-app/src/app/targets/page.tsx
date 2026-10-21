@@ -199,6 +199,13 @@ function TargetsInner() {
     void load();
   }, [load]);
 
+  const pace = paceFor(applied);
+  const paceNote = !pace.showQuota
+    ? 'Gross booking for the dates you picked. A partial range is not scored against the full month quota.'
+    : pace.closed
+      ? 'Attainment is gross booking against that month’s quota.'
+      : 'Status compares attainment with calendar pace. Tick on each bar = expected today.';
+
   return (
     <div className="space-y-6 pb-12">
       <div className="space-y-2">
@@ -210,92 +217,6 @@ function TargetsInner() {
         </p>
       </div>
 
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="flex p-1 bg-surface-muted dark:bg-slate-800 rounded-xl text-xs">
-          {(
-            [
-              ['this_month', 'This month'],
-              ['previous_month', 'Previous month'],
-              ['custom', 'Custom range'],
-            ] as const
-          ).map(([id, label]) => {
-            const selected = id === 'custom' ? customOpen || applied.kind === 'custom' : !customOpen && applied.kind === id;
-            return (
-              <button
-                key={id}
-                type="button"
-                onClick={() => {
-                  if (id === 'custom') {
-                    setCustomOpen(true);
-                    setDraftError('');
-                    return;
-                  }
-                  setCustomOpen(false);
-                  setDraftError('');
-                  setApplied({ kind: id });
-                }}
-                className={`px-3 py-1.5 font-bold rounded-lg transition-all ${
-                  selected
-                    ? 'bg-white dark:bg-panel text-brand shadow-xs ring-1 ring-brand/20'
-                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                }`}
-              >
-                {label}
-              </button>
-            );
-          })}
-        </div>
-
-        {customOpen && (
-          <form
-            className="flex flex-wrap items-end gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!draftFrom || !draftTo) {
-                setDraftError('Choose a start and an end date.');
-                return;
-              }
-              if (draftFrom > draftTo) {
-                setDraftError('The start date has to be on or before the end date.');
-                return;
-              }
-              setDraftError('');
-              setApplied({ kind: 'custom', from: draftFrom, to: draftTo });
-            }}
-          >
-            <label className="space-y-1">
-              <span className="block text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
-                From
-              </span>
-              <input
-                type="date"
-                value={draftFrom}
-                onChange={(e) => setDraftFrom(e.target.value)}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-ink dark:border-slate-700 dark:bg-panel dark:text-white"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="block text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
-                To
-              </span>
-              <input
-                type="date"
-                value={draftTo}
-                onChange={(e) => setDraftTo(e.target.value)}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-ink dark:border-slate-700 dark:bg-panel dark:text-white"
-              />
-            </label>
-            <button
-              type="submit"
-              className="rounded-xl bg-brand px-3 py-1.5 text-xs font-bold text-white shadow-sm shadow-brand/20"
-            >
-              Apply
-            </button>
-          </form>
-        )}
-        {draftError ? <p className="text-xs font-semibold text-brand">{draftError}</p> : null}
-      </div>
-
       <DepartmentPills />
 
       {!isSalesCrmDepartment(activeDepartment) ? (
@@ -305,6 +226,104 @@ function TargetsInner() {
         />
       ) : (
         <>
+          <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
+            <div className="min-w-0 max-w-xl">
+              <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-400">
+                {pace.label}
+                {pace.showQuota && !pace.closed ? ` · day ${pace.day} of ${pace.dim}` : ''}
+                {pace.closed ? ' · closed' : ''}
+              </p>
+              <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{paceNote}</p>
+            </div>
+
+            <div className="flex flex-col items-stretch gap-2 sm:items-end">
+              <div className="flex p-1 bg-surface-muted dark:bg-slate-800 rounded-xl text-xs">
+                {(
+                  [
+                    ['this_month', 'This month'],
+                    ['previous_month', 'Previous month'],
+                    ['custom', 'Custom range'],
+                  ] as const
+                ).map(([id, label]) => {
+                  const selected =
+                    id === 'custom' ? customOpen || applied.kind === 'custom' : !customOpen && applied.kind === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => {
+                        if (id === 'custom') {
+                          setCustomOpen(true);
+                          setDraftError('');
+                          return;
+                        }
+                        setCustomOpen(false);
+                        setDraftError('');
+                        setApplied({ kind: id });
+                      }}
+                      className={`px-3 py-1.5 font-bold rounded-lg transition-all ${
+                        selected
+                          ? 'bg-white dark:bg-panel text-brand shadow-xs ring-1 ring-brand/20'
+                          : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {customOpen && (
+                <form
+                  className="flex flex-wrap items-end gap-2"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!draftFrom || !draftTo) {
+                      setDraftError('Choose a start and an end date.');
+                      return;
+                    }
+                    if (draftFrom > draftTo) {
+                      setDraftError('The start date has to be on or before the end date.');
+                      return;
+                    }
+                    setDraftError('');
+                    setApplied({ kind: 'custom', from: draftFrom, to: draftTo });
+                  }}
+                >
+                  <label className="space-y-1">
+                    <span className="block text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
+                      From
+                    </span>
+                    <input
+                      type="date"
+                      value={draftFrom}
+                      onChange={(e) => setDraftFrom(e.target.value)}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-ink dark:border-slate-700 dark:bg-panel dark:text-white"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="block text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
+                      To
+                    </span>
+                    <input
+                      type="date"
+                      value={draftTo}
+                      onChange={(e) => setDraftTo(e.target.value)}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-ink dark:border-slate-700 dark:bg-panel dark:text-white"
+                    />
+                  </label>
+                  <button
+                    type="submit"
+                    className="rounded-xl bg-brand px-3 py-1.5 text-xs font-bold text-white shadow-sm shadow-brand/20"
+                  >
+                    Apply
+                  </button>
+                </form>
+              )}
+              {draftError ? <p className="text-xs font-semibold text-brand">{draftError}</p> : null}
+            </div>
+          </div>
+
           {error && (
             <div className="flex items-center justify-between gap-3 rounded-2xl border border-brand/25 bg-brand-soft px-4 py-3 text-xs text-brand">
               <span>{error.message}</span>
@@ -327,7 +346,7 @@ function TargetsInner() {
               description="Branch quotas will appear here when CRM publishes monthly gross booking targets."
             />
           ) : (
-            <TargetsPaceBoard rows={rows} window={paceFor(applied)} />
+            <TargetsPaceBoard rows={rows} window={pace} />
           )}
         </>
       )}

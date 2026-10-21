@@ -276,23 +276,6 @@ export default function TargetsPaceBoard({
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-400">
-            {pace.monthLabel}
-            {pace.showQuota && !pace.closed ? ` · day ${pace.day} of ${pace.dim}` : ''}
-            {pace.closed ? ' · closed' : ''}
-          </p>
-          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-            {pace.showQuota
-              ? pace.closed
-                ? 'Attainment is gross booking against that month’s quota.'
-                : 'Status compares attainment with calendar pace. Tick on each bar = expected today.'
-              : 'Gross booking for the dates you picked. A partial range is not scored against the full month quota.'}
-          </p>
-        </div>
-      </div>
-
       {/* KPI strip — overall */}
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
         {kpis.map((k) => (
