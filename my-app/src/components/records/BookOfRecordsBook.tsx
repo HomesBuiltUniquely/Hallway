@@ -21,8 +21,6 @@ type BookSpread = {
   verified: boolean;
   details: [string, string][];
   breakHint: string;
-  runnersUp: { name: string; value: string; pct: number }[];
-  runnersLabel: string;
   isTeam?: boolean;
 };
 
@@ -43,7 +41,35 @@ function colorFor(name: string): string {
 
 function cleanName(name: string): { display: string; inactive: boolean } {
   const inactive = /\(Inactive\)/i.test(name);
-  return { display: name.replace(/\s*\(Inactive\)/gi, '').trim(), inactive };
+  const display = name
+    .replace(/\s*\(Inactive\)/gi, '')
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return { display, inactive };
+}
+
+/** Register definitions — not raw CRM notes or internal IDs. */
+function definitionFor(record: HallwayIndividualRecord): string {
+  const id = (record.id || '').toLowerCase();
+  const title = (record.title || '').toLowerCase();
+
+  if (id === 'highest_deal_value' || /highest.*deal/.test(title)) {
+    return 'The largest single interior contract closed by one salesperson, verified from the company ledger.';
+  }
+  if (id === 'fastest_deal_close' || /fastest/.test(title)) {
+    return 'The shortest time from a new lead to a verified booking, held by one salesperson.';
+  }
+  if (id === 'sales_execution_streak' || /streak/.test(title)) {
+    return 'The longest run of consecutive days with a closed deal, held by one salesperson.';
+  }
+
+  const raw = (record.description || '').trim();
+  const looksInternal =
+    /[0-9a-f]{8}-[0-9a-f]{4}-/i.test(raw) ||
+    /glead\/|deal id|crm corridor|uuid/i.test(raw);
+  if (raw && !looksInternal && raw.length <= 160) return raw;
+  return 'A verified all-time sales milestone held in the Hub Book of Records.';
 }
 
 function breakHintFor(record: HallwayIndividualRecord): string {
@@ -56,7 +82,7 @@ function breakHintFor(record: HallwayIndividualRecord): string {
   if (record.id === 'sales_execution_streak') {
     return `Post closed-won deals on more consecutive days than ${record.value}.`;
   }
-  return `Surpass the current mark of ${record.value}.`;
+  return `Set a new mark above ${record.value}.`;
 }
 
 function shortTab(title: string): string {
@@ -65,13 +91,6 @@ function shortTab(title: string): string {
   if (/streak/i.test(title)) return 'Streak';
   if (/team/i.test(title)) return 'Team records';
   return title.split(' ').slice(0, 2).join(' ');
-}
-
-function inrMagnitude(raw: string): number {
-  const n = parseFloat((raw || '').replace(/[^0-9.]/g, ''));
-  if (!Number.isFinite(n) || n <= 0) return 0;
-  if (/cr/i.test(raw)) return n * 100;
-  return n;
 }
 
 function buildSpreads(
@@ -108,9 +127,7 @@ function buildSpreads(
       tab: shortTab(r.title),
       label: `RECORD ${String(idx + 1).padStart(2, '0')} OF ${String(individuals.length).padStart(2, '0')}`,
       title: r.title,
-      definition:
-        r.description ||
-        'Verified all-time sales milestone recorded in the HUB CRM corridor.',
+      definition: definitionFor(r),
       holdersName: display,
       holdersRole: r.holderRole || 'Sales Executive',
       holdersInactive: inactive,
@@ -121,44 +138,49 @@ function buildSpreads(
       verified: Boolean(r.verified),
       details,
       breakHint: breakHintFor(r),
-      runnersUp: [],
-      runnersLabel: 'Closest contenders',
     };
   });
 
   if (teams.length > 0) {
     const lead = teams[0];
     const leadTitle = lead.teamName;
-    const others = teams.slice(1, 4);
-    const leadMag = inrMagnitude(lead.value) || 100;
+    const leadBy = lead.leadName ? `Led by ${lead.leadName}` : 'Hub squad';
+    const dealsClosed =
+      typeof lead.dealsClosed === 'number' ? lead.dealsClosed : undefined;
+    const winRate =
+      typeof lead.winRate === 'number' && Number.isFinite(lead.winRate)
+        ? lead.winRate
+        : undefined;
+
+    const teamDetails: [string, string][] = [
+      ['Gross booking', lead.value],
+      ...(dealsClosed != null
+        ? [['Deals closed', String(dealsClosed)] as [string, string]]
+        : []),
+      ...(winRate != null
+        ? [['Win rate', `${winRate.toFixed(1)}%`] as [string, string]]
+        : []),
+      ['Team', leadTitle],
+      ...(lead.leadName ? [['Lead', leadBy] as [string, string]] : []),
+    ];
+
     spreads.push({
       id: 'team_all_time',
       tab: 'Team records',
       label: 'TEAM RECORD',
-      title: lead.metricLabel || 'Highest team all-time gross',
+      title: lead.metricLabel || 'Highest All-Time Team Gross',
       definition:
-        'The highest total gross bookings by one hub team across the verified CRM all-time window.',
+        'The highest all-time gross bookings held by a single Hub team, verified from the company ledger.',
       holdersName: leadTitle,
-      holdersRole: lead.leadName || 'Hub squad',
+      holdersRole: leadBy,
       holdersInactive: false,
-      avatarInitials: initials(leadTitle),
+      avatarInitials: initials(lead.leadName || leadTitle),
       avatarColor: '#EF0101',
       value: lead.value,
-      meta: lead.leadName || 'All-time team benchmark',
-      verified: Boolean(lead.verified),
-      details: [
-        ['Metric', lead.metricLabel || 'All-time highest revenue'],
-        ['Team', leadTitle],
-        ...(lead.leadName ? [['Lead', lead.leadName] as [string, string]] : []),
-      ],
-      breakHint: `Book more than ${lead.value} as a hub team to claim this page.`,
-      runnersUp: others.map((t) => {
-        const mag = inrMagnitude(t.value);
-        const pct =
-          mag > 0 ? Math.round(Math.min(98, Math.max(28, (mag / leadMag) * 100))) : 40;
-        return { name: t.teamName, value: t.value, pct };
-      }),
-      runnersLabel: 'Next teams',
+      meta: leadBy,
+      verified: lead.verified !== false,
+      details: teamDetails,
+      breakHint: `Deliver more than ${lead.value} in all-time team gross to set the new mark.`,
       isTeam: true,
     });
   }
@@ -298,47 +320,17 @@ export default function BookOfRecordsBook({
 
                   <p className="mt-2 text-[12px] leading-relaxed text-[#5b463e]">{spread.definition}</p>
 
-                  {spread.runnersUp.length > 0 ? (
-                    <div className="mt-5 flex-1">
-                      <div className="mb-2 flex items-center gap-2 border-b border-[#ead9d2] pb-1.5">
-                        <span className="text-[9.5px] font-extrabold uppercase tracking-[0.14em] text-[#9a7a72]">
-                          {spread.runnersLabel}
-                        </span>
-                      </div>
-                      {spread.runnersUp.map((ru, i) => (
-                        <div
-                          key={ru.name}
-                          className="grid grid-cols-[22px_1fr_auto] items-center gap-2 border-b border-[#f3e8e4] py-2 text-xs last:border-0"
-                        >
-                          <span className="grid h-[22px] w-[22px] place-items-center rounded-full border border-[#f4a3a3] bg-[#fff5f5] text-[10.5px] font-extrabold text-[#b80203]">
-                            {i + 2}
-                          </span>
-                          <span className="truncate font-bold text-[#1d1a17]">{ru.name}</span>
-                          <span className="font-mono text-[11px] font-extrabold text-[#1d1a17]">
-                            {ru.value}
-                          </span>
-                          <div className="col-span-2 col-start-2 h-[5px] rounded-full bg-[#f6e6e3]">
-                            <i
-                              className="block h-full rounded-full bg-[#e45a5a]"
-                              style={{ width: `${ru.pct}%` }}
-                            />
-                          </div>
-                        </div>
-                      ))}
+                  <div className="mt-8 flex flex-1 flex-col justify-end">
+                    <div className="rounded-md border border-dashed border-[#e8caca] bg-[#fff8f6] px-3 py-3">
+                      <p className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-[#b80203]">
+                        Category brief
+                      </p>
+                      <p className="mt-1 text-[11px] leading-relaxed text-[#5b463e]">
+                        This page defines the record. The facing leaf names the holder and the
+                        current mark.
+                      </p>
                     </div>
-                  ) : (
-                    <div className="mt-8 flex flex-1 flex-col justify-end">
-                      <div className="rounded-md border border-dashed border-[#e8caca] bg-[#fff8f6]/px-3 py-3">
-                        <p className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-[#b80203]">
-                          Category brief
-                        </p>
-                        <p className="mt-1 text-[11px] leading-relaxed text-[#5b463e]">
-                          This page defines the record. The facing leaf names the holder and the
-                          mark that must be broken.
-                        </p>
-                      </div>
-                    </div>
-                  )}
+                  </div>
 
                   <span className="mt-auto pt-4 text-[10px] font-bold tabular-nums text-[#b8a49d]">
                     {page * 2 + 2}
@@ -373,7 +365,7 @@ export default function BookOfRecordsBook({
                         <div className="text-[9px] font-extrabold uppercase tracking-[0.14em] text-[#9a7a72]">
                           Record holder
                         </div>
-                        <div className="truncate text-[16px] font-black leading-tight text-[#1d1a17]">
+                        <div className="text-[20px] font-semibold leading-tight tracking-[-0.01em] text-[#1a1614]">
                           {spread.holdersName}
                           {spread.holdersInactive && (
                             <span className="ml-1 font-sans text-[10px] font-bold text-[#9a7a72]">
@@ -381,7 +373,7 @@ export default function BookOfRecordsBook({
                             </span>
                           )}
                         </div>
-                        <div className="text-[11px] font-semibold text-[#9a7a72]">
+                        <div className="mt-0.5 text-[12px] font-semibold text-[#9a7a72]">
                           {spread.holdersRole}
                         </div>
                       </div>
@@ -394,14 +386,16 @@ export default function BookOfRecordsBook({
                     )}
                   </div>
 
-                  <div className="mt-4 text-[clamp(1.9rem,4.2vw,2.6rem)] font-black leading-none tracking-tight text-[#c40001]">
-                    {spread.value}
-                  </div>
-                  {spread.meta && (
-                    <div className="mt-1.5 text-[11px] font-semibold text-[#7a5b48]">
-                      {spread.meta}
+                  <div className="mt-3">
+                    <div className="text-[22px] font-semibold leading-none tracking-tight text-[#c40001]">
+                      {spread.value}
                     </div>
-                  )}
+                    {spread.meta && (
+                      <div className="mt-1.5 text-[11px] font-medium text-[#7a5b48]">
+                        {spread.meta}
+                      </div>
+                    )}
+                  </div>
 
                   {spread.verified && (
                     <span className="mt-2.5 inline-flex w-fit items-center gap-1.5 border border-[#f4a3a3] bg-[#fff5f5] px-2.5 py-0.5 text-[9.5px] font-extrabold uppercase tracking-[0.12em] text-[#b80203]">
@@ -426,7 +420,7 @@ export default function BookOfRecordsBook({
                   <div className="mt-auto pt-4">
                     <div className="rounded-md border border-[#f0c9a0] bg-gradient-to-br from-[#fff8ee] to-[#fff1f1] px-3 py-2.5 text-xs">
                       <div className="mb-0.5 text-[9.5px] font-extrabold uppercase tracking-[0.14em] text-[#9a4b12]">
-                        How to break this record
+                        Set the new mark
                       </div>
                       <p className="text-[#2b1d14]">{spread.breakHint}</p>
                     </div>

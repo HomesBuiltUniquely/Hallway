@@ -98,6 +98,10 @@ export interface HallwayTeamRecord {
   metricLabel: string;
   department?: string;
   verified?: boolean;
+  /** All-Time leaderboard fields (Team records tab) */
+  dealsClosed?: number;
+  winRate?: number;
+  totalRevenueInr?: number;
 }
 
 export interface HallwayOmittedCategory {
