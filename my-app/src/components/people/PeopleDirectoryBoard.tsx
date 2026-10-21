@@ -179,8 +179,9 @@ export default function PeopleDirectoryBoard({
       ))}
 
       <p className="px-1 text-[11px] text-[#9a8b7c] dark:text-slate-500">
-        Portfolio figures are YTD ({statsWindow || '1y'}) from Hub CRM. Each hub floor uses its own
-        corridor theme — HBR red, Sarjapura cyan, JP Nagar gold.
+        Portfolio figures are YTD ({statsWindow || '1y'}) from Hub CRM. A manager card is that
+        squad’s bookings and conversion. Each hub floor uses its own corridor theme — HBR red,
+        Sarjapura cyan, JP Nagar gold.
       </p>
     </div>
   );

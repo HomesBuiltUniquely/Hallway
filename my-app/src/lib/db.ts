@@ -87,42 +87,18 @@ export function parseReactions(raw: any) {
 // Persistent JSON Storage Fallback / Mirror
 // ==========================================
 
-function getStoragePath(): string {
-  const custom = process.env.ANNOUNCEMENTS_FILE;
-  if (custom) return custom;
-  const candidates = [
-    path.join(process.cwd(), 'src', 'data', 'announcements.json'),
-    path.join(process.cwd(), 'my-app', 'src', 'data', 'announcements.json'),
-    path.join(__dirname, '..', 'data', 'announcements.json'),
-  ];
-  for (const p of candidates) {
-    if (existsSync(p)) return p;
-  }
-  return candidates[0];
-}
-
-function getSeedPath(): string {
-  const candidates = [
-    path.join(process.cwd(), 'src', 'data', 'announcementsSeed.json'),
-    path.join(process.cwd(), 'my-app', 'src', 'data', 'announcementsSeed.json'),
-    path.join(__dirname, '..', 'data', 'announcementsSeed.json'),
-  ];
-  for (const p of candidates) {
-    if (existsSync(p)) return p;
-  }
-  return candidates[0];
-}
+/** Fixed files under src/data. A runtime-chosen path makes the server trace the whole project. */
+const ANNOUNCEMENTS_JSON = path.join(process.cwd(), 'src', 'data', 'announcements.json');
+const ANNOUNCEMENTS_SEED_JSON = path.join(process.cwd(), 'src', 'data', 'announcementsSeed.json');
 
 function getJsonAnnouncements(): any[] {
   try {
-    const storagePath = getStoragePath();
-    if (existsSync(storagePath)) {
-      const content = readFileSync(storagePath, 'utf-8');
+    if (existsSync(/*turbopackIgnore: true*/ ANNOUNCEMENTS_JSON)) {
+      const content = readFileSync(/*turbopackIgnore: true*/ ANNOUNCEMENTS_JSON, 'utf-8');
       return JSON.parse(content);
     }
-    const seedPath = getSeedPath();
-    if (existsSync(seedPath)) {
-      const content = readFileSync(seedPath, 'utf-8');
+    if (existsSync(/*turbopackIgnore: true*/ ANNOUNCEMENTS_SEED_JSON)) {
+      const content = readFileSync(/*turbopackIgnore: true*/ ANNOUNCEMENTS_SEED_JSON, 'utf-8');
       const list = JSON.parse(content);
       saveJsonAnnouncements(list);
       return list;
@@ -136,10 +112,15 @@ function getJsonAnnouncements(): any[] {
 
 function saveJsonAnnouncements(data: any[]): boolean {
   try {
-    const storagePath = getStoragePath();
-    const dir = path.dirname(storagePath);
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    writeFileSync(storagePath, JSON.stringify(data, null, 2), 'utf-8');
+    const dir = path.dirname(ANNOUNCEMENTS_JSON);
+    if (!existsSync(/*turbopackIgnore: true*/ dir)) {
+      mkdirSync(/*turbopackIgnore: true*/ dir, { recursive: true });
+    }
+    writeFileSync(
+      /*turbopackIgnore: true*/ ANNOUNCEMENTS_JSON,
+      JSON.stringify(data, null, 2),
+      'utf-8',
+    );
     return true;
   } catch (err) {
     console.error('Error saving JSON announcements:', err);

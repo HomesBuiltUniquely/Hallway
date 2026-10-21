@@ -15,6 +15,85 @@ import DepartmentPills, {
 } from '../../components/common/DepartmentPills';
 import PeopleDirectoryBoard from '../../components/people/PeopleDirectoryBoard';
 import { useApp } from '../../context/AppContext';
+import { formatPersonName } from '../../lib/hallwayDisplay';
+import type { HallwayPerson } from '../../types/hallway';
+
+function isManagerRole(role: string): boolean {
+  return /manager/i.test(role || '');
+}
+
+function personKey(name?: string | null): string {
+  return formatPersonName(name).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+/** ₹1.04 Cr / ₹56.24L → rupees. Same shapes CRM prints on the directory cards. */
+function parseInr(formatted?: string | null): number {
+  if (!formatted) return 0;
+  const t = String(formatted).replace(/,/g, '').trim();
+  const cr = t.match(/([\d.]+)\s*Cr/i);
+  if (cr) return parseFloat(cr[1]) * 10_000_000;
+  const lakh = t.match(/([\d.]+)\s*L/i);
+  if (lakh) return parseFloat(lakh[1]) * 100_000;
+  const bare = t.match(/₹\s*([\d.]+)/);
+  if (bare) return parseFloat(bare[1]);
+  return 0;
+}
+
+function formatInr(amount: number): string {
+  if (!Number.isFinite(amount) || amount <= 0) return '₹0';
+  if (amount >= 10_000_000) {
+    const cr = amount / 10_000_000;
+    return `₹${cr.toFixed(2)} Cr`;
+  }
+  if (amount >= 100_000) {
+    const lakhs = amount / 100_000;
+    return `₹${lakhs.toFixed(2)}L`;
+  }
+  return `₹${Math.round(amount).toLocaleString('en-IN')}`;
+}
+
+function reportsTo(person: HallwayPerson, manager: HallwayPerson): boolean {
+  if (String(person.id) === String(manager.id)) return false;
+  if (person.managerId != null && String(person.managerId) !== '') {
+    return String(person.managerId) === String(manager.id);
+  }
+  const managerName = personKey(person.managerName);
+  const leadName = personKey(manager.name);
+  return Boolean(managerName && leadName && managerName === leadName);
+}
+
+/** Manager cards show the squad that reports to them, not the manager's own ₹0 book. */
+function withSquadMetrics(people: HallwayPerson[]): HallwayPerson[] {
+  return people.map((person) => {
+    if (!isManagerRole(person.role)) return person;
+    const squad = people.filter((member) => reportsTo(member, person));
+    if (squad.length === 0) return person;
+
+    let revenue = 0;
+    let weighted = 0;
+    for (const member of squad) {
+      const book = parseInr(member.revenueFormatted);
+      const rate = Number(member.conversionRate) || 0;
+      revenue += book;
+      weighted += book * rate;
+    }
+    const ownBook = parseInr(person.revenueFormatted);
+    if (ownBook > 0) {
+      revenue += ownBook;
+      weighted += ownBook * (Number(person.conversionRate) || 0);
+    }
+    const conversion =
+      revenue > 0
+        ? weighted / revenue
+        : squad.reduce((sum, member) => sum + (Number(member.conversionRate) || 0), 0) / squad.length;
+
+    return {
+      ...person,
+      revenueFormatted: formatInr(revenue),
+      conversionRate: Math.round(conversion * 10) / 10,
+    };
+  });
+}
 
 const ROLE_FILTERS: { label: string; value?: HallwayPeopleRole }[] = [
   { label: 'All roles' },
@@ -44,6 +123,8 @@ function PeopleInner() {
       }
       return true;
     });
+
+    rows = withSquadMetrics(rows);
 
     if (role) {
       rows = rows.filter((person) => {

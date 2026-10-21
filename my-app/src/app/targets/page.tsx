@@ -182,7 +182,7 @@ function TargetsInner() {
           }
         })
       );
-      const next = loaded.filter((row): row is TargetQuotaRow => row != null && (row.currentInr || 0) >= 0);
+      const next = loaded.filter((row) => row != null);
       if (next.length === 0) {
         throw new Error('Failed to load CRM targets');
       }
