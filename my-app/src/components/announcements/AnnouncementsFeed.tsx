@@ -16,7 +16,7 @@ export default function AnnouncementsFeed({
 }: {
   compact?: boolean;
 }) {
-  const { announcementPosts, searchQuery, setSearchQuery } = useApp();
+  const { announcementPosts, announcementsLoading, searchQuery, setSearchQuery } = useApp();
   const [tagFilter, setTagFilter] = useState<TagFilter>('ALL');
 
   const eligibleAnnouncements = (announcementPosts || []).filter(
@@ -137,9 +137,11 @@ export default function AnnouncementsFeed({
         <div className="text-center py-12 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
           <Megaphone className="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
           <p className="text-sm font-semibold text-slate-500">
-            {tagFilter === 'ANNOUNCEMENTS'
-              ? 'No active company broadcasts.'
-              : 'No announcements matching current filter.'}
+            {announcementsLoading
+              ? 'Loading live updates…'
+              : tagFilter === 'ANNOUNCEMENTS'
+                ? 'No active company broadcasts.'
+                : 'No announcements matching current filter.'}
           </p>
         </div>
       )}

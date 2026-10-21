@@ -145,6 +145,7 @@ interface AppContextType {
   setSearchQuery: (query: string) => void;
   feedPosts: FeedPost[];
   announcementPosts: FeedPost[];
+  announcementsLoading: boolean;
   addReaction: (postId: string, reactionType: string) => void;
   addComment: (
     postId: string,
@@ -491,8 +492,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const feedPostsRef = useRef<FeedPost[]>(feedPosts);
   feedPostsRef.current = feedPosts;
   const [announcementPosts, setAnnouncementPosts] = useState<FeedPost[]>([]);
+  const [announcementsLoading, setAnnouncementsLoading] = useState(true);
   const announcementPostsRef = useRef<FeedPost[]>(announcementPosts);
   announcementPostsRef.current = announcementPosts;
+  const feedRefreshGen = useRef(0);
   const [actionItems, setActionItems] = useState<ActionItem[]>(actionItemsMock);
   const [crmLeads, setCrmLeads] = useState<CrmLeadItem[]>(crmLeadsMock);
   const [designProjects, setDesignProjects] = useState<DesignProject[]>(designProjectsMock);
@@ -592,9 +595,179 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const publishLiveAnnouncements = (input: {
+    announcementsData: any;
+    crmItems: any[];
+    overallTargets?: any[];
+    branchTargets?: any[];
+    leaderboardData?: any[];
+    crmPeopleData?: any[];
+    crmRecordsData?: any;
+  }): FeedPost[] => {
+    const viewerKey = reactionViewerKey(currentUser);
+    const announcementsData = Array.isArray(input.announcementsData) ? input.announcementsData : [];
+    const overallTargets = input.overallTargets || [];
+    const branchTargets = input.branchTargets || [];
+    const leaderboardData = input.leaderboardData || [];
+    const crmPeopleData = input.crmPeopleData || [];
+    const crmRecordsData = input.crmRecordsData || { individualRecords: [], teamRecords: [] };
+
+    const announcementsMap = new Map<string, FeedPost>();
+    for (const a of announcementsData) {
+      if (a?.id) announcementsMap.set(a.id, a);
+    }
+
+    const currentPostsMap = new Map<string, FeedPost>();
+    if (Array.isArray(feedPostsRef.current)) {
+      for (const p of feedPostsRef.current) {
+        if (p?.id) currentPostsMap.set(p.id, p);
+      }
+    }
+    if (Array.isArray(announcementPostsRef.current)) {
+      for (const p of announcementPostsRef.current) {
+        if (p?.id) {
+          const prev = currentPostsMap.get(p.id);
+          currentPostsMap.set(p.id, {
+            ...p,
+            reactions: mergeReactions(prev?.reactions, p.reactions, viewerKey),
+            comments: mergeComments(prev?.comments, p.comments),
+          });
+        }
+      }
+    }
+    for (const a of announcementsData) {
+      if (a?.id) {
+        const prev = currentPostsMap.get(a.id);
+        currentPostsMap.set(a.id, {
+          ...a,
+          reactions: mergeReactions(a.reactions, prev?.reactions, viewerKey),
+          comments: mergeComments(a.comments, prev?.comments),
+        });
+      }
+    }
+
+    const dynamicCrmSnippets = generateCrmAnnouncements({
+      crmFeedItems: Array.isArray(input.crmItems) ? input.crmItems : [],
+      overallTargets,
+      branchTargets,
+      topPerformers: Array.isArray(leaderboardData) ? leaderboardData : [],
+      people: Array.isArray(crmPeopleData) ? crmPeopleData : [],
+      records: Array.isArray(crmRecordsData) ? crmRecordsData : (crmRecordsData?.individualRecords || []),
+      teamRecords: crmRecordsData?.teamRecords || [],
+      existingPostsMap: currentPostsMap,
+    });
+
+    const announcementBroadcasts: FeedPost[] = [];
+    for (const post of announcementsData) {
+      const pId = String(post.id || '').toLowerCase();
+      const pTitle = String(post.title || '').toLowerCase();
+      const pContent = String(post.content || '').toLowerCase();
+
+      if (
+        pId === 'post-1' ||
+        pId === 'post-2' ||
+        pId === 'post-3' ||
+        pId === 'post-1789470715315' ||
+        pId === 'post-1790950160406' ||
+        pId === 'announcement-yesterday-1' ||
+        pId === 'performer-yesterday-1' ||
+        pId === 'crm-announcement-official-corridor-broadcast' ||
+        pId.startsWith('crm-token-') ||
+        pId.startsWith('crm-event-') ||
+        pId.startsWith('deal-yesterday-') ||
+        pId.startsWith('crm-target-') ||
+        pTitle === 'hello' ||
+        pContent === 'hello hub' ||
+        pTitle.includes('sarah jenkins') ||
+        pContent.includes('sarah jenkins') ||
+        pContent.includes('deal #4828') ||
+        pContent.includes('sarjapura phase 2') ||
+        pTitle.includes('jp nagar hit 80%') ||
+        pContent.includes('on track to smash this month') ||
+        pTitle.startsWith('new token') ||
+        pTitle.includes('client consultation') ||
+        pTitle.includes('virtual meeting') ||
+        pTitle.includes('quarterly operating corridor') ||
+        pTitle.includes('townhall scheduled') ||
+        pTitle.includes('gross booking · ₹90,259') ||
+        pTitle.includes('gross booking · ₹54,329') ||
+        pTitle.includes('gross booking · ₹18,717') ||
+        pContent.includes('sreeraj alakkassery') ||
+        pContent.includes('nagaraju nalam') ||
+        pContent.includes('thesnim')
+      ) {
+        continue;
+      }
+      const existingLocal = currentPostsMap.get(post.id);
+      const reactions = mergeReactions(post.reactions, existingLocal?.reactions, viewerKey);
+      const comments = mergeComments(post.comments, existingLocal?.comments);
+      const commentsCount = Math.max(post.comments?.length || post.commentsCount || 0, comments.length, existingLocal?.commentsCount || 0);
+
+      announcementBroadcasts.push({
+        ...post,
+        content: cleanPostContent(post.content),
+        reactions,
+        commentsCount,
+        comments,
+      });
+    }
+
+    const announcementPostsMap = new Map<string, FeedPost>();
+    for (const s of dynamicCrmSnippets) {
+      const dbPost = announcementsMap.get(s.id);
+      const localPost = currentPostsMap.get(s.id);
+      const reactions = mergeReactions(
+        s.reactions,
+        mergeReactions(dbPost?.reactions, localPost?.reactions, viewerKey),
+        viewerKey
+      );
+      const comments = mergeComments(s.comments, mergeComments(dbPost?.comments, localPost?.comments));
+      announcementPostsMap.set(s.id, {
+        ...s,
+        reactions,
+        comments,
+        commentsCount: Math.max(s.commentsCount || 0, comments.length),
+      });
+    }
+
+    for (const b of announcementBroadcasts) {
+      if (announcementPostsMap.has(b.id)) {
+        const existing = announcementPostsMap.get(b.id)!;
+        announcementPostsMap.set(b.id, {
+          ...existing,
+          reactions: mergeReactions(existing.reactions, b.reactions, viewerKey),
+          comments: mergeComments(existing.comments, b.comments),
+          commentsCount: Math.max(existing.commentsCount, b.comments?.length || 0),
+        });
+      } else {
+        announcementPostsMap.set(b.id, b);
+      }
+    }
+
+    if (Array.isArray(announcementPostsRef.current)) {
+      for (const p of announcementPostsRef.current) {
+        if (p?.id && !announcementPostsMap.has(p.id) && !String(p.id).startsWith('crm-')) {
+          announcementPostsMap.set(p.id, p);
+        }
+      }
+    }
+
+    const suppressed = suppressedAnnouncementIdsRef.current;
+    return Array.from(announcementPostsMap.values())
+      .filter((p) => !suppressed.has(p.id))
+      .sort((a, b) => {
+        const tA = new Date(a.createdAt || 0).getTime();
+        const tB = new Date(b.createdAt || 0).getTime();
+        return tB - tA;
+      });
+  };
+
   // Fetch announcements and live CRM targets / bookings
   const refreshFeed = async () => {
+    const gen = ++feedRefreshGen.current;
+    const stale = () => gen !== feedRefreshGen.current;
     try {
+      if (announcementPostsRef.current.length === 0) setAnnouncementsLoading(true);
       const apiUrl = HALLWAY_LOCAL_API || '/api';
       const announcementsPromise = fetch(`${apiUrl}/announcements`)
         .then((res) => (res.ok ? res.json() : null))
@@ -642,6 +815,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
       });
 
+      let partialAnnouncements: any = undefined;
+      let partialFeed: any[] | undefined;
+      let partialPainted = false;
+      let sealed = false;
+      const paintPartial = () => {
+        if (stale() || sealed) return;
+        if (announcementPostsRef.current.length > 0 && !partialPainted) return;
+        const feedSettled = partialFeed !== undefined;
+        const broadcasts = Array.isArray(partialAnnouncements) ? partialAnnouncements : [];
+        if (!feedSettled && broadcasts.length === 0) return;
+        const early = publishLiveAnnouncements({
+          announcementsData: broadcasts,
+          crmItems: partialFeed || [],
+        });
+        if (early.length > 0 || feedSettled) {
+          partialPainted = true;
+          setAnnouncementPosts(early);
+          setAnnouncementsLoading(false);
+        }
+      };
+      void announcementsPromise.then((data) => {
+        partialAnnouncements = data;
+        paintPartial();
+      });
+      void crmFeedPromise.then((items) => {
+        partialFeed = items;
+        paintPartial();
+      });
+
       const [
         announcementsData,
         crmItems,
@@ -663,6 +865,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         crmActionsPromise,
         ...branchTargetPromises,
       ]);
+      if (stale()) return;
 
       // Sync verified profile details from active live CRM directory
       if (Array.isArray(crmPeopleData) && crmPeopleData.length > 0 && currentUser?.name) {
@@ -837,134 +1040,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       // Dashboard Feed strictly contains the 4 Monthly Target cards (All Hubs -> sorted branches descending by %)
       setFeedPosts(targetPosts);
+      if (stale()) return;
 
-      // Dynamic CRM Snippets Engine (All 13 Dynamic Enterprise CRM Scenarios)
-      const dynamicCrmSnippets = generateCrmAnnouncements({
-        crmFeedItems: Array.isArray(crmItems) ? crmItems : [],
+      const combinedAnnouncements = publishLiveAnnouncements({
+        announcementsData,
+        crmItems: Array.isArray(crmItems) ? crmItems : [],
         overallTargets,
         branchTargets,
-        topPerformers: Array.isArray(leaderboardData) ? leaderboardData : [],
-        people: Array.isArray(crmPeopleData) ? crmPeopleData : [],
-        records: Array.isArray(crmRecordsData) ? crmRecordsData : ((crmRecordsData as any)?.individualRecords || []),
-        teamRecords: (crmRecordsData as any)?.teamRecords || [],
-        existingPostsMap: currentPostsMap,
+        leaderboardData,
+        crmPeopleData,
+        crmRecordsData,
       });
-
-      // 3. Announcements Page Feed (HUB Live Feed Snippets Engine)
-      // Excludes repeating raw target cards (crm-target-*) and legacy mock bookings, displaying rich dynamic CRM announcement snippets!
-      const announcementBroadcasts: FeedPost[] = [];
-      if (Array.isArray(announcementsData)) {
-        for (const post of announcementsData) {
-          const pId = String(post.id || '').toLowerCase();
-          const pTitle = String(post.title || '').toLowerCase();
-          const pContent = String(post.content || '').toLowerCase();
-
-          // Reject legacy dummy/mock posts
-          if (
-            pId === 'post-1' ||
-            pId === 'post-2' ||
-            pId === 'post-3' ||
-            pId === 'post-1789470715315' ||
-            pId === 'post-1790950160406' ||
-            pId === 'announcement-yesterday-1' ||
-            pId === 'performer-yesterday-1' ||
-            pId === 'crm-announcement-official-corridor-broadcast' ||
-            pId.startsWith('crm-token-') ||
-            pId.startsWith('crm-event-') ||
-            pId.startsWith('deal-yesterday-') ||
-            pId.startsWith('crm-target-') ||
-            pTitle === 'hello' ||
-            pContent === 'hello hub' ||
-            pTitle.includes('sarah jenkins') ||
-            pContent.includes('sarah jenkins') ||
-            pContent.includes('deal #4828') ||
-            pContent.includes('sarjapura phase 2') ||
-            pTitle.includes('jp nagar hit 80%') ||
-            pContent.includes('on track to smash this month') ||
-            pTitle.startsWith('new token') ||
-            pTitle.includes('client consultation') ||
-            pTitle.includes('virtual meeting') ||
-            pTitle.includes('quarterly operating corridor') ||
-            pTitle.includes('townhall scheduled') ||
-            pTitle.includes('gross booking · ₹90,259') ||
-            pTitle.includes('gross booking · ₹54,329') ||
-            pTitle.includes('gross booking · ₹18,717') ||
-            pContent.includes('sreeraj alakkassery') ||
-            pContent.includes('nagaraju nalam') ||
-            pContent.includes('thesnim')
-          ) {
-            continue;
-          }
-          const existingLocal = currentPostsMap.get(post.id);
-          const reactions = mergeReactions(post.reactions, existingLocal?.reactions, viewerKey);
-          const comments = mergeComments(post.comments, existingLocal?.comments);
-          const commentsCount = Math.max(post.comments?.length || post.commentsCount || 0, comments.length, existingLocal?.commentsCount || 0);
-
-          announcementBroadcasts.push({
-            ...post,
-            content: cleanPostContent(post.content),
-            reactions,
-            commentsCount,
-            comments,
-          });
-        }
-      }
-
-      // Merge broadcast announcements + CRM snippet engine
-      const announcementPostsMap = new Map<string, FeedPost>();
-
-      // 1. Dynamic CRM Snippets (Priti Dutta, milestones, records): preserve rich generated copy while merging DB and in-memory reactions/comments
-      for (const s of dynamicCrmSnippets) {
-        const dbPost = announcementsMap.get(s.id);
-        const localPost = currentPostsMap.get(s.id);
-        const reactions = mergeReactions(
-          s.reactions,
-          mergeReactions(dbPost?.reactions, localPost?.reactions, viewerKey),
-          viewerKey
-        );
-        const comments = mergeComments(s.comments, mergeComments(dbPost?.comments, localPost?.comments));
-        announcementPostsMap.set(s.id, {
-          ...s,
-          reactions,
-          comments,
-          commentsCount: Math.max(s.commentsCount || 0, comments.length),
-        });
-      }
-
-      // 2. User broadcast announcements from database
-      for (const b of announcementBroadcasts) {
-        if (announcementPostsMap.has(b.id)) {
-          const existing = announcementPostsMap.get(b.id)!;
-          announcementPostsMap.set(b.id, {
-            ...existing,
-            reactions: mergeReactions(existing.reactions, b.reactions, viewerKey),
-            comments: mergeComments(existing.comments, b.comments),
-            commentsCount: Math.max(existing.commentsCount, b.comments?.length || 0),
-          });
-        } else {
-          announcementPostsMap.set(b.id, b);
-        }
-      }
-
-      // 3. Preserve any in-memory newly created broadcast posts
-      if (Array.isArray(announcementPostsRef.current)) {
-        for (const p of announcementPostsRef.current) {
-          if (p?.id && !announcementPostsMap.has(p.id)) {
-            announcementPostsMap.set(p.id, p);
-          }
-        }
-      }
-
-      const suppressed = suppressedAnnouncementIdsRef.current;
-      const combinedAnnouncements = Array.from(announcementPostsMap.values())
-        .filter((p) => !suppressed.has(p.id))
-        .sort((a, b) => {
-          const tA = new Date(a.createdAt || 0).getTime();
-          const tB = new Date(b.createdAt || 0).getTime();
-          return tB - tA;
-        });
-
+      sealed = true;
+      if (stale()) return;
       setAnnouncementPosts(combinedAnnouncements);
+      setAnnouncementsLoading(false);
 
       const liveNotifs = buildDynamicNotifications({
         currentUser,
@@ -1008,31 +1098,36 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // Keep company campaign in sync for every member (not device-local)
       void loadActiveCampaign();
     } catch {
-      // Offline fallback preserved in state
+      if (!stale()) setAnnouncementsLoading(false);
     }
   };
 
-  // Initial load, periodic background polling (every 25s), and tab focus re-sync
+  const refreshFeedRef = useRef(refreshFeed);
+  refreshFeedRef.current = refreshFeed;
+
+  // Load once the person is signed in, then keep the live feed fresh.
   useEffect(() => {
-    void refreshFeed();
+    if (!authReady || !isAuthenticated) return;
+    void refreshFeedRef.current();
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        void refreshFeed();
+        void refreshFeedRef.current();
       }
     }, 25000);
 
     const onVisible = () => {
       if (document.visibilityState === 'visible') {
-        void refreshFeed();
+        void refreshFeedRef.current();
       }
     };
     document.addEventListener('visibilitychange', onVisible);
 
     return () => {
+      feedRefreshGen.current += 1;
       clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, []);
+  }, [authReady, isAuthenticated]);
 
   const toggleTheme = () => {
     setTheme((prev) => {
@@ -1725,6 +1820,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setSearchQuery,
         feedPosts,
         announcementPosts,
+        announcementsLoading,
         addReaction,
         addComment,
         likeComment,
