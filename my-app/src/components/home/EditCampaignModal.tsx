@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, Tag, MapPin, Calendar, Percent, Check, Sparkles } from 'lucide-react';
 import { ActiveCampaign } from '../../types';
 
@@ -8,7 +8,7 @@ interface EditCampaignModalProps {
   isOpen: boolean;
   onClose: () => void;
   campaign: ActiveCampaign;
-  onSave: (updated: Partial<ActiveCampaign>) => void;
+  onSave: (updated: Partial<ActiveCampaign>) => Promise<{ ok: boolean; error?: string }>;
 }
 
 const inputClass =
@@ -35,50 +35,76 @@ export default function EditCampaignModal({
     }
   });
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const wasOpen = useRef(false);
 
   useEffect(() => {
-    if (isOpen) {
-      setTitle(campaign.title);
-      setBranchName(campaign.branchName);
-      setDescription(campaign.description);
-      setDiscountPercent(campaign.discountPercent);
-      try {
-        const d = new Date(campaign.targetDate);
-        setTargetDate(
-          new Date(d.getTime() - d.getTimezoneOffset() * 60000)
-            .toISOString()
-            .slice(0, 16)
-        );
-      } catch {
-        setTargetDate('');
-      }
-      setSavedSuccess(false);
+    if (!isOpen) {
+      wasOpen.current = false;
+      return;
     }
+    if (wasOpen.current) return;
+    wasOpen.current = true;
+    setTitle(campaign.title);
+    setBranchName(campaign.branchName);
+    setDescription(campaign.description);
+    setDiscountPercent(campaign.discountPercent);
+    try {
+      const d = new Date(campaign.targetDate);
+      setTargetDate(
+        Number.isNaN(d.getTime())
+          ? ''
+          : new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+      );
+    } catch {
+      setTargetDate('');
+    }
+    setSavedSuccess(false);
+    setSaving(false);
+    setSaveError('');
   }, [isOpen, campaign]);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (saving) return;
+
+    const nextTitle = title.trim();
+    if (!nextTitle) {
+      setSaveError('Campaign title is required.');
+      return;
+    }
 
     let isoDate = campaign.targetDate;
     if (targetDate) {
-      try {
-        isoDate = new Date(targetDate).toISOString();
-      } catch {
-        /* keep previous */
+      const parsed = new Date(targetDate);
+      if (Number.isNaN(parsed.getTime())) {
+        setSaveError('Enter a valid expiry date.');
+        return;
       }
+      isoDate = parsed.toISOString();
     }
 
-    onSave({
-      id: campaign.id || `camp-${Date.now()}`,
-      title: title.trim() || campaign.title,
+    setSaving(true);
+    setSaveError('');
+    const result = await onSave({
+      id: 'camp-company-active',
+      title: nextTitle,
       branchName: branchName.trim() || 'All Hubs',
       description: description.trim(),
       discountPercent: discountPercent.trim(),
+      voucherCode: campaign.voucherCode || '',
       targetDate: isoDate,
       isActive: true,
     });
+    setSaving(false);
+
+    if (!result.ok) {
+      setSaveError(result.error || 'Could not save the campaign.');
+      return;
+    }
 
     setSavedSuccess(true);
     setTimeout(() => {
@@ -136,7 +162,7 @@ export default function EditCampaignModal({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               className={inputClass}
-              placeholder="e.g. Indiranagar Launch Boost"
+              placeholder="e.g. Festive booking boost"
             />
           </div>
 
@@ -146,17 +172,19 @@ export default function EditCampaignModal({
                 <MapPin className="h-3 w-3 text-brand" />
                 <span>Applicable Branch</span>
               </label>
-              <select
+              <input
+                type="text"
+                list="campaign-branch-presets"
                 value={branchName}
                 onChange={(e) => setBranchName(e.target.value)}
                 className={inputClass}
-              >
+                placeholder="e.g. HBR Layout Hub"
+              />
+              <datalist id="campaign-branch-presets">
                 {BRANCH_PRESETS.map((b) => (
-                  <option key={b} value={b}>
-                    {b}
-                  </option>
+                  <option key={b} value={b} />
                 ))}
-              </select>
+              </datalist>
             </div>
 
             <div>
@@ -200,6 +228,10 @@ export default function EditCampaignModal({
             />
           </div>
 
+          {saveError ? (
+            <p className="text-xs font-semibold text-brand">{saveError}</p>
+          ) : null}
+
           <div className="flex items-center justify-end gap-2 border-t border-accent-gold/25 pt-3 dark:border-accent-gold/15">
             <button
               type="button"
@@ -210,7 +242,8 @@ export default function EditCampaignModal({
             </button>
             <button
               type="submit"
-              className="flex cursor-pointer items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-xs font-bold text-white shadow-sm shadow-brand/25 ring-1 ring-accent-gold/60 transition-all hover:bg-brand-hover"
+              disabled={saving}
+              className="flex cursor-pointer items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-xs font-bold text-white shadow-sm shadow-brand/25 ring-1 ring-accent-gold/60 transition-all hover:bg-brand-hover disabled:cursor-wait disabled:opacity-70"
             >
               {savedSuccess ? (
                 <>
@@ -218,7 +251,7 @@ export default function EditCampaignModal({
                   <span>Saved!</span>
                 </>
               ) : (
-                <span>Save Changes</span>
+                <span>{saving ? 'Saving…' : 'Save Changes'}</span>
               )}
             </button>
           </div>

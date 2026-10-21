@@ -191,7 +191,9 @@ interface AppContextType {
     customDetails?: string;
   }) => Promise<FeedPost>;
   activeCampaign: ActiveCampaign;
-  updateActiveCampaign: (campaign: Partial<ActiveCampaign>) => void;
+  updateActiveCampaign: (
+    campaign: Partial<ActiveCampaign>
+  ) => Promise<{ ok: boolean; error?: string }>;
 }
 
 const HALLWAY_SESSION_KEY = 'hallway-auth';
@@ -1573,7 +1575,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return post;
   };
 
-  const [activeCampaign, setActiveCampaign] = useState<ActiveCampaign>({
+  const emptyCampaign = (): ActiveCampaign => ({
     id: '',
     title: '',
     branchName: '',
@@ -1584,25 +1586,42 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     isActive: false,
   });
 
+  const sameCampaign = (a: ActiveCampaign, b: ActiveCampaign) =>
+    a.id === b.id &&
+    a.title === b.title &&
+    a.branchName === b.branchName &&
+    a.description === b.description &&
+    a.voucherCode === b.voucherCode &&
+    a.discountPercent === b.discountPercent &&
+    a.targetDate === b.targetDate &&
+    a.isActive === b.isActive;
+
+  const [activeCampaign, setActiveCampaign] = useState<ActiveCampaign>(emptyCampaign);
+  const campaignLoadGen = useRef(0);
+
   /** Company-wide campaign from hallway_db — same for every member/device. */
   const loadActiveCampaign = async () => {
+    const gen = campaignLoadGen.current;
     const apiUrl = HALLWAY_LOCAL_API || '/api';
     try {
       const res = await fetch(`${apiUrl}/campaign`, { cache: 'no-store' });
-      if (!res.ok) return;
+      if (!res.ok || gen !== campaignLoadGen.current) return;
       const data = await res.json();
-      if (data?.title) {
-        setActiveCampaign({
-          id: data.id || 'camp-company-active',
-          title: data.title,
-          branchName: data.branchName || '',
-          description: data.description || '',
-          voucherCode: data.voucherCode || '',
-          discountPercent: data.discountPercent || '',
-          targetDate: data.targetDate || '',
-          isActive: data.isActive !== false,
-        });
-      }
+      if (gen !== campaignLoadGen.current) return;
+      const next: ActiveCampaign =
+        !data?.title || data.isActive === false
+          ? emptyCampaign()
+          : {
+              id: data.id || 'camp-company-active',
+              title: data.title,
+              branchName: data.branchName || '',
+              description: data.description || '',
+              voucherCode: data.voucherCode || '',
+              discountPercent: data.discountPercent || '',
+              targetDate: data.targetDate || '',
+              isActive: true,
+            };
+      setActiveCampaign((prev) => (sameCampaign(prev, next) ? prev : next));
     } catch {
       // keep current state if offline
     }
@@ -1612,37 +1631,55 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     void loadActiveCampaign();
   }, []);
 
-  const updateActiveCampaign = (updated: Partial<ActiveCampaign>) => {
-    setActiveCampaign((prev) => {
-      const next = { ...prev, ...updated, isActive: updated.isActive !== false };
-      const apiUrl = HALLWAY_LOCAL_API || '/api';
-      void fetch(`${apiUrl}/campaign`, {
+  const updateActiveCampaign = async (
+    updated: Partial<ActiveCampaign>
+  ): Promise<{ ok: boolean; error?: string }> => {
+    const gen = ++campaignLoadGen.current;
+    const apiUrl = HALLWAY_LOCAL_API || '/api';
+    try {
+      const res = await fetch(`${apiUrl}/campaign`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...next,
+          id: 'camp-company-active',
+          title: updated.title,
+          branchName: updated.branchName,
+          description: updated.description,
+          voucherCode: updated.voucherCode,
+          discountPercent: updated.discountPercent,
+          targetDate: updated.targetDate,
+          isActive: true,
           actor: {
             name: currentUser?.name,
             email: currentUser?.email,
             role: currentUser?.role,
           },
         }),
-      })
-        .then(async (res) => {
-          if (!res.ok) {
-            void loadActiveCampaign();
-            return;
-          }
-          const data = await res.json();
-          if (data?.campaign?.title) {
-            setActiveCampaign(data.campaign);
-          }
-        })
-        .catch(() => {
-          void loadActiveCampaign();
-        });
-      return next;
-    });
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.campaign?.title) {
+        campaignLoadGen.current = gen + 1;
+        void loadActiveCampaign();
+        return {
+          ok: false,
+          error: data?.error || 'Could not save the campaign.',
+        };
+      }
+      campaignLoadGen.current = gen + 1;
+      setActiveCampaign({
+        id: data.campaign.id || 'camp-company-active',
+        title: data.campaign.title,
+        branchName: data.campaign.branchName || '',
+        description: data.campaign.description || '',
+        voucherCode: data.campaign.voucherCode || '',
+        discountPercent: data.campaign.discountPercent || '',
+        targetDate: data.campaign.targetDate || '',
+        isActive: data.campaign.isActive !== false,
+      });
+      return { ok: true };
+    } catch {
+      return { ok: false, error: 'Could not save the campaign.' };
+    }
   };
 
   /** Read = dismiss: drop from inbox. Source data stays on Hallway; notif is not stored. */

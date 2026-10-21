@@ -926,17 +926,24 @@ export type HallwayActiveCampaign = {
   isActive: boolean;
 };
 
-const DEFAULT_ACTIVE_CAMPAIGN: HallwayActiveCampaign = {
-  id: 'camp-company-active',
-  title: 'Indiranagar Launch Boost',
-  branchName: 'Indiranagar Branch',
-  description:
-    'Exclusive limited-time discount for all new client deals closed in the new Indiranagar branch before Sunday night.',
-  voucherCode: 'INDIRA10',
-  discountPercent: '10% OFF',
-  targetDate: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000 + 12 * 60 * 60 * 1000).toISOString(),
-  isActive: true,
-};
+/** One company-wide campaign. Admins publish it; nothing is seeded. */
+const COMPANY_CAMPAIGN_ID = 'camp-company-active';
+
+/** The old starter row. Drop it so a real admin publish is the only campaign. */
+function isLegacySeedCampaign(row: {
+  title?: string;
+  voucher_code?: string;
+  description?: string;
+}): boolean {
+  const title = String(row.title || '').trim();
+  const voucher = String(row.voucher_code || '').trim();
+  const description = String(row.description || '');
+  return (
+    title === 'Indiranagar Launch Boost' &&
+    voucher === 'INDIRA10' &&
+    description.includes('new Indiranagar branch before Sunday night')
+  );
+}
 
 function rowToCampaign(row: any): HallwayActiveCampaign {
   return {
@@ -951,51 +958,53 @@ function rowToCampaign(row: any): HallwayActiveCampaign {
   };
 }
 
-/** Load the single company campaign — seeded once if missing. Visible to every member. */
-export async function getActiveCampaign(): Promise<HallwayActiveCampaign> {
+/** The published company campaign, or null when an admin has not set one. */
+export async function getActiveCampaign(): Promise<HallwayActiveCampaign | null> {
   const pool = getPool();
   await ensureHallwaySchema();
-  const [rows] = await pool.query<any[]>(
-    'SELECT * FROM active_campaign ORDER BY updated_at DESC LIMIT 1'
-  );
-  if (rows.length > 0) {
-    return rowToCampaign(rows[0]);
+  const [existing] = await pool.query<any[]>('SELECT * FROM active_campaign');
+  for (const row of existing) {
+    if (isLegacySeedCampaign(row)) {
+      await pool.query('DELETE FROM active_campaign WHERE id = ?', [row.id]);
+    }
   }
 
-  await pool.query(
-    `INSERT INTO active_campaign (
-      id, title, branch_name, description, voucher_code, discount_percent, target_date, is_active
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      DEFAULT_ACTIVE_CAMPAIGN.id,
-      DEFAULT_ACTIVE_CAMPAIGN.title,
-      DEFAULT_ACTIVE_CAMPAIGN.branchName,
-      DEFAULT_ACTIVE_CAMPAIGN.description,
-      DEFAULT_ACTIVE_CAMPAIGN.voucherCode,
-      DEFAULT_ACTIVE_CAMPAIGN.discountPercent,
-      new Date(DEFAULT_ACTIVE_CAMPAIGN.targetDate),
-      1,
-    ]
+  const [rows] = await pool.query<any[]>(
+    `SELECT * FROM active_campaign
+     WHERE is_active = 1
+     ORDER BY (id = ?) DESC, updated_at DESC
+     LIMIT 1`,
+    [COMPANY_CAMPAIGN_ID]
   );
-  return { ...DEFAULT_ACTIVE_CAMPAIGN };
+  if (rows.length === 0) return null;
+  return rowToCampaign(rows[0]);
 }
 
-/** Upsert company campaign (admin-only at API layer). */
+/** Publish the one company campaign. Admin saves replace this row and turn it on. */
 export async function upsertActiveCampaign(
   data: Partial<HallwayActiveCampaign> & { title?: string }
 ): Promise<HallwayActiveCampaign> {
   const pool = getPool();
   await ensureHallwaySchema();
-  const current = await getActiveCampaign();
+  const title = String(data.title || '').trim();
+  if (!title) {
+    throw new Error('Campaign title is required');
+  }
+
+  const [rows] = await pool.query<any[]>(
+    'SELECT * FROM active_campaign WHERE id = ? LIMIT 1',
+    [COMPANY_CAMPAIGN_ID]
+  );
+  const current = rows[0] ? rowToCampaign(rows[0]) : null;
   const next: HallwayActiveCampaign = {
-    id: data.id || current.id || DEFAULT_ACTIVE_CAMPAIGN.id,
-    title: (data.title ?? current.title).trim() || current.title,
-    branchName: (data.branchName ?? current.branchName).trim(),
-    description: (data.description ?? current.description).trim(),
-    voucherCode: (data.voucherCode ?? current.voucherCode).trim(),
-    discountPercent: (data.discountPercent ?? current.discountPercent).trim(),
-    targetDate: data.targetDate || current.targetDate || DEFAULT_ACTIVE_CAMPAIGN.targetDate,
-    isActive: data.isActive !== undefined ? Boolean(data.isActive) : true,
+    id: COMPANY_CAMPAIGN_ID,
+    title,
+    branchName: (data.branchName ?? current?.branchName ?? '').trim(),
+    description: (data.description ?? current?.description ?? '').trim(),
+    voucherCode: (data.voucherCode ?? current?.voucherCode ?? '').trim(),
+    discountPercent: (data.discountPercent ?? current?.discountPercent ?? '').trim(),
+    targetDate: data.targetDate || current?.targetDate || '',
+    isActive: data.isActive !== false,
   };
 
   await pool.query(
@@ -1021,6 +1030,7 @@ export async function upsertActiveCampaign(
       next.isActive ? 1 : 0,
     ]
   );
+  await pool.query('DELETE FROM active_campaign WHERE id <> ?', [COMPANY_CAMPAIGN_ID]);
 
   return next;
 }
