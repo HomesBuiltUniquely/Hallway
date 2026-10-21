@@ -1,8 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Gift, Clock, Sparkles, MapPin, ArrowRight, Pencil } from 'lucide-react';
-import { openCrmDashboard } from '../../lib/modulePortals';
+import { Gift, Clock, Sparkles, MapPin, Pencil } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { isAdmin, isSuperAdmin } from '../../lib/permissions';
 import EditCampaignModal from './EditCampaignModal';
@@ -153,20 +152,6 @@ export default function WidgetCampaign() {
           <p className="mt-1 text-[10px] font-medium text-white/55">
             Applies to all deals closed before deadline
           </p>
-        </div>
-
-        <div className="relative z-10 flex items-center justify-between border-t border-accent-gold/25 pt-2 text-xs dark:border-accent-gold/15">
-          <span className="text-[11px] text-slate-500 dark:text-slate-400">
-            Apply in CRM deal quote
-          </span>
-          <button
-            type="button"
-            onClick={() => openCrmDashboard()}
-            className="group/btn inline-flex cursor-pointer items-center gap-1 text-xs font-bold text-brand transition-colors hover:text-brand-hover"
-          >
-            <span>Open CRM Deals</span>
-            <ArrowRight className="h-3 w-3 transition-transform group-hover/btn:translate-x-0.5" />
-          </button>
         </div>
       </div>
       ) : (
