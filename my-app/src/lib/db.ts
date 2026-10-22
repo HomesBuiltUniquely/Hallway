@@ -187,6 +187,30 @@ export async function ensureHallwaySchema(): Promise<void> {
         updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS celebration_events (
+        id VARCHAR(64) PRIMARY KEY,
+        booking_id VARCHAR(64) NOT NULL,
+        celebration_type VARCHAR(32) NOT NULL,
+        salesperson_name VARCHAR(255) NOT NULL,
+        branch_name VARCHAR(255) NULL,
+        customer_name VARCHAR(255) NULL,
+        quote_amount DECIMAL(14,2) NOT NULL,
+        announcement_id VARCHAR(191) NOT NULL,
+        occurred_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_celebration_booking (booking_id),
+        INDEX idx_celebration_occurred (occurred_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS celebration_receipts (
+        event_id VARCHAR(64) NOT NULL,
+        viewer_key VARCHAR(191) NOT NULL,
+        seen_at DATETIME NULL,
+        congratulated_at DATETIME NULL,
+        PRIMARY KEY (event_id, viewer_key)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
   })().catch((err) => {
     _schemaReady = null;
     throw err;

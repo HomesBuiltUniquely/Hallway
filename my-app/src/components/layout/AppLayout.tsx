@@ -5,11 +5,12 @@ import { usePathname, useRouter } from 'next/navigation';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import { useApp } from '../../context/AppContext';
+import BookingCelebration from '../celebrations/BookingCelebration';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { isAuthenticated, authReady, sidebarCollapsed, isSidebarHovered } = useApp();
+  const { isAuthenticated, authReady, sidebarCollapsed, isSidebarHovered, currentUser } = useApp();
   const isExpanded = !sidebarCollapsed || isSidebarHovered;
   const isLoginRoute = pathname === '/login';
 
@@ -49,6 +50,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           {children}
         </div>
       </main>
+      <BookingCelebration
+        apiBase=""
+        placement="center"
+        enabled={isAuthenticated}
+        viewerKey={(currentUser.email || currentUser.id || currentUser.name || '').trim()}
+        viewerName={currentUser.name || 'Hub member'}
+      />
     </div>
   );
 }

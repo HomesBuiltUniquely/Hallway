@@ -362,7 +362,7 @@ function defaultReactions() {
 /**
  * Home announcement register.
  * Bookings and performer cards come from CRM.booking_token_record.
- * The milestone card uses the targets Achieved figure, and only when that is ₹80L or more.
+ * The milestone card uses the targets Achieved figure, and only when that is ₹1 crore or more.
  */
 export function generateCrmAnnouncements({
   crmFeedItems = [],
@@ -372,7 +372,7 @@ export function generateCrmAnnouncements({
 }: CrmGeneratorInputs): FeedPost[] {
   const posts: FeedPost[] = [];
   const seenIds = new Set<string>();
-  const EIGHTY_LAKH_INR = 8_000_000;
+  const ONE_CRORE_INR = 10_000_000;
 
   const register = (crmFeedItems || []).filter(
     (item) => item.registerKind && item.registerKind !== 'milestone' && item.registerKind !== 'monthly'
@@ -451,7 +451,7 @@ export function generateCrmAnnouncements({
   }
 
   const achievedInr = Number(overallTargets[0]?.currentInr) || 0;
-  if (achievedInr >= EIGHTY_LAKH_INR) {
+  if (achievedInr >= ONE_CRORE_INR) {
     const monthKey = istYmd().slice(0, 7);
     const milestoneId = `crm-month-milestone-${monthKey}`;
     if (!seenIds.has(milestoneId)) {
@@ -462,7 +462,7 @@ export function generateCrmAnnouncements({
         type: 'quota',
         categoryColor: '#0284C7',
         iconEmoji: '🎯',
-        title: 'Company crossed ₹80L this month',
+        title: 'Company crossed ₹1 Cr this month',
         timestamp: 'This month',
         createdAt: `${istYmd()}T12:00:00+05:30`,
         author: {

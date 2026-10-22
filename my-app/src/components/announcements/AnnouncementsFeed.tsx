@@ -85,6 +85,23 @@ export default function AnnouncementsFeed({
     return getTime(b) - getTime(a);
   });
 
+  useEffect(() => {
+    const targetId = new URLSearchParams(window.location.search).get('announcement');
+    if (!targetId) return;
+    let tries = 0;
+    const timer = window.setInterval(() => {
+      const node = document.getElementById(`announcement-${targetId}`);
+      tries += 1;
+      if (node) {
+        node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        window.clearInterval(timer);
+      } else if (tries > 20) {
+        window.clearInterval(timer);
+      }
+    }, 400);
+    return () => window.clearInterval(timer);
+  }, [sortedAnnouncements.length]);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -129,7 +146,9 @@ export default function AnnouncementsFeed({
         }
       >
         {sortedAnnouncements.map((post) => (
-          <HubLiveFeedCard key={post.id} post={post} />
+          <div id={`announcement-${post.id}`} key={post.id}>
+            <HubLiveFeedCard post={post} />
+          </div>
         ))}
       </div>
 

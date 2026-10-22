@@ -713,6 +713,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         pId.startsWith('crm-event-') ||
         pId.startsWith('deal-yesterday-') ||
         pId.startsWith('crm-target-') ||
+        pId.startsWith('crm-month-milestone-') ||
         pTitle === 'hello' ||
         pContent === 'hello hub' ||
         pTitle.includes('sarah jenkins') ||
