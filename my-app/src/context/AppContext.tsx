@@ -38,6 +38,42 @@ import {
   formatPersonName,
   formatExactIstTimestamp
 } from '../lib/hallwayDisplay';
+
+/** Saved CRM cards from the old feed. They used the token amount and a lead id. */
+function isLegacyCrmAnnouncement(post: { id?: string; title?: string; content?: string }): boolean {
+  const id = String(post.id || '').toLowerCase();
+  if (
+    id.startsWith('crm-booking-') ||
+    id.startsWith('crm-weekly-top-') ||
+    id.startsWith('crm-monthly-top-') ||
+    id.startsWith('crm-month-milestone-')
+  ) {
+    return false;
+  }
+  const title = String(post.title || '').toLowerCase();
+  const content = String(post.content || '').toLowerCase();
+  if (
+    id.startsWith('crm-deal-') ||
+    id.startsWith('crm-db-') ||
+    id.startsWith('crm-announcement-') ||
+    id.startsWith('crm-hat-') ||
+    id.startsWith('crm-renova-') ||
+    id.startsWith('crm-target-') ||
+    id.startsWith('crm-token-') ||
+    id.startsWith('crm-event-')
+  ) {
+    return true;
+  }
+  return (
+    title.includes('spot closure') ||
+    title.includes('new hub record') ||
+    title.includes('hat-trick') ||
+    title.includes('renova strikes') ||
+    title.includes('top performer:') ||
+    content.includes('project #') ||
+    content.includes('hub crosses')
+  );
+}
 import { isSuperAdmin } from '../lib/permissions';
 import { getPersonalizedActions } from '../lib/hallwayPersonalization';
 
@@ -664,6 +700,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const pContent = String(post.content || '').toLowerCase();
 
       if (
+        isLegacyCrmAnnouncement(post) ||
         pId === 'post-1' ||
         pId === 'post-2' ||
         pId === 'post-3' ||

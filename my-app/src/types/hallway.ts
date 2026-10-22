@@ -232,6 +232,10 @@ export interface HallwayFeedAuthor {
 export interface HallwayFeedItem {
   id: string;
   type?: string;
+  /** Home register card. Absent on any leftover upstream feed row. */
+  registerKind?: 'booking' | 'weekly' | 'monthly' | 'milestone';
+  /** quote_amount for the rail, already formatted. */
+  quoteFormatted?: string;
   title: string;
   content: string;
   timestamp: string;
@@ -250,6 +254,7 @@ export interface HallwayFeedItem {
     customerName?: string;
     branchName?: string;
     createdAt?: string;
+    bookingDoneDate?: string;
   };
 }
 

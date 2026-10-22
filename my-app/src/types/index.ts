@@ -35,6 +35,8 @@ export interface FeedPost {
     team: string;
   };
   content: string;
+  /** CRM quote_amount for this card. Not the 10% amount received. */
+  quoteFormatted?: string;
   quotaProgress?: {
     current: number;
     target: number;

@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { KeyRound, Trophy, Target, Megaphone, SmilePlus, Trash2 } from 'lucide-react';
 import { FeedPost } from '../../types/index';
 import { useApp } from '../../context/AppContext';
-import { cleanPostContent, formatRelativeTime } from '../../lib/hallwayDisplay';
+import { cleanPostContent, formatRelativeTime, getYesterdayYmd, istYmd } from '../../lib/hallwayDisplay';
 import { canDeleteAnnouncement, canDeleteComment } from '../../lib/permissions';
 import UserAvatar from '../common/UserAvatar';
 
@@ -58,6 +58,12 @@ function categoryMeta(kind: CardKind): { label: string; colorClass: string; rail
 }
 
 function extractMetric(post: FeedPost, kind: CardKind): { value: string; unit: string } {
+  const name = post.author?.name?.trim();
+  const amount = post.quoteFormatted?.trim();
+  if (name && amount && kind !== 'announcement') {
+    return { value: name, unit: amount };
+  }
+
   const text = `${post.title || ''} ${post.content || ''}`;
 
   if (kind === 'quota' && post.quotaProgress) {
@@ -117,6 +123,25 @@ function TitleBoost({ kind }: { kind: CardKind }) {
   );
 }
 
+function cardTime(post: FeedPost): string {
+  if (post.id.startsWith('crm-weekly-top-')) return 'This week';
+  if (post.id.startsWith('crm-monthly-top-') || post.id.startsWith('crm-month-milestone-')) return 'This month';
+  if (post.id.startsWith('crm-booking-') && post.createdAt) {
+    const when = new Date(post.createdAt);
+    if (!Number.isNaN(when.getTime())) {
+      const ymd = istYmd(when);
+      if (ymd === istYmd()) return 'Today';
+      if (ymd === getYesterdayYmd()) return 'Yesterday';
+      return when.toLocaleDateString('en-IN', {
+        day: 'numeric',
+        month: 'short',
+        timeZone: 'Asia/Kolkata',
+      });
+    }
+  }
+  return formatRelativeTime(post.createdAt || post.timestamp);
+}
+
 function userKeyFor(id: string) {
   return `user${id.charAt(0).toUpperCase()}${id.slice(1)}`;
 }
@@ -142,10 +167,7 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
     [post.title]
   );
 
-  const relativeTime = useMemo(
-    () => formatRelativeTime(post.createdAt || post.timestamp),
-    [post.createdAt, post.timestamp]
-  );
+  const relativeTime = useMemo(() => cardTime(post), [post]);
 
   const reactions = post.reactions || {};
   const activeReactionChips = useMemo(
@@ -223,10 +245,16 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
               <span>{category.label}</span>
             </p>
             <p className="mt-0.5 text-xs text-slate-400">{relativeTime}</p>
-            <p className="mt-3 break-all text-[1.5rem] font-black leading-none tracking-tight text-slate-900 dark:text-white">
+            <p className="mt-3 break-words text-[19.6px] font-black leading-tight tracking-tight text-slate-900 dark:text-white">
               {metric.value}
             </p>
-            <p className="mt-1.5 text-sm leading-snug text-slate-500 dark:text-slate-400">
+            <p
+              className={`mt-1.5 text-sm font-bold leading-snug ${
+                metric.unit.trim().startsWith('₹')
+                  ? category.colorClass
+                  : 'text-slate-500 dark:text-slate-400'
+              }`}
+            >
               {metric.unit}
             </p>
           </div>
@@ -241,13 +269,13 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
           </p>
 
           {/* Chips + React + comment + delete — one row */}
-          <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-slate-100 pt-3 dark:border-slate-800">
+          <div className="mt-3 flex flex-nowrap items-center gap-3 border-t border-slate-100 pt-3 dark:border-slate-800">
             {activeReactionChips.map((r) => (
               <button
                 key={r.id}
                 type="button"
                 onClick={() => handleToggleReaction(r.id)}
-                className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[12px] transition-all ${
+                className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-full border px-2 text-[12px] transition-all ${
                   r.mine
                     ? 'border-brand/40 bg-brand-soft text-ink shadow-xs dark:text-white'
                     : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200'
@@ -259,11 +287,11 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
               </button>
             ))}
 
-            <div className="relative" ref={pickerRef}>
+            <div className="relative shrink-0" ref={pickerRef}>
               <button
                 type="button"
                 onClick={() => setShowReactionPicker((v) => !v)}
-                className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 ${
+                className={`inline-flex h-7 items-center gap-1 rounded-full px-1.5 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 ${
                   myReaction ? 'text-brand' : 'text-slate-500'
                 }`}
                 aria-label="Add reaction"
@@ -273,7 +301,7 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
                 ) : (
                   <SmilePlus className="h-4 w-4" />
                 )}
-                <span className="text-xs font-semibold">React</span>
+                <span className="text-xs font-semibold leading-none">React</span>
               </button>
 
               {showReactionPicker && (
@@ -303,7 +331,7 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
             <button
               type="button"
               onClick={() => setShowComments((v) => !v)}
-              className="cursor-pointer text-xs font-semibold text-slate-500 transition-colors hover:text-slate-800 dark:hover:text-slate-200"
+              className="inline-flex h-7 shrink-0 items-center whitespace-nowrap text-xs font-semibold leading-none text-slate-500 transition-colors hover:text-slate-800 dark:hover:text-slate-200"
             >
               {commentsCount > 0
                 ? `View all ${commentsCount} ${commentsCount === 1 ? 'comment' : 'comments'}`

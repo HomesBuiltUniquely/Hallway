@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { getPool } from './db';
+import { formatPersonName } from './hallwayDisplay';
 
 const DEFAULT_CRM = 'https://hows.hubinterior.com';
 const UPSTREAM_MS = 60_000;
@@ -476,14 +477,14 @@ function sanitizeHallwayRecordsPayload(payload: UpstreamPayload, _branchId?: str
       const before = parsed.individualRecords.length;
 
       parsed.individualRecords = parsed.individualRecords.filter((rec: any) => {
-        const isTestWord =
+          const isTestWord =
           testRegex.test(rec.holderName || '') || testRegex.test(rec.subValue || '');
-        const valNum = parseFloat(String(rec.value || '').replace(/[^0-9.]/g, ''));
-        const isZeroTurnaround =
-          rec.id === 'fastest_deal_close' &&
-          (valNum <= 0.05 ||
-            String(rec.subValue || '').toLowerCase().includes('g-2607') ||
-            String(rec.holderName || '').toLowerCase().includes('shalny'));
+          const valNum = parseFloat(String(rec.value || '').replace(/[^0-9.]/g, ''));
+          const isZeroTurnaround =
+            rec.id === 'fastest_deal_close' &&
+            (valNum <= 0.05 ||
+              String(rec.subValue || '').toLowerCase().includes('g-2607') ||
+              String(rec.holderName || '').toLowerCase().includes('shalny'));
         if (isTestWord) return false;
         if (isZeroTurnaround) return false;
         return true;
@@ -519,16 +520,16 @@ function sanitizeHallwayPeoplePayload(payload: UpstreamPayload): UpstreamPayload
       const testRegex = /\btest\b/i;
       const before = parsed.people.length;
       parsed.people = parsed.people.filter((person: any) => {
-        const name = String(person.name || '');
-        if (
-          testRegex.test(name) ||
-          name.toLowerCase().includes('shalny') ||
-          name.toLowerCase().includes('razi md') ||
-          name.toLowerCase().includes('inactive')
-        ) {
-          return false;
-        }
-        return true;
+          const name = String(person.name || '');
+          if (
+            testRegex.test(name) ||
+            name.toLowerCase().includes('shalny') ||
+            name.toLowerCase().includes('razi md') ||
+            name.toLowerCase().includes('inactive')
+          ) {
+            return false;
+          }
+          return true;
       });
       modified = parsed.people.length !== before;
     }
@@ -548,270 +549,244 @@ function sanitizeHallwayPeoplePayload(payload: UpstreamPayload): UpstreamPayload
   return payload;
 }
 
+const TEN_LAKH_INR = 1_000_000;
+const TEST_LEAD = /\btest\b/i;
+
+function istTodayYmd(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
+function shiftYmd(ymd: string, days: number): string {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  const yy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(dt.getUTCDate()).padStart(2, '0');
+  return `${yy}-${mm}-${dd}`;
+}
+
+function weekMondayYmd(ymd: string): string {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  const delta = dow === 0 ? -6 : 1 - dow;
+  return shiftYmd(ymd, delta);
+}
+
+function nextMonthYmd(ymd: string): string {
+  const [y, m] = ymd.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m, 1));
+  const yy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
+  return `${yy}-${mm}-01`;
+}
+
+function ymdFromDb(value: unknown): string {
+  if (!value) return '';
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const yy = value.getFullYear();
+    const mm = String(value.getMonth() + 1).padStart(2, '0');
+    const dd = String(value.getDate()).padStart(2, '0');
+    return `${yy}-${mm}-${dd}`;
+  }
+  const match = String(value).match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : '';
+}
+
+function formatQuote(amount: number): string {
+  if (!Number.isFinite(amount) || amount <= 0) return '₹0';
+  if (amount >= 10_000_000) return `₹${(amount / 10_000_000).toFixed(2)} Cr`;
+  if (amount >= 100_000) return `₹${(amount / 100_000).toFixed(2)}L`;
+  return `₹${Math.round(amount).toLocaleString('en-IN')}`;
+}
+
+function repKey(name: string): string {
+  return formatPersonName(name).toLowerCase();
+}
+
+function istNoon(ymd: string): string {
+  return `${ymd}T12:00:00+05:30`;
+}
+
+type ClosedBooking = {
+  id: string;
+  rep: string;
+  key: string;
+  customer: string;
+  quote: number;
+  ymd: string;
+};
+
+function rankReps(rows: ClosedBooking[]) {
+  const totals = new Map<string, { name: string; total: number; count: number }>();
+  for (const row of rows) {
+    const current = totals.get(row.key) || { name: row.rep, total: 0, count: 0 };
+    current.total += row.quote;
+    current.count += 1;
+    totals.set(row.key, current);
+  }
+  return [...totals.values()].sort(
+    (a, b) => b.total - a.total || b.count - a.count || a.name.localeCompare(b.name)
+  )[0];
+}
+
 async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<UpstreamPayload> {
   try {
-    let existingFeed: any[] = [];
-    if (payload.body) {
-      try {
-        const text = new TextDecoder().decode(payload.body);
-        const parsed = JSON.parse(text);
-        if (Array.isArray(parsed?.feed)) {
-          existingFeed = parsed.feed;
-        }
-      } catch {}
-    }
-
+    void payload;
     const pool = getPool();
     const crmDb = process.env.CRM_DB_NAME || 'CRM';
+    const today = istTodayYmd();
+    const monthStart = `${today.slice(0, 7)}-01`;
+    const nextMonth = nextMonthYmd(today);
+    const weekStart = weekMondayYmd(today);
+    const nextWeek = shiftYmd(weekStart, 7);
 
-    // 1. Employee historical booking counts to detect maiden / first booking
-    const [countsRows]: any = await pool.query(`
-      SELECT 
-        COALESCE(submitted_by_user_id, 0) as user_id, 
-        LOWER(TRIM(COALESCE(submitted_by_name, ''))) as rep_name, 
-        COUNT(*) as booking_count
-      FROM ${crmDb}.booking_token_record
-      WHERE (cancellation_approval_status != 'APPROVED' OR cancellation_approval_status IS NULL)
-      GROUP BY submitted_by_user_id, LOWER(TRIM(COALESCE(submitted_by_name, '')))
-    `).catch(() => [[]]);
-
-    const counts = Array.isArray(countsRows) ? countsRows : [];
-
-    // 2. Query actual booking records from production CRM
-    const [bookingRows]: any = await pool.query(`
-      SELECT 
-        b.id,
-        b.customer_name,
-        b.customer_phone,
-        b.submitted_by_name,
-        b.submitted_by_user_id,
-        b.amount_received,
-        b.quote_amount,
-        b.listing_type,
-        b.booking_status,
-        b.created_at,
-        b.token_taken_date,
-        b.lead_id,
-        b.hub_lead_id,
-        b.lead_identifier,
-        b.lead_type
-      FROM ${crmDb}.booking_token_record b
-      WHERE (b.cancellation_approval_status != 'APPROVED' OR b.cancellation_approval_status IS NULL)
-      ORDER BY b.created_at DESC
-      LIMIT 35
-    `).catch(() => [[]]);
-
-    const bookings = Array.isArray(bookingRows) ? bookingRows : [];
-
-    // Pre-fetch lead details across lead tables for accurate metadata
-    const leadDetailsMap = new Map<string, any>();
-    for (const b of bookings) {
-      const leadTable = (b.lead_type || 'addlead').toLowerCase();
-      const identifier = b.lead_identifier || b.lead_id;
-      if (!identifier) continue;
-      const key = `${leadTable}:${identifier}`;
-      if (!leadDetailsMap.has(key)) {
-        try {
-          const [leadRows]: any = await pool.query(`
-            SELECT id, lead_identifier, name, stage, substage, milestone_stage, milestone_sub_stage, milestone_stage_category, renovation_assigned, created_at
-            FROM ${crmDb}.${leadTable}
-            WHERE lead_identifier = ? OR id = ?
-            LIMIT 1
-          `, [b.lead_identifier, b.lead_id]);
-          leadDetailsMap.set(key, leadRows?.[0] || null);
-        } catch {
-          leadDetailsMap.set(key, null);
-        }
-      }
+    let bookingRows: any[] = [];
+    try {
+      const [rows]: any = await pool.query(
+        `
+        SELECT
+          b.id,
+          b.customer_name,
+          b.submitted_by_name,
+          b.quote_amount,
+          b.booking_done_date
+        FROM ${crmDb}.booking_token_record b
+        WHERE (b.cancellation_approval_status IS NULL OR UPPER(b.cancellation_approval_status) NOT IN ('APPROVED', 'PENDING'))
+          AND b.booking_done_date IS NOT NULL
+          AND DATE(b.booking_done_date) >= ?
+          AND DATE(b.booking_done_date) < ?
+          AND b.quote_amount > 0
+        `,
+        [monthStart, nextMonth]
+      );
+      bookingRows = Array.isArray(rows) ? rows : [];
+    } catch (err) {
+      console.warn('Closed booking register query failed:', err);
     }
 
-    const dbFeedItems: any[] = [];
-
-    for (const b of bookings) {
-      const repName = b.submitted_by_name ? String(b.submitted_by_name).trim() : 'Sales Executive';
-      const normRep = repName.toLowerCase();
-      const repCount = counts.find((c: any) =>
-        (b.submitted_by_user_id && Number(c.user_id) === Number(b.submitted_by_user_id)) ||
-        (normRep && c.rep_name === normRep)
-      )?.booking_count || 0;
-
-      const leadInfo = leadDetailsMap.get(`${(b.lead_type || 'addlead').toLowerCase()}:${b.lead_identifier || b.lead_id}`);
-
-      const isSystemAdmin = normRep === 'admin' || normRep === 'super admin' || normRep.includes('system');
-      const isFirstBooking = repCount === 1 && !isSystemAdmin;
-      const isRenovation = Boolean(
-        (leadInfo?.substage && String(leadInfo.substage).toUpperCase().includes('RENOV')) ||
-        (leadInfo?.milestone_sub_stage && String(leadInfo.milestone_sub_stage).toUpperCase().includes('RENOV')) ||
-        Number(leadInfo?.renovation_assigned?.[0] || leadInfo?.renovation_assigned) === 1
+    let weekRowsRaw: any[] = [];
+    try {
+      const [rows]: any = await pool.query(
+        `
+        SELECT
+          b.id,
+          b.customer_name,
+          b.submitted_by_name,
+          b.quote_amount,
+          b.created_at
+        FROM ${crmDb}.booking_token_record b
+        WHERE (b.cancellation_approval_status IS NULL OR UPPER(b.cancellation_approval_status) NOT IN ('APPROVED', 'PENDING'))
+          AND b.created_at IS NOT NULL
+          AND DATE(b.created_at) >= ?
+          AND DATE(b.created_at) < ?
+          AND b.quote_amount > 0
+          AND UPPER(COALESCE(b.listing_type, '')) IN ('TOKEN', 'BOOKING')
+        `,
+        [weekStart, nextWeek]
       );
+      weekRowsRaw = Array.isArray(rows) ? rows : [];
+    } catch (err) {
+      console.warn('Weekly gross query failed:', err);
+    }
 
-      const leadCreatedAt = leadInfo?.created_at;
-      const leadDate = leadCreatedAt ? new Date(leadCreatedAt).toISOString().split('T')[0] : null;
-      const bookingDate = b.created_at ? new Date(b.created_at).toISOString().split('T')[0] : null;
-      const tokenTakenDate = b.token_taken_date ? new Date(b.token_taken_date).toISOString().split('T')[0] : null;
+    const closed: ClosedBooking[] = [];
+    for (const row of bookingRows) {
+      const repRaw = String(row.submitted_by_name || '').trim();
+      const customerRaw = String(row.customer_name || '').trim();
+      if (!repRaw || TEST_LEAD.test(repRaw) || TEST_LEAD.test(customerRaw)) continue;
+      const quote = Number(row.quote_amount);
+      const ymd = ymdFromDb(row.booking_done_date);
+      if (!Number.isFinite(quote) || quote <= 0 || !ymd) continue;
+      closed.push({
+        id: String(row.id),
+        rep: formatPersonName(repRaw),
+        key: repKey(repRaw),
+        customer: customerRaw ? formatPersonName(customerRaw) : '',
+        quote,
+        ymd,
+      });
+    }
 
-      const isOnTheSpot = Boolean(
-        (leadDate && bookingDate && (leadDate === bookingDate || Math.abs(new Date(bookingDate).getTime() - new Date(leadDate).getTime()) <= 48 * 3600 * 1000)) ||
-        (leadDate && tokenTakenDate && (leadDate === tokenTakenDate || Math.abs(new Date(tokenTakenDate).getTime() - new Date(leadDate).getTime()) <= 48 * 3600 * 1000))
-      );
+    const monthRows = closed.filter((row) => row.ymd >= monthStart && row.ymd < nextMonth);
+    const weekRows: ClosedBooking[] = [];
+    for (const row of weekRowsRaw) {
+      const repRaw = String(row.submitted_by_name || '').trim();
+      const customerRaw = String(row.customer_name || '').trim();
+      if (!repRaw || TEST_LEAD.test(repRaw) || TEST_LEAD.test(customerRaw)) continue;
+      const quote = Number(row.quote_amount);
+      const ymd = ymdFromDb(row.created_at);
+      if (!Number.isFinite(quote) || quote <= 0 || !ymd) continue;
+      weekRows.push({
+        id: String(row.id),
+        rep: formatPersonName(repRaw),
+        key: repKey(repRaw),
+        customer: customerRaw ? formatPersonName(customerRaw) : '',
+        quote,
+        ymd,
+      });
+    }
+    const weeklyWinner = rankReps(weekRows);
 
-      const quoteNum = parseFloat(b.quote_amount) || 0;
-      const amountNum = parseFloat(b.amount_received) || 0;
-      const effectiveAmount = quoteNum > 0 ? quoteNum : amountNum;
-      const isLargeBooking = quoteNum >= 1500000 || amountNum >= 200000;
-
-      let amountFormatted = '₹0';
-      if (effectiveAmount >= 10000000) {
-        amountFormatted = `₹${(effectiveAmount / 10000000).toFixed(2)} Cr`;
-      } else if (effectiveAmount >= 100000) {
-        amountFormatted = `₹${(effectiveAmount / 100000).toFixed(2)}L`;
-      } else if (effectiveAmount > 0) {
-        amountFormatted = `₹${Math.round(effectiveAmount).toLocaleString('en-IN')}`;
-      }
-
-      const leadIdTag = b.lead_identifier ? `#${b.lead_identifier}` : b.hub_lead_id ? `#${b.hub_lead_id}` : `#${String(b.id).slice(0, 6)}`;
-
-      let itemType = 'booking';
-      let title = `New Booking: ${amountFormatted} by ${repName}`;
-      let content = `${repName} just closed Project ${leadIdTag}. Another home joins HUB. Great work, team!`;
-
-      if (isRenovation) {
-        itemType = 'renovation_booking';
-        title = `Renova Strikes Again!`;
-        content = `Another renovation project has joined the HUB family. ${amountFormatted} booked by Team Renova (${repName} - Project ${leadIdTag}).`;
-      } else if (isFirstBooking) {
-        itemType = 'first_booking';
-        title = `First One on the Board!`;
-        content = `${repName} has closed their first HUB booking (${amountFormatted}) for Project ${leadIdTag}. The first of many. Congratulations!`;
-      } else if (isOnTheSpot) {
-        itemType = 'spot_closure';
-        title = `Spot Closure: ${amountFormatted} by ${repName}!`;
-        content = `The customer walked in today and booked today. ${amountFormatted} closed for Project ${leadIdTag} by ${repName}.`;
-      } else if (isLargeBooking) {
-        itemType = 'large_booking';
-        title = `Big One Closed: ${amountFormatted}!`;
-        content = `${repName} just brought home a ${amountFormatted} interior project for Project ${leadIdTag}. That’s how you move the scoreboard.`;
-      }
-
-      dbFeedItems.push({
-        id: `crm-db-booking-${b.id}`,
-        type: itemType,
-        title,
-        content,
-        timestamp: b.created_at ? new Date(b.created_at).toISOString() : new Date().toISOString(),
-        createdAt: b.created_at ? new Date(b.created_at).toISOString() : new Date().toISOString(),
-        author: {
-          name: repName,
-          avatar: null,
-          team: isRenovation ? 'Team Renova' : 'Sales Hub',
-        },
+    const feed: any[] = [];
+    const bookings = [...monthRows].sort((a, b) => (a.ymd < b.ymd ? 1 : a.ymd > b.ymd ? -1 : b.id.localeCompare(a.id)));
+    for (const row of bookings.slice(0, 8)) {
+      const amount = formatQuote(row.quote);
+      const big = row.quote >= TEN_LAKH_INR;
+      const home = row.customer ? `${row.customer}'s home` : 'a home';
+      feed.push({
+        id: `crm-booking-${row.id}`,
+        type: 'booking',
+        registerKind: 'booking',
+        title: big ? `Big one closed — ${row.rep}` : `New booking — ${row.rep}`,
+        content: big
+          ? `${row.rep} closed ${home} for ${amount}.`
+          : `${row.rep} booked ${home} for ${amount}.`,
+        quoteFormatted: amount,
+        timestamp: row.ymd,
+        createdAt: istNoon(row.ymd),
+        author: { name: row.rep, avatar: null, team: 'Sales' },
         department: 'Sales',
         rawBooking: {
-          bookingId: String(b.id),
-          leadId: leadIdTag,
-          quoteAmount: quoteNum,
-          amountReceived: amountNum,
-          isFirstBooking,
-          isRenovation,
-          isOnTheSpot,
-          isLargeBooking,
-          customerName: b.customer_name,
-          createdAt: b.created_at,
+          bookingId: row.id,
+          quoteAmount: row.quote,
+          customerName: row.customer,
+          isLargeBooking: big,
+          bookingDoneDate: row.ymd,
         },
       });
-
-      // Double celebration for maiden booking + spot closure (Priti Dutta)
-      if (isFirstBooking && isOnTheSpot) {
-        dbFeedItems.push({
-          id: `crm-db-spot-${b.id}`,
-          type: 'spot_closure',
-          title: `Spot Closure: ${amountFormatted} by ${repName}!`,
-          content: `The customer walked in today and booked today. ${amountFormatted} closed for Project ${leadIdTag} by ${repName}.`,
-          timestamp: b.created_at ? new Date(b.created_at).toISOString() : new Date().toISOString(),
-          createdAt: b.created_at ? new Date(b.created_at).toISOString() : new Date().toISOString(),
-          author: {
-            name: repName,
-            avatar: null,
-            team: 'Sales Hub',
-          },
-          department: 'Sales',
-          rawBooking: {
-            bookingId: String(b.id),
-            leadId: leadIdTag,
-            quoteAmount: quoteNum,
-            amountReceived: amountNum,
-            isFirstBooking,
-            isRenovation: false,
-            isOnTheSpot: true,
-            isLargeBooking,
-            customerName: b.customer_name,
-            createdAt: b.created_at,
-          },
-        });
-      }
     }
 
-    // 3. Query recent Renovation Won leads (Scenario #16)
-    const [renovaWonLeads]: any = await pool.query(`
-      SELECT id, lead_identifier, name, assignee, budget, stage, substage, milestone_stage, milestone_stage_category, milestone_sub_stage, renovation_assigned, created_at, updated_at
-      FROM ${crmDb}.mlead
-      WHERE (milestone_sub_stage LIKE '%renov%' OR substage LIKE '%renov%' OR renovation_assigned = 1)
-        AND (milestone_stage_category LIKE '%Won%' OR stage LIKE '%Won%')
-      ORDER BY created_at DESC
-      LIMIT 5
-    `).catch(() => [[]]);
-
-    if (Array.isArray(renovaWonLeads)) {
-      for (const l of renovaWonLeads) {
-        let budgetFormatted = '₹5.00L';
-        if (l.budget) {
-          if (l.budget.includes('4_-_6') || l.budget.includes('4 - 6')) budgetFormatted = '₹5.00L';
-          else if (l.budget.includes('6_-_8') || l.budget.includes('6 - 8')) budgetFormatted = '₹7.00L';
-          else if (l.budget.includes('8_-_10') || l.budget.includes('8 - 10')) budgetFormatted = '₹9.00L';
-        }
-        const rep = l.assignee || 'Razi';
-        const projectTag = l.lead_identifier ? `#${l.lead_identifier}` : `#ML-${l.id}`;
-        dbFeedItems.push({
-          id: `crm-renova-lead-${l.id}`,
-          type: 'renovation_booking',
-          title: 'Renova Strikes Again!',
-          content: `Another renovation project has joined the HUB family. ${budgetFormatted} booked by Team Renova (${rep} - Project ${projectTag}).`,
-          timestamp: l.created_at ? new Date(l.created_at).toISOString() : new Date().toISOString(),
-          createdAt: l.created_at ? new Date(l.created_at).toISOString() : new Date().toISOString(),
-          author: {
-            name: rep,
-            avatar: null,
-            team: 'Team Renova',
-          },
-          department: 'Sales',
-          rawBooking: {
-            bookingId: `renova-${l.id}`,
-            leadId: projectTag,
-            quoteAmount: 500000,
-            amountReceived: 25000,
-            isFirstBooking: false,
-            isRenovation: true,
-            isOnTheSpot: false,
-            isLargeBooking: false,
-            customerName: l.name,
-            createdAt: l.created_at,
-          }
-        });
-      }
-    }
-
-    const combined = [...existingFeed];
-    const seenIds = new Set(existingFeed.map((e: any) => e.id));
-    for (const item of dbFeedItems) {
-      if (!seenIds.has(item.id)) {
-        combined.push(item);
-        seenIds.add(item.id);
-      }
+    if (weeklyWinner) {
+      const weekAmount = formatQuote(weeklyWinner.total);
+      feed.push({
+        id: `crm-weekly-top-${weekStart}`,
+        type: 'performer',
+        registerKind: 'weekly',
+        title: 'This week’s top performer',
+        content: `${weeklyWinner.name} leads this week with ${weekAmount} in gross bookings.`,
+        quoteFormatted: weekAmount,
+        timestamp: 'This week',
+        createdAt: istNoon(today),
+        author: { name: weeklyWinner.name, avatar: null, team: 'Sales' },
+        department: 'Sales',
+        rawBooking: {
+          bookingId: weekStart,
+          quoteAmount: weeklyWinner.total,
+          customerName: weeklyWinner.name,
+          bookingDoneDate: weekStart,
+        },
+      });
     }
 
     const resJson = JSON.stringify({
-      source: 'CRM.booking_token_record + lead tables (Production RDS)',
-      feed: combined,
+      source: 'CRM.booking_token_record',
+      feed,
     });
     const newBuf = Buffer.from(resJson, 'utf-8');
     const newAb = newBuf.buffer.slice(newBuf.byteOffset, newBuf.byteOffset + newBuf.byteLength);
@@ -1397,11 +1372,11 @@ export async function proxyToCrm(request: Request, pathParts: string[]): Promise
         actions:
           leadItems.length > 0
             ? [
-                {
-                  id: 'crm-pipeline-actions',
-                  title: 'Lead Follow-ups Due Today',
+          {
+            id: 'crm-pipeline-actions',
+            title: 'Lead Follow-ups Due Today',
                   count: leadItems.length,
-                  urgent: true,
+            urgent: true,
                   items: leadItems,
                 },
               ]

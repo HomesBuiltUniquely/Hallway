@@ -1,4 +1,5 @@
 import { FeedPost } from '../types/index';
+import { formatPersonName, istYmd } from './hallwayDisplay';
 import {
   HallwayFeedItem,
   HallwayTargetCard,
@@ -359,609 +360,132 @@ function defaultReactions() {
 }
 
 /**
- * Strictly dynamic CRM Announcements generator.
- * Implements the 13 Master Scenarios using authentic CRM live data:
- * - Deals & Bookings:
- *   - #10: On-the-Spot Closure (Priti Dutta ₹9.16L maiden booking in JP Nagar)
- *   - #1: New Booking (Danush Rao ₹8.46L in HBR)
- *   - #2: Large Booking (Jayashree ₹14.67L in Sarjapur)
- *   - #8: Record Broken (Meghana ₹19.63L contract quote)
- *   - #4: Multiple Closures in a Day (Hat-trick daily momentum)
- * - Top Performers:
- *   - #9: Top Performer (Priti Dutta #1 MTD with 7.7% conversion rate)
- *   - #21: Book of Records Entry (All-Time MVP Meghana ₹1.79 Cr / 23 deals)
- *   - Top Performing Squad (HBR — Kulwanth P ₹2.94 Cr / 36 deals)
- *   - #22: Target Streak (Jayashree 2-day consecutive execution streak)
- * - Milestones & Targets:
- *   - #7 / #23 / #6: Unified Target Lifecycle Card (Zero duplication: Milestone -> Goal Nearing -> Target Crushed)
- *   - #5: EC Target Milestone (JP Nagar leading branch target pacing at 5.1%)
- *   - Speed Record Benchmark (Sharanya 2.7 days lead-to-close)
- * - Company Broadcasts:
- *   - Executive Operating Corridor broadcast + live user broadcasts
+ * Home announcement register.
+ * Bookings and performer cards come from CRM.booking_token_record.
+ * The milestone card uses the targets Achieved figure, and only when that is ₹80L or more.
  */
 export function generateCrmAnnouncements({
   crmFeedItems = [],
   overallTargets = [],
-  branchTargets = [],
   topPerformers = [],
-  people = [],
-  records = [],
-  teamRecords = [],
   existingPostsMap = new Map(),
 }: CrmGeneratorInputs): FeedPost[] {
   const posts: FeedPost[] = [];
   const seenIds = new Set<string>();
-  const now = Date.now();
+  const EIGHTY_LAKH_INR = 8_000_000;
 
-  const getPreservedReactionsAndComments = (id: string) => {
-    const existing = existingPostsMap.get(id);
-    return {
-      reactions: existing?.reactions ? { ...existing.reactions } : defaultReactions(),
-      comments: existing?.comments && existing.comments.length > 0 ? [...existing.comments] : [],
-      commentsCount: existing?.commentsCount || existing?.comments?.length || 0,
-    };
-  };
-
-  // -------------------------------------------------------------------------
-  // 1. DEALS & BOOKINGS (Scenarios 1, 2, 3, 10, 16) - Strictly Data-Driven (Option B Rule)
-  // De-duplicate recurring template cards: Keep only recent high-impact closures
-  // -------------------------------------------------------------------------
-  const cleanDeals = (crmFeedItems || []).filter(
-    (item) =>
-      item.type !== 'token' &&
-      !item.id?.startsWith('token-') &&
-      !item.title?.toLowerCase().includes('token') &&
-      !item.title?.toLowerCase().includes('meeting')
+  const register = (crmFeedItems || []).filter(
+    (item) => item.registerKind && item.registerKind !== 'milestone' && item.registerKind !== 'monthly'
   );
 
-  // Group verified bookings by branch & calendar day for authentic Hat-Trick (Scenario #4)
-  const closuresByBranchAndDay = new Map<string, { branch: string; day: string; count: number; totalInr: number }>();
+  for (const item of register) {
+    if (!item.id || seenIds.has(item.id)) continue;
 
-  let emittedRenovaCount = 0;
-  const MAX_RENOVA = 1; // Show only the single most recent renovation project
+    const rep = formatPersonName(item.author?.name || '');
+    const quoteFormatted = item.quoteFormatted || '';
+    if (!rep || rep === 'User' || !quoteFormatted) continue;
 
-  let emittedStandardBookingCount = 0;
-  const MAX_STANDARD_BOOKINGS = 1; // Show only the single most recent standard new booking
-
-  let emittedLargeBookingCount = 0;
-  const MAX_LARGE_BOOKINGS = 1; // Show only the single most recent large booking
-
-  let emittedOtherSpotClosureCount = 0;
-  const MAX_OTHER_SPOT_CLOSURES = 1; // 1 recent spot closure in addition to maiden walk-ins
-
-  for (let i = 0; i < cleanDeals.length; i++) {
-    const deal = cleanDeals[i];
-    const feedDealId = `crm-deal-${deal.id || i}`;
-    if (seenIds.has(feedDealId)) continue;
-
-    const rep = deal.author?.name || 'Sales Executive';
-    const repPerson = (people || []).find((p) => p.name.toLowerCase().includes(rep.toLowerCase()));
-    let rawBranch = deal.author?.team;
-    if (!rawBranch || rawBranch.toLowerCase() === 'sales hub' || rawBranch.toLowerCase() === 'sales') {
-      rawBranch = repPerson?.branchId || (deal as any).rawBooking?.branchId || 'Sarjapura';
-    }
-    const branch = cleanBranchName(rawBranch);
-    const parsed = parseAmountFromText(`${deal.title} ${deal.content}`);
-    const rawQuote = deal.rawBooking?.quoteAmount || deal.rawBooking?.amountReceived || parsed.valueInr || 0;
-    const amountFormatted = rawQuote > 0 ? formatInrToLakhsOrCrores(rawQuote) : (parsed.formatted !== '₹0' ? parsed.formatted : 'Interior Project');
-    const projectTag = deal.rawBooking?.leadId || '#HUB-Home';
-    const dealCreatedAt = deal.createdAt || deal.timestamp || new Date(now - (i + 1) * 3600000).toISOString();
-    const dealDate = dealCreatedAt.split('T')[0];
-
-    // Day grouping for authentic Hat-Trick detection (Scenario #4: branch + calendar day)
-    const dayKey = `${branch}_${dealDate}`;
-    const dayEntry = closuresByBranchAndDay.get(dayKey) || { branch, day: dealDate, count: 0, totalInr: 0 };
-    dayEntry.count += 1;
-    dayEntry.totalInr += rawQuote;
-    closuresByBranchAndDay.set(dayKey, dayEntry);
-
-    const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(feedDealId);
-    const repAvatar = resolveAvatarForPerson(rep, deal.author?.avatar || repPerson?.avatar);
-
-    // Scenario #16: Renova Booking (Option B: Lead Discovery Sub-stage is RENOVATION or renovation_assigned = 1)
-    const isRenova = Boolean(
-      deal.rawBooking?.isRenovation ||
-      deal.type === 'renovation_booking' ||
-      deal.title?.toLowerCase().includes('renova') ||
-      deal.content?.toLowerCase().includes('renovation')
-    );
-
-    // Scenario #3: First Booking of Employee (Option B: Employee historical booking count in CRM equals 1)
-    const isFirstBooking = Boolean(
-      deal.rawBooking?.isFirstBooking ||
-      deal.type === 'first_booking' ||
-      deal.title?.toLowerCase().includes('first one on the board')
-    );
-
-    // Scenario #10: On-the-Spot Closure (Option B: DATE(lead.created_at) === DATE(booking.created_at))
-    const isSpotClosure = Boolean(
-      deal.rawBooking?.isOnTheSpot ||
-      deal.type === 'spot_closure' ||
-      deal.title?.toLowerCase().includes('spot closure')
-    );
-
-    // Scenario #2: Large Booking (Option B: Deal/Quote value >= 15 Lakhs)
-    const isLargeBooking = Boolean(
-      deal.rawBooking?.isLargeBooking ||
-      deal.type === 'large_booking' ||
-      rawQuote >= 1500000
-    );
-
-    const isPriti = rep.toLowerCase().includes('priti') || deal.id?.toLowerCase().includes('priti') || deal.content?.toLowerCase().includes('priti');
-
-    // De-duplication rules:
-    // 1. Renova: Keep only the single most recent project
-    if (isRenova || deal.type === 'renovation_booking') {
-      if (emittedRenovaCount >= MAX_RENOVA) continue;
-      emittedRenovaCount++;
-    }
-    // 2. Large bookings: Keep only the single most recent large booking
-    else if (isLargeBooking && !isFirstBooking && !isSpotClosure) {
-      if (emittedLargeBookingCount >= MAX_LARGE_BOOKINGS) continue;
-      emittedLargeBookingCount++;
-    }
-    // 3. Other spot closures (excluding maiden walk-in like Priti Dutta): Keep only most recent
-    else if (isSpotClosure && !isFirstBooking && !isPriti) {
-      if (emittedOtherSpotClosureCount >= MAX_OTHER_SPOT_CLOSURES) continue;
-      emittedOtherSpotClosureCount++;
-    }
-    // 4. Standard New Bookings: Keep only the single most recent project
-    else if (!isFirstBooking && !isSpotClosure && !isRenova && !isLargeBooking && !isPriti) {
-      if (emittedStandardBookingCount >= MAX_STANDARD_BOOKINGS) continue;
-      emittedStandardBookingCount++;
-    }
-
-    let cardTitle = `New Booking: ${amountFormatted} by Team ${branch}!`;
-    let cardContent = `${rep} just closed Project ${projectTag}. Another home joins HUB. Great work, team!`;
-    let categoryColor = '#10B981'; // Emerald
-    let iconEmoji = '💰';
-
-    if (deal.type === 'spot_closure' || deal.id?.includes('-spot-') || (isSpotClosure && !isFirstBooking)) {
-      // Scenario #10: On-the-Spot Closure
-      cardTitle = `Spot Closure: ${amountFormatted} by ${rep}!`;
-      cardContent = `The customer walked in today and booked today. ${amountFormatted} closed for Project ${projectTag} by ${rep} (${branch} Hub).`;
-      categoryColor = '#0D9488';
-      iconEmoji = '⚡';
-    } else if (isRenova || deal.type === 'renovation_booking') {
-      // Scenario #16: Renova Booking
-      cardTitle = 'Renova Strikes Again!';
-      cardContent = `Another renovation project has joined the HUB family. ${amountFormatted} booked by Team Renova (${rep} - Project ${projectTag}).`;
-      categoryColor = '#D97706';
-      iconEmoji = '🔨';
-    } else if (isFirstBooking || deal.type === 'first_booking') {
-      // Scenario #3: First Booking of Employee
-      cardTitle = 'First One on the Board!';
-      cardContent = `${rep} has closed their first HUB booking (${amountFormatted}) for Project ${projectTag}. The first of many. Congratulations!`;
-      categoryColor = '#0D9488';
-      iconEmoji = '🚀';
-    } else if (isLargeBooking) {
-      // Scenario #2: Large Booking
-      cardTitle = `Big One Closed: ${amountFormatted}!`;
-      cardContent = `${rep} just brought home a ${amountFormatted} interior project for Project ${projectTag}. That’s how you move the scoreboard.`;
-      categoryColor = '#059669';
-      iconEmoji = '🔥';
-    }
+    const preserved = existingPostsMap.get(item.id);
+    const kind = item.registerKind;
+    const type: FeedPost['type'] = kind === 'weekly' || kind === 'monthly' ? 'performer' : 'booking';
 
     posts.push({
-      id: feedDealId,
-      type: 'booking',
-      categoryColor,
-      iconEmoji,
-      title: cardTitle,
-      timestamp: deal.timestamp || 'Recent deal',
-      createdAt: dealCreatedAt,
+      id: item.id,
+      type,
+      categoryColor: type === 'performer' ? '#EAB308' : '#10B981',
+      iconEmoji: type === 'performer' ? '🏅' : '💰',
+      title: item.title,
+      timestamp: item.timestamp || 'Recent',
+      createdAt: item.createdAt,
       author: {
         name: rep,
-        avatar: repAvatar,
-        team: `${branch} Hub`,
+        avatar: preserved?.author?.avatar || '',
+        team: item.author?.team || 'Sales',
       },
-      content: cardContent,
-      reactions,
-      commentsCount,
-      comments,
+      content: item.content || '',
+      quoteFormatted,
+      reactions: preserved?.reactions ? { ...preserved.reactions } : defaultReactions(),
+      comments: preserved?.comments && preserved.comments.length > 0 ? [...preserved.comments] : [],
+      commentsCount: preserved?.commentsCount || preserved?.comments?.length || 0,
       department: 'Sales',
     });
-    seenIds.add(feedDealId);
+    seenIds.add(item.id);
   }
 
-  // -------------------------------------------------------------------------
-  // Scenario #4: Multiple Closures in a Day (Hat-Trick of Closures)
-  // OPTION B RULE: ONLY trigger if a branch ACTUALLY has >= 3 verified bookings on the exact same calendar day!
-  // Keep only the single most recent verified Hat-Trick momentum card
-  // -------------------------------------------------------------------------
-  const sortedHatTricks = Array.from(closuresByBranchAndDay.entries())
-    .filter(([_, d]) => d.count >= 3)
-    .sort((a, b) => new Date(b[1].day).getTime() - new Date(a[1].day).getTime());
-
-  if (sortedHatTricks.length > 0) {
-    const [dayKey, dayData] = sortedHatTricks[0];
-    const hatTrickId = `crm-hat-trick-${dayKey}`;
-    if (!seenIds.has(hatTrickId)) {
-      const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(hatTrickId);
-      const totalFormatted = formatInrToLakhsOrCrores(dayData.totalInr);
-      posts.push({
-        id: hatTrickId,
-        type: 'booking',
-        categoryColor: '#EA580C',
-        iconEmoji: '⚡',
-        title: 'Hat-Trick of Closures!',
-        timestamp: 'Same-day momentum',
-        createdAt: new Date(dayData.day).toISOString(),
-        author: {
-          name: `Team ${dayData.branch}`,
-          avatar: resolveAvatarForPerson(`Team ${dayData.branch}`),
-          team: `${dayData.branch} Hub`,
-        },
-        content: `${dayData.count} bookings. One day. ${totalFormatted} added to the board by Team ${dayData.branch}.`,
-        reactions,
-        commentsCount,
-        comments,
-        department: 'Sales',
-      });
-      seenIds.add(hatTrickId);
-    }
-  }
-
-  // -------------------------------------------------------------------------
-  // Scenario #8: Record Broken (Highest-ever booking or single deal value in CRM records)
-  // -------------------------------------------------------------------------
-  const highestDealRecord = (records || []).find((r) => r.id === 'highest_deal_value');
-  const highestSingleRecord = (records || []).find((r) => r.id === 'highest_single_booking');
-  if (highestDealRecord && highestDealRecord.value) {
-    const meghanaHolder = highestDealRecord.holderName || 'Meghana';
-    const meghanaValue = highestDealRecord.value || '₹19.63L';
-    const meghanaBookingToken = highestSingleRecord?.value || '₹1.96L';
-    const meghanaAvatar = resolveAvatarForPerson(meghanaHolder, highestDealRecord.avatar);
-    const meghanaId = 'crm-announcement-highest-deal-benchmark';
-
-    if (!seenIds.has(meghanaId)) {
-      const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(meghanaId);
-      posts.push({
-        id: meghanaId,
-        type: 'booking',
-        categoryColor: '#D97706',
-        iconEmoji: '🎖️',
-        title: 'New HUB Record!',
-        timestamp: 'Verified benchmark',
-        createdAt: new Date(now - 240 * 60000).toISOString(),
-        author: {
-          name: meghanaHolder,
-          avatar: meghanaAvatar,
-          team: 'HBR Hub',
-        },
-        content: `${meghanaHolder} set the benchmark with an outstanding ${meghanaValue} interior contract${
-          meghanaBookingToken ? ` (${meghanaBookingToken} booking fee)` : ''
-        }${highestDealRecord.subValue ? ` · ${highestDealRecord.subValue}` : ''}. Built one closure at a time.`,
-        reactions,
-        commentsCount,
-        comments,
-        department: 'Sales',
-      });
-      seenIds.add(meghanaId);
-    }
-  }
-
-  // -------------------------------------------------------------------------
-  // Scenario #9: Top Performer — live MTD leaderboard #1 only (no invented names/metrics)
-  // -------------------------------------------------------------------------
-  const mtdLeader = (topPerformers || [])[0];
+  const mtdLeader = (topPerformers || []).find(
+    (person) =>
+      Boolean(person?.name) &&
+      !/\btest\b/i.test(String(person.name)) &&
+      (Number(person.revenue) > 0 ||
+        Boolean(person.revenueFormatted && person.revenueFormatted !== '₹0'))
+  );
   if (mtdLeader?.name) {
-    const mtdLeaderName = mtdLeader.name;
-    const mtdLeaderRev = mtdLeader.revenueFormatted || '';
-    const mtdLeaderConv = mtdLeader.conversionRate ? `${mtdLeader.conversionRate}%` : '';
-    const mtdLeaderPerson = (people || []).find((p) => String(p.id) === String(mtdLeader.id));
-    const mtdLeaderBranch = cleanBranchName(
-      mtdLeaderPerson?.branchId || (mtdLeader as any).branchId || ''
-    );
-    const mtdLeaderAvatar = resolveAvatarForPerson(mtdLeaderName, mtdLeader.avatar);
-    const mtdPerformerId = 'crm-announcement-top-performer-mtd';
-
-    if (!seenIds.has(mtdPerformerId) && mtdLeaderRev) {
-      const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(mtdPerformerId);
-      const convBit = mtdLeaderConv ? ` and a ${mtdLeaderConv} conversion rate` : '';
-      const hubBit = mtdLeaderBranch ? ` for ${mtdLeaderBranch} Hub` : '';
+    const monthKey = istYmd().slice(0, 7);
+    const monthId = `crm-monthly-top-${monthKey}`;
+    const name = formatPersonName(mtdLeader.name);
+    const amount = mtdLeader.revenueFormatted || formatInrToLakhsOrCrores(Number(mtdLeader.revenue) || 0);
+    if (!seenIds.has(monthId) && name && name !== 'User' && amount && amount !== '₹0') {
+      const preserved = existingPostsMap.get(monthId);
       posts.push({
-        id: mtdPerformerId,
+        id: monthId,
         type: 'performer',
         categoryColor: '#EAB308',
         iconEmoji: '🏅',
-        title: `This Week’s Top Performer: ${mtdLeaderName}`,
-        timestamp: '1 hour ago',
-        createdAt: new Date(now - 60 * 60000).toISOString(),
+        title: 'This month’s top performer',
+        timestamp: 'This month',
+        createdAt: `${istYmd()}T12:00:00+05:30`,
         author: {
-          name: mtdLeaderName,
-          avatar: mtdLeaderAvatar,
-          team: mtdLeaderBranch ? `${mtdLeaderBranch} Hub` : 'Sales Hub',
+          name,
+          avatar: preserved?.author?.avatar || '',
+          team: 'Sales',
         },
-        content: `${mtdLeaderName} leads the board with ${mtdLeaderRev} in closures${convBit}. Outstanding velocity${hubBit}!`,
-        reactions,
-        commentsCount,
-        comments,
+        content: `${name} leads this month with ${amount} in gross bookings.`,
+        quoteFormatted: amount,
+        reactions: preserved?.reactions ? { ...preserved.reactions } : defaultReactions(),
+        comments: preserved?.comments && preserved.comments.length > 0 ? [...preserved.comments] : [],
+        commentsCount: preserved?.commentsCount || preserved?.comments?.length || 0,
         department: 'Sales',
       });
-      seenIds.add(mtdPerformerId);
+      seenIds.add(monthId);
     }
   }
 
-  // -------------------------------------------------------------------------
-  // Scenario #21: Book of Records — only from live CRM all-time / highest-deal records
-  // -------------------------------------------------------------------------
-  const allTimeRecord =
-    (records || []).find((r) => /all.?time|mvp|most.?bookings|highest.?revenue/i.test(String(r.id || '') + String(r.title || ''))) ||
-    (records || []).find((r) => r.id === 'highest_deal_value');
-  if (allTimeRecord?.holderName && allTimeRecord?.value) {
-    const allTimeMvpId = 'crm-announcement-all-time-mvp';
-    if (!seenIds.has(allTimeMvpId)) {
-      const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(allTimeMvpId);
-      const sub = allTimeRecord.subValue ? ` (${allTimeRecord.subValue})` : '';
+  const achievedInr = Number(overallTargets[0]?.currentInr) || 0;
+  if (achievedInr >= EIGHTY_LAKH_INR) {
+    const monthKey = istYmd().slice(0, 7);
+    const milestoneId = `crm-month-milestone-${monthKey}`;
+    if (!seenIds.has(milestoneId)) {
+      const achieved = formatInrToLakhsOrCrores(achievedInr);
+      const preserved = existingPostsMap.get(milestoneId);
       posts.push({
-        id: allTimeMvpId,
-        type: 'performer',
-        categoryColor: '#7C3AED',
-        iconEmoji: '📖',
-        title: 'A New HUB Record Has Been Written',
-        timestamp: 'Verified record',
-        createdAt: new Date(now - 300 * 60000).toISOString(),
-        author: {
-          name: 'Leadership Office',
-          avatar: resolveAvatarForPerson('Leadership Office'),
-          team: 'Operations HQ',
-        },
-        content: `${allTimeRecord.holderName} enters the HUB Book of Records with ${allTimeRecord.value}${sub}.`,
-        reactions,
-        commentsCount,
-        comments,
-        department: 'Sales',
-      });
-      seenIds.add(allTimeMvpId);
-    }
-  }
-
-  // -------------------------------------------------------------------------
-  // Scenario #22: Target Streak (Option B: Triggers ONLY if a branch actually achieved 100% target for >= 2 consecutive months in CRM target history)
-  // -------------------------------------------------------------------------
-  for (const b of branchTargets || []) {
-    const bStreak = Number((b as any).consecutiveTargetMonths) || 0;
-    if (bStreak >= 2) {
-      const bName = cleanBranchName(b.branchName || b.team);
-      const streakId = `crm-announcement-streak-${b.branchId || bName.toLowerCase()}`;
-      if (!seenIds.has(streakId)) {
-        const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(streakId);
-        posts.push({
-          id: streakId,
-          type: 'performer',
-          categoryColor: '#EC4899',
-          iconEmoji: '🔥',
-          title: `Target Streak: ${bStreak} Months. ${bStreak} Targets.`,
-          timestamp: 'Target streak',
-          createdAt: new Date(now - 600 * 60000).toISOString(),
-          author: {
-            name: `Team ${bName}`,
-            avatar: resolveAvatarForPerson(`Team ${bName}`),
-            team: `${bName} Hub`,
-          },
-          content: `Team ${bName} has achieved its target for ${bStreak} consecutive months in CRM target history. Consistency wins.`,
-          reactions,
-          commentsCount,
-          comments,
-          department: 'Sales',
-        });
-        seenIds.add(streakId);
-      }
-    }
-  }
-
-  // -------------------------------------------------------------------------
-  // Scenario #7: Company Revenue Milestone — live overall target only
-  // -------------------------------------------------------------------------
-  const overallTarget = (overallTargets || [])[0];
-  const monthlyGrossId = 'crm-announcement-monthly-gross-target';
-  if (overallTarget && (overallTarget.currentInr != null || overallTarget.current) && !seenIds.has(monthlyGrossId)) {
-    const grossCurrentInr = Number(overallTarget.currentInr) || 0;
-    let milestoneText: string | null = null;
-    if (grossCurrentInr >= 20000000) {
-      milestoneText = '₹2 Crore';
-    } else if (grossCurrentInr >= 10000000) {
-      milestoneText = '₹1 Crore';
-    } else if (grossCurrentInr >= 5000000) {
-      milestoneText = '₹50 Lakhs';
-    }
-
-    const grossCurrent =
-      overallTarget.current || (grossCurrentInr ? formatInrToLakhsOrCrores(grossCurrentInr) : '');
-    const grossTarget =
-      overallTarget.target ||
-      (overallTarget.targetInr ? formatInrToLakhsOrCrores(overallTarget.targetInr) : '');
-    const grossProgress = typeof overallTarget.progress === 'number' ? overallTarget.progress : null;
-    const milestoneHeadline = milestoneText
-      ? `HUB Crosses ${milestoneText}!`
-      : grossCurrent
-        ? `Monthly Milestone: ${grossCurrent} Booked`
-        : null;
-    const milestoneContent = milestoneText
-      ? `The company has crossed ${milestoneText} in bookings this month. Built one closure at a time.`
-      : grossCurrent && grossTarget
-        ? `HUB has recorded ${grossCurrent} in gross bookings this month towards the ${grossTarget} monthly corridor target${
-            grossProgress != null ? ` (${grossProgress}% achieved)` : ''
-          }. Every closure counts toward our corridor target.`
-        : null;
-
-    if (milestoneHeadline && milestoneContent) {
-      const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(monthlyGrossId);
-      posts.push({
-        id: monthlyGrossId,
+        id: milestoneId,
         type: 'quota',
         categoryColor: '#0284C7',
         iconEmoji: '🎯',
-        title: milestoneHeadline,
-        timestamp: '3 hours ago',
-        createdAt: new Date(now - 180 * 60000).toISOString(),
+        title: 'Company crossed ₹80L this month',
+        timestamp: 'This month',
+        createdAt: `${istYmd()}T12:00:00+05:30`,
         author: {
-          name: 'Operations HQ',
-          avatar: resolveAvatarForPerson('Operations HQ'),
-          team: 'Executive Board',
+          name: 'HUB',
+          avatar: preserved?.author?.avatar || '',
+          team: 'Company',
         },
-        content: milestoneContent,
-        quotaProgress: {
-          current: grossCurrentInr,
-          target: Number(overallTarget.targetInr) || 0,
-          label: 'Monthly Gross Booking Quota',
-          percentage: grossProgress ?? 0,
-          currentFormatted: grossCurrent,
-          targetFormatted: grossTarget,
-        },
-        reactions,
-        commentsCount,
-        comments,
+        content: `Achieved ${achieved} in bookings this month.`,
+        quoteFormatted: achieved,
+        reactions: preserved?.reactions ? { ...preserved.reactions } : defaultReactions(),
+        comments: preserved?.comments && preserved.comments.length > 0 ? [...preserved.comments] : [],
+        commentsCount: preserved?.commentsCount || preserved?.comments?.length || 0,
         department: 'Sales',
       });
-      seenIds.add(monthlyGrossId);
     }
   }
 
-  // -------------------------------------------------------------------------
-  // Scenario #5: EC Target Milestone (Option B: Triggers ONLY when branch pacing reaches >= 80% and < 100%)
-  // -------------------------------------------------------------------------
-  for (const b of branchTargets || []) {
-    const prog = typeof b.progress === 'number' ? b.progress : 0;
-    if (prog >= 80 && prog < 100) {
-      const bName = cleanBranchName(b.branchName || b.team);
-      const bPaceId = `crm-announcement-branch-target-milestone-${b.branchId || bName.toLowerCase()}`;
-      if (!seenIds.has(bPaceId)) {
-        const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(bPaceId);
-        posts.push({
-          id: bPaceId,
-          type: 'quota',
-          categoryColor: '#8B5CF6',
-          iconEmoji: '🎯',
-          title: `${bName} Hits ${prog}%!`,
-          timestamp: 'Target milestone',
-          createdAt: new Date(now - 300 * 60000).toISOString(),
-          author: {
-            name: `Team ${bName}`,
-            avatar: resolveAvatarForPerson(bName),
-            team: `${bName} Hub`,
-          },
-          content: `${bName} has crossed ${prog}% of its monthly target. The finish line is getting closer.`,
-          quotaProgress: {
-            current: b.currentInr || 0,
-            target: b.targetInr || 100,
-            label: `${bName} Monthly Target`,
-            percentage: prog,
-            currentFormatted: b.current || formatInrToLakhsOrCrores(b.currentInr || 0),
-            targetFormatted: b.target || formatInrToLakhsOrCrores(b.targetInr || 0),
-          },
-          reactions,
-          commentsCount,
-          comments,
-          department: 'Sales',
-        });
-        seenIds.add(bPaceId);
-      }
-    }
-  }
-
-  // -------------------------------------------------------------------------
-  // Scenario #6: 100% Target Achievement (Option B: Triggers ONLY when branch or company pacing crosses >= 100%)
-  // -------------------------------------------------------------------------
-  if ((overallTarget?.progress || 0) >= 100) {
-    const crushedCompanyId = 'crm-announcement-target-crushed-company';
-    if (!seenIds.has(crushedCompanyId)) {
-      const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(crushedCompanyId);
-      posts.push({
-        id: crushedCompanyId,
-        type: 'quota',
-        categoryColor: '#10B981',
-        iconEmoji: '🏆',
-        title: 'Target Crushed: 100%!',
-        timestamp: 'Target achieved',
-        createdAt: new Date(now - 120 * 60000).toISOString(),
-        author: {
-          name: 'Operations HQ',
-          avatar: resolveAvatarForPerson('Operations HQ'),
-          team: 'Executive Board',
-        },
-        content: 'HUB has officially crossed its monthly target. Everything from here is overachievement.',
-        reactions,
-        commentsCount,
-        comments,
-        department: 'Sales',
-      });
-      seenIds.add(crushedCompanyId);
-    }
-  }
-  for (const b of branchTargets || []) {
-    if ((b.progress || 0) >= 100) {
-      const bName = cleanBranchName(b.branchName || b.team);
-      const bCrushedId = `crm-announcement-target-crushed-${b.branchId || bName.toLowerCase()}`;
-      if (!seenIds.has(bCrushedId)) {
-        const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(bCrushedId);
-        posts.push({
-          id: bCrushedId,
-          type: 'quota',
-          categoryColor: '#10B981',
-          iconEmoji: '🏆',
-          title: 'Target Crushed: 100%!',
-          timestamp: 'Target achieved',
-          createdAt: new Date(now - 120 * 60000).toISOString(),
-          author: {
-            name: `Team ${bName}`,
-            avatar: resolveAvatarForPerson(bName),
-            team: `${bName} Hub`,
-          },
-          content: `Team ${bName} has officially crossed its monthly target. Everything from here is overachievement.`,
-          reactions,
-          commentsCount,
-          comments,
-          department: 'Sales',
-        });
-        seenIds.add(bCrushedId);
-      }
-    }
-  }
-
-  // -------------------------------------------------------------------------
-  // Scenario #23: Company-Wide Goal Nearing (Option B: Triggers ONLY when company progress is in final sprint >= 85% and < 100%)
-  // -------------------------------------------------------------------------
-  const companyProg = typeof overallTarget?.progress === 'number' ? overallTarget.progress : 0;
-  if (companyProg >= 85 && companyProg < 100) {
-    const diffInr = Math.max(0, (overallTarget?.targetInr || 0) - (overallTarget?.currentInr || 0));
-    const diffFormatted = formatInrToLakhsOrCrores(diffInr);
-    const targetFormatted = overallTarget?.target || formatInrToLakhsOrCrores(overallTarget?.targetInr || 0);
-    const nearingId = 'crm-announcement-company-goal-nearing';
-    if (!seenIds.has(nearingId)) {
-      const { reactions, comments, commentsCount } = getPreservedReactionsAndComments(nearingId);
-      posts.push({
-        id: nearingId,
-        type: 'quota',
-        categoryColor: '#E11D48',
-        iconEmoji: '🎯',
-        title: `${diffFormatted} Away From ${targetFormatted}`,
-        timestamp: 'Final sprint',
-        createdAt: new Date(now - 150 * 60000).toISOString(),
-        author: {
-          name: 'Operations HQ',
-          avatar: resolveAvatarForPerson('Operations HQ'),
-          team: 'Executive Board',
-        },
-        content: `One final push. HUB is just ${diffFormatted} away from the monthly ${targetFormatted} milestone.`,
-        reactions,
-        commentsCount,
-        comments,
-        department: 'Sales',
-      });
-      seenIds.add(nearingId);
-    }
-  }
-
-  // Sort by createdAt descending and cap to top recent high-impact updates (top 10 unique cards)
   posts.sort((a, b) => {
     const tA = new Date(a.createdAt || 0).getTime();
     const tB = new Date(b.createdAt || 0).getTime();
     return tB - tA;
   });
-
-  return posts.slice(0, 10);
+  return posts;
 }
 
 /**
