@@ -965,167 +965,157 @@ function rankReps(rows: ClosedBooking[]) {
 async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<UpstreamPayload> {
   try {
     void payload;
-    const pool = getPool();
-    const crmDb = process.env.CRM_DB_NAME || 'CRM';
-    const today = istTodayYmd();
-    const monthStart = `${today.slice(0, 7)}-01`;
-    const nextMonth = nextMonthYmd(today);
-    const weekStart = weekMondayYmd(today);
-    const nextWeek = shiftYmd(weekStart, 7);
+    const token = await getShowcaseCrmToken();
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth();
+    const monthFrom = new Date(y, m, 1, 0, 0, 0, 0);
+    const monthTo = new Date(y, m + 1, 0, 23, 59, 59, 999);
+    const fromMs = monthFrom.getTime();
+    const toMs = monthTo.getTime();
 
-    let bookingRows: any[] = [];
-    try {
-      const [rows]: any = await pool.query(
-        `
-        SELECT
-          b.id,
-          b.customer_name,
-          b.submitted_by_name,
-          b.quote_amount,
-          b.booking_done_date
-        FROM ${crmDb}.booking_token_record b
-        WHERE (b.cancellation_approval_status IS NULL OR UPPER(b.cancellation_approval_status) NOT IN ('APPROVED', 'PENDING'))
-          AND b.booking_done_date IS NOT NULL
-          AND DATE(b.booking_done_date) >= ?
-          AND DATE(b.booking_done_date) < ?
-          AND b.quote_amount > 0
-        `,
-        [monthStart, nextMonth]
-      );
-      bookingRows = Array.isArray(rows) ? rows : [];
-    } catch (err) {
-      console.warn('Closed booking register query failed:', err);
-    }
+    // Monday 00:00:00 to Sunday 23:59:59 IST for current week
+    const day = now.getDay();
+    const diffToMonday = day === 0 ? -6 : 1 - day;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + diffToMonday);
+    monday.setHours(0, 0, 0, 0);
+    const weekFromMs = monday.getTime();
 
-    let weekRowsRaw: any[] = [];
-    try {
-      const [rows]: any = await pool.query(
-        `
-        SELECT
-          b.id,
-          b.customer_name,
-          b.submitted_by_name,
-          b.quote_amount,
-          b.created_at
-        FROM ${crmDb}.booking_token_record b
-        WHERE (b.cancellation_approval_status IS NULL OR UPPER(b.cancellation_approval_status) NOT IN ('APPROVED', 'PENDING'))
-          AND b.created_at IS NOT NULL
-          AND DATE(b.created_at) >= ?
-          AND DATE(b.created_at) < ?
-          AND b.quote_amount > 0
-          AND UPPER(COALESCE(b.listing_type, '')) IN ('TOKEN', 'BOOKING')
-        `,
-        [weekStart, nextWeek]
-      );
-      weekRowsRaw = Array.isArray(rows) ? rows : [];
-    } catch (err) {
-      console.warn('Weekly gross query failed:', err);
-    }
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    sunday.setHours(23, 59, 59, 999);
+    const weekToMs = sunday.getTime();
+    const weekStartStr = monday.toISOString().slice(0, 10);
 
-    const closed: ClosedBooking[] = [];
-    for (const row of bookingRows) {
-      const repRaw = String(row.submitted_by_name || '').trim();
-      const customerRaw = String(row.customer_name || '').trim();
-      if (!repRaw || TEST_LEAD.test(repRaw) || TEST_LEAD.test(customerRaw)) continue;
-      const quote = Number(row.quote_amount);
-      const ymd = ymdFromDb(row.booking_done_date);
-      if (!Number.isFinite(quote) || quote <= 0 || !ymd) continue;
-      closed.push({
-        id: String(row.id),
-        rep: formatPersonName(repRaw),
-        key: repKey(repRaw),
-        customer: customerRaw ? formatPersonName(customerRaw) : '',
-        quote,
-        ymd,
-      });
-    }
+    const dealsUrl = `${CRM_BASE}/v1/booking-token/deals?page=0&size=500&listingType=booking&submittedFrom=${encodeURIComponent(
+      monthFrom.toISOString()
+    )}&submittedTo=${encodeURIComponent(monthTo.toISOString())}`;
 
-    const monthRows = closed.filter((row) => row.ymd >= monthStart && row.ymd < nextMonth);
-    const weekRows: ClosedBooking[] = [];
-    for (const row of weekRowsRaw) {
-      const repRaw = String(row.submitted_by_name || '').trim();
-      const customerRaw = String(row.customer_name || '').trim();
-      if (!repRaw || TEST_LEAD.test(repRaw) || TEST_LEAD.test(customerRaw)) continue;
-      const quote = Number(row.quote_amount);
-      const ymd = ymdFromDb(row.created_at);
-      if (!Number.isFinite(quote) || quote <= 0 || !ymd) continue;
-      weekRows.push({
-        id: String(row.id),
-        rep: formatPersonName(repRaw),
-        key: repKey(repRaw),
-        customer: customerRaw ? formatPersonName(customerRaw) : '',
-        quote,
-        ymd,
-      });
-    }
-    const weeklyWinner = rankReps(weekRows);
-
-    const feed: any[] = [];
-    const bookings = [...monthRows].sort((a, b) => (a.ymd < b.ymd ? 1 : a.ymd > b.ymd ? -1 : b.id.localeCompare(a.id)));
-    for (const row of bookings.slice(0, 8)) {
-      const amount = formatQuote(row.quote);
-      const big = row.quote >= TEN_LAKH_INR;
-      const home = row.customer ? `${row.customer}'s home` : 'a home';
-      feed.push({
-        id: `crm-booking-${row.id}`,
-        type: 'booking',
-        registerKind: 'booking',
-        title: big ? `Big one closed — ${row.rep}` : `New booking — ${row.rep}`,
-        content: big
-          ? `${row.rep} closed ${home} for ${amount}.`
-          : `${row.rep} booked ${home} for ${amount}.`,
-        quoteFormatted: amount,
-        timestamp: row.ymd,
-        createdAt: istNoon(row.ymd),
-        author: { name: row.rep, avatar: null, team: 'Sales' },
-        department: 'Sales',
-        rawBooking: {
-          bookingId: row.id,
-          quoteAmount: row.quote,
-          customerName: row.customer,
-          isLargeBooking: big,
-          bookingDoneDate: row.ymd,
-        },
-      });
-    }
-
-    if (weeklyWinner) {
-      const weekAmount = formatQuote(weeklyWinner.total);
-      feed.push({
-        id: `crm-weekly-top-${weekStart}`,
-        type: 'performer',
-        registerKind: 'weekly',
-        title: 'This week’s top performer',
-        content: `${weeklyWinner.name} leads this week with ${weekAmount} in gross bookings.`,
-        quoteFormatted: weekAmount,
-        timestamp: 'This week',
-        createdAt: istNoon(today),
-        author: { name: weeklyWinner.name, avatar: null, team: 'Sales' },
-        department: 'Sales',
-        rawBooking: {
-          bookingId: weekStart,
-          quoteAmount: weeklyWinner.total,
-          customerName: weeklyWinner.name,
-          bookingDoneDate: weekStart,
-        },
-      });
-    }
-
-    const resJson = JSON.stringify({
-      source: 'CRM.booking_token_record',
-      feed,
+    const res = await fetch(dealsUrl, {
+      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(10000),
     });
-    const newBuf = Buffer.from(resJson, 'utf-8');
-    const newAb = newBuf.buffer.slice(newBuf.byteOffset, newBuf.byteOffset + newBuf.byteLength);
-    return {
-      status: 200,
-      contentType: 'application/json',
-      body: newAb,
-    };
+
+    if (res.ok) {
+      const data = await res.json();
+      const rawDeals: any[] = Array.isArray(data?.deals) ? data.deals : [];
+
+      const validDeals = rawDeals.filter((d) => {
+        if (d.listingType !== 'booking') return false;
+        if (d.cancellationApprovalStatus === 'APPROVED') return false;
+        const who = (d.assign || d.assignee || d.submittedByName || '').toLowerCase();
+        if (
+          who.includes('test') ||
+          who.includes('alice') ||
+          who.includes('shalny') ||
+          who.includes('razi')
+        )
+          return false;
+        const t = new Date(d.submittedAt).getTime();
+        return !isNaN(t) && t >= fromMs && t <= toMs;
+      });
+
+      // Sort newest deals first
+      validDeals.sort(
+        (a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()
+      );
+
+      const feed: any[] = [];
+      const repWeekTotals = new Map<string, { name: string; total: number; team: string }>();
+
+      for (const d of validDeals) {
+        const repRaw = String(d.assign || d.assignee || d.submittedByName || '').trim();
+        const exec = matchExecutive(repRaw);
+        const repName = exec ? exec.name : formatPersonName(repRaw);
+        const teamName = exec
+          ? exec.branchId === 'SARJAPUR'
+            ? 'Sarjapura Hub'
+            : exec.branchId === 'HBR'
+            ? 'HBR Hub'
+            : 'JP Nagar Hub'
+          : 'Sales Hub';
+
+        const quote = Number(d.dealValue) || 0;
+        const amount = formatQuote(quote);
+        const big = quote >= TEN_LAKH_INR; // >= 10 Lakhs (10L) is "Big one closed", other will come as "New booking"
+        const customer = d.customerName ? formatPersonName(d.customerName) : '';
+        const home = customer ? `${customer}'s home` : 'a home';
+        const dealTime = new Date(d.submittedAt).getTime();
+        const ymd = (d.bookingDate || d.submittedAt || '').slice(0, 10);
+
+        feed.push({
+          id: `crm-booking-${d.id}`,
+          type: 'booking',
+          registerKind: 'booking',
+          title: big ? `Big one closed — ${repName}` : `New booking — ${repName}`,
+          content: big
+            ? `${repName} closed ${home} for ${amount}.`
+            : `${repName} booked ${home} for ${amount}.`,
+          quoteFormatted: amount,
+          timestamp: ymd,
+          createdAt: d.submittedAt,
+          author: { name: repName, avatar: null, team: teamName },
+          department: 'Sales',
+          rawBooking: {
+            bookingId: d.id,
+            quoteAmount: quote,
+            customerName: customer,
+            isLargeBooking: big,
+            bookingDoneDate: ymd,
+          },
+        });
+
+        // Tally week totals
+        if (dealTime >= weekFromMs && dealTime <= weekToMs) {
+          const prev = repWeekTotals.get(repName) || { name: repName, total: 0, team: teamName };
+          prev.total += quote;
+          repWeekTotals.set(repName, prev);
+        }
+      }
+
+      // Live week's top performer
+      const weeklyWinner = [...repWeekTotals.values()].sort((a, b) => b.total - a.total)[0];
+      if (weeklyWinner && weeklyWinner.total > 0) {
+        const weekAmount = formatQuote(weeklyWinner.total);
+        feed.unshift({
+          id: `crm-weekly-top-${weekStartStr}`,
+          type: 'performer',
+          registerKind: 'weekly',
+          title: 'This week’s top performer',
+          content: `${weeklyWinner.name} leads this week with ${weekAmount} in gross bookings.`,
+          quoteFormatted: weekAmount,
+          timestamp: 'This week',
+          createdAt: new Date().toISOString(),
+          author: { name: weeklyWinner.name, avatar: null, team: weeklyWinner.team },
+          department: 'Sales',
+          rawBooking: {
+            bookingId: weekStartStr,
+            quoteAmount: weeklyWinner.total,
+            customerName: weeklyWinner.name,
+            bookingDoneDate: weekStartStr,
+          },
+        });
+      }
+
+      const resJson = JSON.stringify({
+        source: 'CRM Booking & Token Deals',
+        feed,
+      });
+      const newBuf = Buffer.from(resJson, 'utf-8');
+      const newAb = newBuf.buffer.slice(newBuf.byteOffset, newBuf.byteOffset + newBuf.byteLength);
+      return {
+        status: 200,
+        contentType: 'application/json',
+        body: newAb,
+      };
+    }
   } catch (err) {
-    console.warn('Failed to sanitize hallway feed payload:', err);
-    return payload;
+    console.warn('Failed to sanitize live hallway feed payload:', err);
   }
+
+  return payload;
 }
 
 function loadDiskCacheEntry(key: string): { expiresAt: number; payload: UpstreamPayload } | null {
