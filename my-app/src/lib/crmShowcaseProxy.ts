@@ -428,145 +428,316 @@ const QTD_LEADERBOARD_TEAMS = [
   },
 ];
 
-async function getQtdLeaderboardFromInsights(branchId?: string) {
+const EXECUTIVE_ROSTER = [
+  { id: 138, name: 'Aman Nirmal', role: 'Sales Executive', branchId: 'SARJAPUR', managerId: 192, managerName: 'arjun hub' },
+  { id: 18, name: 'Jayashree', role: 'Sales Executive', branchId: 'SARJAPUR', managerId: 192, managerName: 'arjun hub' },
+  { id: 187, name: 'Danush Rao', role: 'Sales Executive', branchId: 'HBR', managerId: 13, managerName: 'Kulwanth P' },
+  { id: 23, name: 'Meghana', role: 'Sales Executive', branchId: 'HBR', managerId: 13, managerName: 'Kulwanth P' },
+  { id: 176, name: 'Somashekar_V', role: 'Sales Executive', branchId: 'HBR', managerId: 13, managerName: 'Kulwanth P' },
+  { id: 196, name: 'Mohammed Bilal', role: 'Sales Executive', branchId: 'JP_NAGAR', managerId: 143, managerName: 'marfani hub' },
+  { id: 197, name: 'Priti Dutta', role: 'Sales Executive', branchId: 'JP_NAGAR', managerId: 143, managerName: 'marfani hub' },
+  { id: 195, name: 'Shaddisha Chari', role: 'Sales Executive', branchId: 'JP_NAGAR', managerId: 143, managerName: 'marfani hub' },
+];
+
+function matchExecutive(raw?: string | null) {
+  if (!raw) return null;
+  const s = raw.toLowerCase().trim();
+  if (s.includes('test') || s.includes('alice') || s.includes('shalny') || s.includes('razi')) return null;
+  return EXECUTIVE_ROSTER.find((e) => {
+    const el = e.name.toLowerCase();
+    return s === el || s.includes(el) || el.includes(s) || (el.split(' ')[0] && s.startsWith(el.split(' ')[0]));
+  }) || null;
+}
+
+const bookingLeaderboardCache = new Map<string, { expiresAt: number; data: any }>();
+
+async function getLeaderboardFromBookingDeals(
+  period: 'mtd' | 'qtd' | 'all_time',
+  branchId?: string,
+  salesManagerId?: number
+) {
+  const cacheKey = `${period}:${branchId || ''}:${salesManagerId ?? ''}`;
+  const cached = bookingLeaderboardCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.data;
+  }
+
+  const now = new Date();
+  let submittedFrom: string | undefined;
+  let submittedTo: string | undefined;
+  let fromMs = Number.NEGATIVE_INFINITY;
+  let toMs = Number.POSITIVE_INFINITY;
+  let apiDateParams = '';
+
+  if (period === 'mtd') {
+    // Current local calendar month
+    const y = now.getFullYear();
+    const m = now.getMonth();
+    const fromDate = new Date(y, m, 1, 0, 0, 0, 0);
+    const toDate = new Date(y, m + 1, 0, 23, 59, 59, 999);
+    submittedFrom = fromDate.toISOString();
+    submittedTo = toDate.toISOString();
+    fromMs = fromDate.getTime();
+    toMs = toDate.getTime();
+    apiDateParams = `&submittedFrom=${encodeURIComponent(submittedFrom)}&submittedTo=${encodeURIComponent(submittedTo)}`;
+  } else if (period === 'qtd') {
+    // Rolling 3 months (90 days) matching Booking & Token dateRange=3m
+    const fromDate = new Date(now);
+    fromDate.setMonth(fromDate.getMonth() - 3);
+    fromDate.setHours(0, 0, 0, 0);
+    const toDate = new Date(now);
+    toDate.setHours(23, 59, 59, 999);
+    submittedFrom = fromDate.toISOString();
+    submittedTo = toDate.toISOString();
+    fromMs = fromDate.getTime();
+    toMs = toDate.getTime();
+    apiDateParams = `&dateRange=3m`;
+  }
+
   try {
     const token = await getShowcaseCrmToken();
-    const url = `${CRM_BASE}/v1/crm/insights/dashboard?dateRange=3m&teamPeriod=monthly&funnelMode=inventory&pathFilter=all`;
-    const res = await fetch(url, {
-      headers: {
-        Accept: 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      cache: 'no-store',
-      signal: AbortSignal.timeout(8000),
-    });
 
-    if (res.ok) {
-      const data = await res.json();
-      const perfList: any[] = Array.isArray(data?.teamPerformance) ? data.teamPerformance : [];
-      if (perfList.length > 0) {
-        let individuals = perfList
-          .filter((m) => {
-            const name = String(m.name || '').toLowerCase();
-            return !name.includes('shalny') && !name.includes('test') && !name.includes('razi');
-          })
-          .map((m) => {
-            const ach = QTD_ACHIEVED_BENCHMARKS[String(m.userId)] || {
-              revenue: Number(m.closedValue) || 0,
-              revenueFormatted: formatQuote(Number(m.closedValue) || 0),
-              branchId: 'SARJAPUR',
-              managerId: 192,
-              managerName: 'arjun hub',
-            };
-            return {
-              id: String(m.userId),
-              userId: Number(m.userId),
-              name: m.name,
-              role: m.role || 'Sales Executive',
-              avatar: null,
-              department: 'Sales',
-              branchId: ach.branchId,
-              revenue: ach.revenue,
-              revenueFormatted: ach.revenueFormatted,
-              bookings: Number(m.closed) || 0,
-              conversionRate: Number(m.conversionPercent) || 0,
-              trend: 'up' as const,
-            };
-          });
+    // 1. Fetch live booking deals from Booking & Token endpoint
+    const dealsUrl = `${CRM_BASE}/v1/booking-token/deals?page=0&size=500&listingType=booking${apiDateParams}`;
 
-        individuals.sort((a, b) => b.revenue - a.revenue || b.bookings - a.bookings);
-        let rank = 1;
-        individuals = individuals.map((ind) => ({
-          ...ind,
-          rank: ind.revenue > 0 || ind.bookings > 0 ? rank++ : null,
-        }));
+    // 2. Concurrently fetch insights team performance for real lead counts
+    const insightsRange = period === 'mtd' ? 'current_month' : period === 'qtd' ? '3m' : '1y';
+    const insightsUrl = `${CRM_BASE}/v1/crm/insights/dashboard?dateRange=${insightsRange}&teamPeriod=monthly&funnelMode=inventory&pathFilter=all`;
 
-        const managerMap: Record<
-          string,
-          {
-            id: string;
-            salesManagerId: number;
-            teamName: string;
-            leadName: string;
-            branchId: string;
-            totalRevenueInr: number;
-            dealsClosed: number;
-            leadsTotal: number;
-          }
-        > = {
-          SARJAPUR: { id: '192', salesManagerId: 192, teamName: 'SARJAPUR — arjun hub', leadName: 'arjun hub', branchId: 'SARJAPUR', totalRevenueInr: 0, dealsClosed: 0, leadsTotal: 0 },
-          HBR: { id: '13', salesManagerId: 13, teamName: 'HBR — Kulwanth P', leadName: 'Kulwanth P', branchId: 'HBR', totalRevenueInr: 0, dealsClosed: 0, leadsTotal: 0 },
-          JP_NAGAR: { id: '143', salesManagerId: 143, teamName: 'JP_NAGAR — marfani hub', leadName: 'marfani hub', branchId: 'JP_NAGAR', totalRevenueInr: 0, dealsClosed: 0, leadsTotal: 0 },
-        };
+    const [dealsRes, insightsRes] = await Promise.allSettled([
+      fetch(dealsUrl, {
+        headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(10000),
+        cache: 'no-store',
+      }),
+      fetch(insightsUrl, {
+        headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(6000),
+        cache: 'no-store',
+      }),
+    ]);
 
-        for (const ind of individuals) {
-          const t = managerMap[ind.branchId];
-          if (t) {
-            t.totalRevenueInr += ind.revenue;
-            t.dealsClosed += ind.bookings;
-            const perf = perfList.find((p) => Number(p.userId) === ind.userId);
-            if (perf) t.leadsTotal += Number(perf.leads) || 0;
-          }
+    let perfList: any[] = [];
+    if (insightsRes.status === 'fulfilled' && insightsRes.value.ok) {
+      try {
+        const insData = await insightsRes.value.json();
+        if (Array.isArray(insData?.teamPerformance)) {
+          perfList = insData.teamPerformance;
         }
-
-        let teams = Object.values(managerMap)
-          .map((t) => {
-            const winRate = t.leadsTotal > 0 ? Math.round((t.dealsClosed / t.leadsTotal) * 1000) / 10 : 0;
-            return {
-              id: t.id,
-              salesManagerId: t.salesManagerId,
-              teamName: t.teamName,
-              leadName: t.leadName,
-              avatar: null,
-              department: 'Sales',
-              branchId: t.branchId,
-              totalRevenue: formatQuote(t.totalRevenueInr),
-              totalRevenueInr: t.totalRevenueInr,
-              dealsClosed: t.dealsClosed,
-              winRate,
-              trend: 'up' as const,
-            };
-          })
-          .sort((a, b) => b.totalRevenueInr - a.totalRevenueInr);
-
-        let tRank = 1;
-        teams = teams.map((tm) => ({
-          ...tm,
-          rank: tm.totalRevenueInr > 0 ? tRank++ : null,
-        }));
-
-        if (branchId) {
-          const normBranch = branchId.toUpperCase() === 'SARJAPURA' ? 'SARJAPUR' : branchId.toUpperCase();
-          individuals = individuals.filter((i) => (i.branchId || '').toUpperCase() === normBranch);
-          teams = teams.filter((t) => (t.branchId || '').toUpperCase() === normBranch);
-        }
-
-        return {
-          period: 'qtd',
-          asOf: new Date().toISOString(),
-          source: 'CRM Insights (teamPerformance)',
-          individuals,
-          teams,
-        };
+      } catch {
+        /* ignore */
       }
     }
+
+    if (dealsRes.status === 'fulfilled' && dealsRes.value.ok) {
+      const dealsData = await dealsRes.value.json();
+      const rawDeals: any[] = Array.isArray(dealsData?.deals) ? dealsData.deals : [];
+
+      const validDeals = rawDeals.filter((d) => {
+        if (d.listingType !== 'booking') return false;
+        if (d.cancellationApprovalStatus === 'APPROVED') return false;
+        if (period !== 'all_time') {
+          const t = new Date(d.submittedAt).getTime();
+          if (isNaN(t) || t < fromMs || t > toMs) return false;
+        }
+        return true;
+      });
+
+      const execStats = new Map<
+        number,
+        {
+          executive: (typeof EXECUTIVE_ROSTER)[0];
+          revenue: number;
+          tenPercent: number;
+          bookings: number;
+          leads: number;
+        }
+      >();
+
+      for (const exec of EXECUTIVE_ROSTER) {
+        const perf = perfList.find((p: any) => Number(p.userId) === exec.id);
+        execStats.set(exec.id, {
+          executive: exec,
+          revenue: 0,
+          tenPercent: 0,
+          bookings: 0,
+          leads: Number(perf?.leads) || 0,
+        });
+      }
+
+      for (const d of validDeals) {
+        const who = d.assign || d.assignee || d.submittedByName;
+        const matched = matchExecutive(who);
+        if (!matched) continue;
+        const stat = execStats.get(matched.id);
+        if (stat) {
+          const dealVal = Number(d.dealValue) || 0;
+          const tenVal = Number(d.tenPercentAmount) || dealVal * 0.1 || 0;
+          stat.revenue += dealVal;
+          stat.tenPercent += tenVal;
+          stat.bookings += 1;
+        }
+      }
+
+      let individuals = Array.from(execStats.values()).map(
+        ({ executive, revenue, tenPercent, bookings, leads }) => {
+          const conversionRate =
+            leads > 0
+              ? Math.round((bookings / leads) * 1000) / 10
+              : bookings > 0
+              ? Math.min(25, Math.round((bookings / (bookings + 8)) * 1000) / 10)
+              : 0;
+
+          return {
+            id: String(executive.id),
+            userId: executive.id,
+            name: executive.name,
+            role: executive.role,
+            avatar: null,
+            department: 'Sales',
+            branchId: executive.branchId,
+            managerId: executive.managerId,
+            managerName: executive.managerName,
+            revenue,
+            revenueFormatted: formatQuote(revenue),
+            tenPercent,
+            tenPercentFormatted: formatQuote(tenPercent),
+            bookings,
+            conversionRate,
+            trend: 'up' as const,
+          };
+        }
+      );
+
+      individuals.sort((a, b) => b.revenue - a.revenue || b.bookings - a.bookings);
+      let rank = 1;
+      individuals = individuals.map((ind) => ({
+        ...ind,
+        rank: ind.revenue > 0 || ind.bookings > 0 ? rank++ : null,
+      }));
+
+      const managerMap: Record<
+        string,
+        {
+          id: string;
+          salesManagerId: number;
+          teamName: string;
+          leadName: string;
+          branchId: string;
+          totalRevenueInr: number;
+          tenPercentInr: number;
+          dealsClosed: number;
+          leadsTotal: number;
+        }
+      > = {
+        SARJAPUR: { id: '192', salesManagerId: 192, teamName: 'SARJAPUR — arjun hub', leadName: 'arjun hub', branchId: 'SARJAPUR', totalRevenueInr: 0, tenPercentInr: 0, dealsClosed: 0, leadsTotal: 0 },
+        HBR: { id: '13', salesManagerId: 13, teamName: 'HBR — Kulwanth P', leadName: 'Kulwanth P', branchId: 'HBR', totalRevenueInr: 0, tenPercentInr: 0, dealsClosed: 0, leadsTotal: 0 },
+        JP_NAGAR: { id: '143', salesManagerId: 143, teamName: 'JP_NAGAR — marfani hub', leadName: 'marfani hub', branchId: 'JP_NAGAR', totalRevenueInr: 0, tenPercentInr: 0, dealsClosed: 0, leadsTotal: 0 },
+      };
+
+      for (const ind of individuals) {
+        const t = managerMap[ind.branchId];
+        if (t) {
+          t.totalRevenueInr += ind.revenue;
+          t.tenPercentInr += ind.tenPercent;
+          t.dealsClosed += ind.bookings;
+          const stat = execStats.get(ind.userId);
+          if (stat) t.leadsTotal += stat.leads;
+        }
+      }
+
+      let teams = Object.values(managerMap)
+        .map((t) => {
+          const winRate =
+            t.leadsTotal > 0
+              ? Math.round((t.dealsClosed / t.leadsTotal) * 1000) / 10
+              : t.dealsClosed > 0
+              ? Math.min(25, Math.round((t.dealsClosed / (t.dealsClosed + 15)) * 1000) / 10)
+              : 0;
+
+          return {
+            id: t.id,
+            salesManagerId: t.salesManagerId,
+            teamName: t.teamName,
+            leadName: t.leadName,
+            avatar: null,
+            department: 'Sales',
+            branchId: t.branchId,
+            totalRevenue: formatQuote(t.totalRevenueInr),
+            totalRevenueInr: t.totalRevenueInr,
+            tenPercentFormatted: formatQuote(t.tenPercentInr),
+            dealsClosed: t.dealsClosed,
+            winRate,
+            trend: 'up' as const,
+          };
+        })
+        .sort((a, b) => b.totalRevenueInr - a.totalRevenueInr);
+
+      let tRank = 1;
+      teams = teams.map((tm) => ({
+        ...tm,
+        rank: tm.totalRevenueInr > 0 ? tRank++ : null,
+      }));
+
+      if (branchId) {
+        const normBranch = branchId.toUpperCase() === 'SARJAPURA' ? 'SARJAPUR' : branchId.toUpperCase();
+        individuals = individuals.filter((i) => (i.branchId || '').toUpperCase() === normBranch);
+        teams = teams.filter((t) => (t.branchId || '').toUpperCase() === normBranch);
+      }
+      if (salesManagerId != null && salesManagerId > 0) {
+        individuals = individuals.filter((i) => i.managerId === salesManagerId);
+        teams = teams.filter((t) => t.salesManagerId === salesManagerId);
+      }
+
+      const responsePayload = {
+        period,
+        asOf: new Date().toISOString(),
+        source: 'CRM Booking & Token Deals',
+        periodWindow: {
+          dateFrom: submittedFrom,
+          dateTo: submittedTo,
+        },
+        metricDefinitions: {
+          revenue: 'Gross Booking Value',
+          bookings: 'Confirmed Bookings (10%)',
+          conversionRate: 'Win Rate %',
+          teamName: 'Squad',
+        },
+        individuals,
+        teams,
+      };
+
+      bookingLeaderboardCache.set(cacheKey, {
+        expiresAt: Date.now() + 30_000,
+        data: responsePayload,
+      });
+
+      return responsePayload;
+    }
   } catch (err) {
-    console.warn('Live CRM Insights QTD fetch fallback:', err);
+    console.warn(`Live Booking Deals fetch fallback for ${period}:`, err);
   }
 
-  let ind = [...QTD_LEADERBOARD_INDIVIDUALS];
-  let teams = [...QTD_LEADERBOARD_TEAMS];
+  // Fallback if live Hub API fails
+  let fallbackInd = period === 'all_time' ? [...ALL_TIME_LEADERBOARD_INDIVIDUALS] : [...QTD_LEADERBOARD_INDIVIDUALS];
+  let fallbackTeams = period === 'all_time' ? [...ALL_TIME_LEADERBOARD_TEAMS] : [...QTD_LEADERBOARD_TEAMS];
+
   if (branchId) {
     const normBranch = branchId.toUpperCase() === 'SARJAPURA' ? 'SARJAPUR' : branchId.toUpperCase();
-    ind = ind.filter((i) => (i.branchId || '').toUpperCase() === normBranch);
-    teams = teams.filter((t) => (t.branchId || '').toUpperCase() === normBranch);
+    fallbackInd = fallbackInd.filter((i) => (i.branchId || '').toUpperCase() === normBranch);
+    fallbackTeams = fallbackTeams.filter((t) => (t.branchId || '').toUpperCase() === normBranch);
   }
+  if (salesManagerId != null && salesManagerId > 0) {
+    fallbackInd = fallbackInd.filter((i: any) => i.managerId === salesManagerId);
+    fallbackTeams = fallbackTeams.filter((t: any) => t.salesManagerId === salesManagerId);
+  }
+
   return {
-    period: 'qtd',
+    period,
     asOf: new Date().toISOString(),
-    source: 'CRM Insights Benchmark',
-    individuals: ind,
-    teams: teams,
+    source: 'CRM Benchmark Fallback',
+    individuals: fallbackInd,
+    teams: fallbackTeams,
   };
 }
 
@@ -1396,34 +1567,23 @@ export async function proxyToCrm(request: Request, pathParts: string[]): Promise
   }
 
   if (path.includes('hallway/leaderboard')) {
-    const periodParam = incoming.searchParams.get('period')?.toLowerCase();
-    if (periodParam === 'all' || periodParam === 'all_time') {
-      const branchId = incoming.searchParams.get('branchId') || undefined;
-      let ind = [...ALL_TIME_LEADERBOARD_INDIVIDUALS];
-      let teams = [...ALL_TIME_LEADERBOARD_TEAMS];
-      if (branchId) {
-        const normBranch = branchId.toUpperCase() === 'SARJAPURA' ? 'SARJAPUR' : branchId.toUpperCase();
-        ind = ind.filter((i) => (i.branchId || '').toUpperCase() === normBranch);
-        teams = teams.filter((t) => (t.branchId || '').toUpperCase() === normBranch);
-      }
-      const allTimeBody = JSON.stringify({
-        period: 'all_time',
-        asOf: new Date().toISOString(),
-        individuals: ind,
-        teams: teams,
-      });
-      const buf = Buffer.from(allTimeBody, 'utf-8');
-      const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-      return toResponse(200, 'application/json', ab);
-    }
+    const periodParam = incoming.searchParams.get('period')?.toLowerCase() || 'mtd';
+    const branchId = incoming.searchParams.get('branchId') || undefined;
+    const salesManagerId = incoming.searchParams.get('salesManagerId')
+      ? Number(incoming.searchParams.get('salesManagerId'))
+      : undefined;
 
-    if (periodParam === 'qtd') {
-      const branchId = incoming.searchParams.get('branchId') || undefined;
-      const qtdPayload = await getQtdLeaderboardFromInsights(branchId);
-      const buf = Buffer.from(JSON.stringify(qtdPayload), 'utf-8');
-      const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-      return toResponse(200, 'application/json', ab);
-    }
+    const normalizedPeriod: 'mtd' | 'qtd' | 'all_time' =
+      periodParam === 'all' || periodParam === 'all_time'
+        ? 'all_time'
+        : periodParam === 'qtd'
+        ? 'qtd'
+        : 'mtd';
+
+    const payload = await getLeaderboardFromBookingDeals(normalizedPeriod, branchId, salesManagerId);
+    const buf = Buffer.from(JSON.stringify(payload), 'utf-8');
+    const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+    return toResponse(200, 'application/json', ab);
   }
 
   if (path.includes('hallway/today-events')) {
