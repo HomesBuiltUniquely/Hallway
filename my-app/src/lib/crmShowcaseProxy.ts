@@ -243,22 +243,21 @@ const ALL_TIME_LEADERBOARD_TEAMS = [
   },
 ];
 
+const QTD_ACHIEVED_BENCHMARKS: Record<
+  string,
+  { revenue: number; revenueFormatted: string; branchId: string; managerId: number; managerName: string }
+> = {
+  '138': { revenue: 7026000, revenueFormatted: '₹70.26L', branchId: 'SARJAPUR', managerId: 192, managerName: 'arjun hub' },      // Aman Nirmal
+  '18': { revenue: 6781000, revenueFormatted: '₹67.81L', branchId: 'SARJAPUR', managerId: 192, managerName: 'arjun hub' },       // Jayashree
+  '23': { revenue: 4504000, revenueFormatted: '₹45.04L', branchId: 'HBR', managerId: 13, managerName: 'Kulwanth P' },            // Meghana
+  '195': { revenue: 2222000, revenueFormatted: '₹22.22L', branchId: 'JP_NAGAR', managerId: 143, managerName: 'marfani hub' },     // Shaddisha Chari (Inactive)
+  '176': { revenue: 2094000, revenueFormatted: '₹20.94L', branchId: 'HBR', managerId: 13, managerName: 'Kulwanth P' },            // Somashekar_V
+  '187': { revenue: 1994000, revenueFormatted: '₹19.94L', branchId: 'HBR', managerId: 13, managerName: 'Kulwanth P' },            // Danush Rao
+  '197': { revenue: 932000, revenueFormatted: '₹9.32L', branchId: 'JP_NAGAR', managerId: 143, managerName: 'marfani hub' },       // Priti Dutta
+  '196': { revenue: 707000, revenueFormatted: '₹7.07L', branchId: 'JP_NAGAR', managerId: 143, managerName: 'marfani hub' },       // Mohammed Bilal
+};
+
 const QTD_LEADERBOARD_INDIVIDUALS = [
-  {
-    id: '23',
-    userId: 23,
-    name: 'Meghana',
-    role: 'Sales Executive',
-    avatar: null,
-    department: 'Sales',
-    branchId: 'HBR',
-    revenue: 4850000,
-    revenueFormatted: '₹48.50L',
-    bookings: 6,
-    conversionRate: 3.8,
-    trend: 'up' as const,
-    rank: 1,
-  },
   {
     id: '138',
     userId: 138,
@@ -267,27 +266,12 @@ const QTD_LEADERBOARD_INDIVIDUALS = [
     avatar: null,
     department: 'Sales',
     branchId: 'SARJAPUR',
-    revenue: 3420000,
-    revenueFormatted: '₹34.20L',
-    bookings: 4,
-    conversionRate: 2.7,
+    revenue: 7026000,
+    revenueFormatted: '₹70.26L',
+    bookings: 11,
+    conversionRate: 5.2,
     trend: 'up' as const,
-    rank: 2,
-  },
-  {
-    id: '187',
-    userId: 187,
-    name: 'Danush Rao',
-    role: 'Sales Executive',
-    avatar: null,
-    department: 'Sales',
-    branchId: 'HBR',
-    revenue: 2846000,
-    revenueFormatted: '₹28.46L',
-    bookings: 3,
-    conversionRate: 2.1,
-    trend: 'up' as const,
-    rank: 3,
+    rank: 1,
   },
   {
     id: '18',
@@ -297,41 +281,71 @@ const QTD_LEADERBOARD_INDIVIDUALS = [
     avatar: null,
     department: 'Sales',
     branchId: 'SARJAPUR',
-    revenue: 2408000,
-    revenueFormatted: '₹24.08L',
-    bookings: 3,
-    conversionRate: 1.8,
-    trend: 'flat' as const,
-    rank: 4,
+    revenue: 6781000,
+    revenueFormatted: '₹67.81L',
+    bookings: 11,
+    conversionRate: 5.3,
+    trend: 'up' as const,
+    rank: 2,
   },
   {
-    id: '196',
-    userId: 196,
-    name: 'Mohammed Bilal',
+    id: '23',
+    userId: 23,
+    name: 'Meghana',
     role: 'Sales Executive',
     avatar: null,
     department: 'Sales',
-    branchId: 'JP_NAGAR',
-    revenue: 1850000,
-    revenueFormatted: '₹18.50L',
-    bookings: 1,
-    conversionRate: 1.4,
-    trend: 'down' as const,
-    rank: 5,
+    branchId: 'HBR',
+    revenue: 4504000,
+    revenueFormatted: '₹45.04L',
+    bookings: 17,
+    conversionRate: 7.7,
+    trend: 'up' as const,
+    rank: 3,
   },
   {
     id: '195',
     userId: 195,
-    name: 'Shaddisha Chari',
+    name: 'Shaddisha Chari (Inactive)',
     role: 'Sales Executive',
     avatar: null,
     department: 'Sales',
     branchId: 'JP_NAGAR',
-    revenue: 1112000,
-    revenueFormatted: '₹11.12L',
-    bookings: 1,
-    conversionRate: 1.5,
-    trend: 'down' as const,
+    revenue: 2222000,
+    revenueFormatted: '₹22.22L',
+    bookings: 2,
+    conversionRate: 2.3,
+    trend: 'up' as const,
+    rank: 4,
+  },
+  {
+    id: '176',
+    userId: 176,
+    name: 'Somashekar_V',
+    role: 'Sales Executive',
+    avatar: null,
+    department: 'Sales',
+    branchId: 'HBR',
+    revenue: 2094000,
+    revenueFormatted: '₹20.94L',
+    bookings: 7,
+    conversionRate: 3.2,
+    trend: 'up' as const,
+    rank: 5,
+  },
+  {
+    id: '187',
+    userId: 187,
+    name: 'Danush Rao',
+    role: 'Sales Executive',
+    avatar: null,
+    department: 'Sales',
+    branchId: 'HBR',
+    revenue: 1994000,
+    revenueFormatted: '₹19.94L',
+    bookings: 9,
+    conversionRate: 4.1,
+    trend: 'up' as const,
     rank: 6,
   },
   {
@@ -342,46 +356,31 @@ const QTD_LEADERBOARD_INDIVIDUALS = [
     avatar: null,
     department: 'Sales',
     branchId: 'JP_NAGAR',
-    revenue: 915869,
-    revenueFormatted: '₹9.16L',
-    bookings: 1,
-    conversionRate: 1.8,
-    trend: 'up' as const,
+    revenue: 932000,
+    revenueFormatted: '₹9.32L',
+    bookings: 2,
+    conversionRate: 1.4,
+    trend: 'down' as const,
     rank: 7,
   },
   {
-    id: '176',
-    userId: 176,
-    name: 'Somashekar_V',
+    id: '196',
+    userId: 196,
+    name: 'Mohammed Bilal',
     role: 'Sales Executive',
     avatar: null,
     department: 'Sales',
-    branchId: 'HBR',
-    revenue: 520000,
-    revenueFormatted: '₹5.20L',
-    bookings: 1,
-    conversionRate: 0.6,
+    branchId: 'JP_NAGAR',
+    revenue: 707000,
+    revenueFormatted: '₹7.07L',
+    bookings: 4,
+    conversionRate: 2.4,
     trend: 'down' as const,
     rank: 8,
   },
 ];
 
 const QTD_LEADERBOARD_TEAMS = [
-  {
-    id: '13',
-    salesManagerId: 13,
-    teamName: 'HBR — Kulwanth P',
-    leadName: 'Kulwanth P',
-    avatar: null,
-    department: 'Sales',
-    branchId: 'HBR',
-    totalRevenue: '₹82.16L',
-    totalRevenueInr: 8216000,
-    dealsClosed: 10,
-    winRate: 2.3,
-    trend: 'up' as const,
-    rank: 1,
-  },
   {
     id: '192',
     salesManagerId: 192,
@@ -390,10 +389,25 @@ const QTD_LEADERBOARD_TEAMS = [
     avatar: null,
     department: 'Sales',
     branchId: 'SARJAPUR',
-    totalRevenue: '₹58.28L',
-    totalRevenueInr: 5828000,
-    dealsClosed: 7,
-    winRate: 2.2,
+    totalRevenue: '₹1.38 Cr',
+    totalRevenueInr: 13807000,
+    dealsClosed: 22,
+    winRate: 5.2,
+    trend: 'up' as const,
+    rank: 1,
+  },
+  {
+    id: '13',
+    salesManagerId: 13,
+    teamName: 'HBR — Kulwanth P',
+    leadName: 'Kulwanth P',
+    avatar: null,
+    department: 'Sales',
+    branchId: 'HBR',
+    totalRevenue: '₹85.92L',
+    totalRevenueInr: 8592000,
+    dealsClosed: 33,
+    winRate: 5.1,
     trend: 'up' as const,
     rank: 2,
   },
@@ -405,14 +419,156 @@ const QTD_LEADERBOARD_TEAMS = [
     avatar: null,
     department: 'Sales',
     branchId: 'JP_NAGAR',
-    totalRevenue: '₹38.78L',
-    totalRevenueInr: 3877869,
-    dealsClosed: 3,
-    winRate: 1.6,
+    totalRevenue: '₹38.61L',
+    totalRevenueInr: 3861000,
+    dealsClosed: 8,
+    winRate: 2.0,
     trend: 'down' as const,
     rank: 3,
   },
 ];
+
+async function getQtdLeaderboardFromInsights(branchId?: string) {
+  try {
+    const token = await getShowcaseCrmToken();
+    const url = `${CRM_BASE}/v1/crm/insights/dashboard?dateRange=3m&teamPeriod=monthly&funnelMode=inventory&pathFilter=all`;
+    const res = await fetch(url, {
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const perfList: any[] = Array.isArray(data?.teamPerformance) ? data.teamPerformance : [];
+      if (perfList.length > 0) {
+        let individuals = perfList
+          .filter((m) => {
+            const name = String(m.name || '').toLowerCase();
+            return !name.includes('shalny') && !name.includes('test') && !name.includes('razi');
+          })
+          .map((m) => {
+            const ach = QTD_ACHIEVED_BENCHMARKS[String(m.userId)] || {
+              revenue: Number(m.closedValue) || 0,
+              revenueFormatted: formatQuote(Number(m.closedValue) || 0),
+              branchId: 'SARJAPUR',
+              managerId: 192,
+              managerName: 'arjun hub',
+            };
+            return {
+              id: String(m.userId),
+              userId: Number(m.userId),
+              name: m.name,
+              role: m.role || 'Sales Executive',
+              avatar: null,
+              department: 'Sales',
+              branchId: ach.branchId,
+              revenue: ach.revenue,
+              revenueFormatted: ach.revenueFormatted,
+              bookings: Number(m.closed) || 0,
+              conversionRate: Number(m.conversionPercent) || 0,
+              trend: 'up' as const,
+            };
+          });
+
+        individuals.sort((a, b) => b.revenue - a.revenue || b.bookings - a.bookings);
+        let rank = 1;
+        individuals = individuals.map((ind) => ({
+          ...ind,
+          rank: ind.revenue > 0 || ind.bookings > 0 ? rank++ : null,
+        }));
+
+        const managerMap: Record<
+          string,
+          {
+            id: string;
+            salesManagerId: number;
+            teamName: string;
+            leadName: string;
+            branchId: string;
+            totalRevenueInr: number;
+            dealsClosed: number;
+            leadsTotal: number;
+          }
+        > = {
+          SARJAPUR: { id: '192', salesManagerId: 192, teamName: 'SARJAPUR — arjun hub', leadName: 'arjun hub', branchId: 'SARJAPUR', totalRevenueInr: 0, dealsClosed: 0, leadsTotal: 0 },
+          HBR: { id: '13', salesManagerId: 13, teamName: 'HBR — Kulwanth P', leadName: 'Kulwanth P', branchId: 'HBR', totalRevenueInr: 0, dealsClosed: 0, leadsTotal: 0 },
+          JP_NAGAR: { id: '143', salesManagerId: 143, teamName: 'JP_NAGAR — marfani hub', leadName: 'marfani hub', branchId: 'JP_NAGAR', totalRevenueInr: 0, dealsClosed: 0, leadsTotal: 0 },
+        };
+
+        for (const ind of individuals) {
+          const t = managerMap[ind.branchId];
+          if (t) {
+            t.totalRevenueInr += ind.revenue;
+            t.dealsClosed += ind.bookings;
+            const perf = perfList.find((p) => Number(p.userId) === ind.userId);
+            if (perf) t.leadsTotal += Number(perf.leads) || 0;
+          }
+        }
+
+        let teams = Object.values(managerMap)
+          .map((t) => {
+            const winRate = t.leadsTotal > 0 ? Math.round((t.dealsClosed / t.leadsTotal) * 1000) / 10 : 0;
+            return {
+              id: t.id,
+              salesManagerId: t.salesManagerId,
+              teamName: t.teamName,
+              leadName: t.leadName,
+              avatar: null,
+              department: 'Sales',
+              branchId: t.branchId,
+              totalRevenue: formatQuote(t.totalRevenueInr),
+              totalRevenueInr: t.totalRevenueInr,
+              dealsClosed: t.dealsClosed,
+              winRate,
+              trend: 'up' as const,
+            };
+          })
+          .sort((a, b) => b.totalRevenueInr - a.totalRevenueInr);
+
+        let tRank = 1;
+        teams = teams.map((tm) => ({
+          ...tm,
+          rank: tm.totalRevenueInr > 0 ? tRank++ : null,
+        }));
+
+        if (branchId) {
+          const normBranch = branchId.toUpperCase() === 'SARJAPURA' ? 'SARJAPUR' : branchId.toUpperCase();
+          individuals = individuals.filter((i) => (i.branchId || '').toUpperCase() === normBranch);
+          teams = teams.filter((t) => (t.branchId || '').toUpperCase() === normBranch);
+        }
+
+        return {
+          period: 'qtd',
+          asOf: new Date().toISOString(),
+          source: 'CRM Insights (teamPerformance)',
+          individuals,
+          teams,
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('Live CRM Insights QTD fetch fallback:', err);
+  }
+
+  let ind = [...QTD_LEADERBOARD_INDIVIDUALS];
+  let teams = [...QTD_LEADERBOARD_TEAMS];
+  if (branchId) {
+    const normBranch = branchId.toUpperCase() === 'SARJAPURA' ? 'SARJAPUR' : branchId.toUpperCase();
+    ind = ind.filter((i) => (i.branchId || '').toUpperCase() === normBranch);
+    teams = teams.filter((t) => (t.branchId || '').toUpperCase() === normBranch);
+  }
+  return {
+    period: 'qtd',
+    asOf: new Date().toISOString(),
+    source: 'CRM Insights Benchmark',
+    individuals: ind,
+    teams: teams,
+  };
+}
 
 function sanitizeHallwayLeaderboardPayload(payload: UpstreamPayload): UpstreamPayload {
   try {
@@ -1263,20 +1419,8 @@ export async function proxyToCrm(request: Request, pathParts: string[]): Promise
 
     if (periodParam === 'qtd') {
       const branchId = incoming.searchParams.get('branchId') || undefined;
-      let ind = [...QTD_LEADERBOARD_INDIVIDUALS];
-      let teams = [...QTD_LEADERBOARD_TEAMS];
-      if (branchId) {
-        const normBranch = branchId.toUpperCase() === 'SARJAPURA' ? 'SARJAPUR' : branchId.toUpperCase();
-        ind = ind.filter((i) => (i.branchId || '').toUpperCase() === normBranch);
-        teams = teams.filter((t) => (t.branchId || '').toUpperCase() === normBranch);
-      }
-      const qtdBody = JSON.stringify({
-        period: 'qtd',
-        asOf: new Date().toISOString(),
-        individuals: ind,
-        teams: teams,
-      });
-      const buf = Buffer.from(qtdBody, 'utf-8');
+      const qtdPayload = await getQtdLeaderboardFromInsights(branchId);
+      const buf = Buffer.from(JSON.stringify(qtdPayload), 'utf-8');
       const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
       return toResponse(200, 'application/json', ab);
     }
