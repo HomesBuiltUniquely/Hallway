@@ -1013,17 +1013,20 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
           who.includes('razi')
         )
           return false;
-        const t = new Date(d.submittedAt).getTime();
+        const rawDate = d.submittedAt || d.bookingDate || d.createdAt;
+        const t = rawDate ? new Date(rawDate).getTime() : NaN;
         return !isNaN(t) && t >= fromMs && t <= toMs;
       });
 
       // Sort newest deals first
-      validDeals.sort(
-        (a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()
-      );
+      validDeals.sort((a, b) => {
+        const tA = new Date(a.submittedAt || a.bookingDate || a.createdAt || 0).getTime();
+        const tB = new Date(b.submittedAt || b.bookingDate || b.createdAt || 0).getTime();
+        return tB - tA;
+      });
 
       const feed: any[] = [];
-      const repWeekTotals = new Map<string, { name: string; total: number; team: string }>();
+      const repWeekTotals = new Map<string, { name: string; total: number; team: string; count: number }>();
 
       for (const d of validDeals) {
         const repRaw = String(d.assign || d.assignee || d.submittedByName || '').trim();
@@ -1042,8 +1045,9 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
         const big = quote >= TEN_LAKH_INR; // >= 10 Lakhs (10L) is "Big one closed", other will come as "New booking"
         const customer = d.customerName ? formatPersonName(d.customerName) : '';
         const home = customer ? `${customer}'s home` : 'a home';
-        const dealTime = new Date(d.submittedAt).getTime();
-        const ymd = (d.bookingDate || d.submittedAt || '').slice(0, 10);
+        const rawDate = d.submittedAt || d.bookingDate || d.createdAt;
+        const dealTime = rawDate ? new Date(rawDate).getTime() : NaN;
+        const ymd = (d.bookingDate || d.submittedAt || d.createdAt || '').slice(0, 10);
 
         feed.push({
           id: `crm-booking-${d.id}`,
@@ -1055,7 +1059,7 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
             : `${repName} booked ${home} for ${amount}.`,
           quoteFormatted: amount,
           timestamp: ymd,
-          createdAt: d.submittedAt,
+          createdAt: d.submittedAt || d.createdAt || new Date().toISOString(),
           author: { name: repName, avatar: null, team: teamName },
           department: 'Sales',
           rawBooking: {
@@ -1067,24 +1071,27 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
           },
         });
 
-        // Tally week totals
-        if (dealTime >= weekFromMs && dealTime <= weekToMs) {
-          const prev = repWeekTotals.get(repName) || { name: repName, total: 0, team: teamName };
+        // Tally week totals: date must be valid, within current month AND current week
+        if (!isNaN(dealTime) && dealTime >= fromMs && dealTime <= toMs && dealTime >= weekFromMs && dealTime <= weekToMs) {
+          const prev = repWeekTotals.get(repName) || { name: repName, total: 0, team: teamName, count: 0 };
           prev.total += quote;
+          prev.count += 1;
           repWeekTotals.set(repName, prev);
         }
       }
 
-      // Live week's top performer
-      const weeklyWinner = [...repWeekTotals.values()].sort((a, b) => b.total - a.total)[0];
+      // Live week's top performer: salesperson with highest total gross bookings
+      const weeklyWinner = [...repWeekTotals.values()].sort(
+        (a, b) => b.total - a.total || b.count - a.count || a.name.localeCompare(b.name)
+      )[0];
       if (weeklyWinner && weeklyWinner.total > 0) {
         const weekAmount = formatQuote(weeklyWinner.total);
         feed.unshift({
           id: `crm-weekly-top-${weekStartStr}`,
           type: 'performer',
           registerKind: 'weekly',
-          title: 'This week’s top performer',
-          content: `${weeklyWinner.name} leads this week with ${weekAmount} in gross bookings.`,
+          title: 'This Week’s Top Performer',
+          content: `${weeklyWinner.name} leads the board with ${weekAmount} in closures this week. Outstanding consistency.`,
           quoteFormatted: weekAmount,
           timestamp: 'This week',
           createdAt: new Date().toISOString(),

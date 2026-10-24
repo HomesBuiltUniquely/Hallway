@@ -389,12 +389,19 @@ export function generateCrmAnnouncements({
     const kind = item.registerKind;
     const type: FeedPost['type'] = kind === 'weekly' || kind === 'monthly' ? 'performer' : 'booking';
 
+    const normalizedTitle =
+      kind === 'weekly' || item.title?.toLowerCase().includes('week’s top performer') || item.title?.toLowerCase().includes("week's top performer")
+        ? 'This Week’s Top Performer'
+        : kind === 'monthly' || item.title?.toLowerCase().includes('month’s top performer') || item.title?.toLowerCase().includes("month's top performer")
+        ? 'This Month’s Top Performer'
+        : item.title;
+
     posts.push({
       id: item.id,
       type,
       categoryColor: type === 'performer' ? '#EAB308' : '#10B981',
       iconEmoji: type === 'performer' ? '🏅' : '💰',
-      title: item.title,
+      title: normalizedTitle,
       timestamp: item.timestamp || 'Recent',
       createdAt: item.createdAt,
       author: {
@@ -410,6 +417,93 @@ export function generateCrmAnnouncements({
       department: 'Sales',
     });
     seenIds.add(item.id);
+  }
+
+  // Live week's top performer calculation from booking deals (if not already unshifted)
+  const hasWeeklyTop = posts.some((p) => p.id.startsWith('crm-weekly-top-'));
+  if (!hasWeeklyTop) {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth();
+    const monthFromMs = new Date(y, m, 1, 0, 0, 0, 0).getTime();
+    const monthToMs = new Date(y, m + 1, 0, 23, 59, 59, 999).getTime();
+
+    // Monday 00:00:00 to Sunday 23:59:59 IST for current week
+    const day = now.getDay();
+    const diffToMonday = day === 0 ? -6 : 1 - day;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + diffToMonday);
+    monday.setHours(0, 0, 0, 0);
+    const weekFromMs = monday.getTime();
+
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    sunday.setHours(23, 59, 59, 999);
+    const weekToMs = sunday.getTime();
+    const weekStartStr = monday.toISOString().slice(0, 10);
+    const weeklyId = `crm-weekly-top-${weekStartStr}`;
+
+    const repWeekTotals = new Map<string, { name: string; total: number; team: string; count: number }>();
+
+    for (const item of (crmFeedItems || [])) {
+      if (!item) continue;
+      const rep = formatPersonName(item.author?.name || '');
+      if (!rep || rep === 'User' || /\b(test|alice|shalny|razi)\b/i.test(rep)) continue;
+
+      const rawDate = item.createdAt || item.rawBooking?.bookingDoneDate || item.timestamp;
+      const t = rawDate ? new Date(rawDate).getTime() : NaN;
+      if (isNaN(t)) continue;
+
+      // Date check: Must have a valid timestamp within current month AND current week
+      if (t >= monthFromMs && t <= monthToMs && t >= weekFromMs && t <= weekToMs) {
+        const rawQuote =
+          Number(item.rawBooking?.quoteAmount) ||
+          parseAmountFromText(item.quoteFormatted || item.content || '').valueInr ||
+          0;
+        if (rawQuote <= 0) continue;
+
+        const prev = repWeekTotals.get(rep) || {
+          name: rep,
+          total: 0,
+          team: item.author?.team || 'Sales Hub',
+          count: 0,
+        };
+        prev.total += rawQuote;
+        prev.count += 1;
+        repWeekTotals.set(rep, prev);
+      }
+    }
+
+    // Salesperson with the highest total gross bookings is this week's top performer
+    const weeklyWinner = [...repWeekTotals.values()].sort(
+      (a, b) => b.total - a.total || b.count - a.count || a.name.localeCompare(b.name)
+    )[0];
+
+    if (weeklyWinner && weeklyWinner.total > 0 && !seenIds.has(weeklyId)) {
+      const weekAmount = formatInrToLakhsOrCrores(weeklyWinner.total);
+      const preserved = existingPostsMap.get(weeklyId);
+      posts.unshift({
+        id: weeklyId,
+        type: 'performer',
+        categoryColor: '#EAB308',
+        iconEmoji: '🏅',
+        title: 'This Week’s Top Performer',
+        timestamp: 'This week',
+        createdAt: `${istYmd()}T12:00:00+05:30`,
+        author: {
+          name: weeklyWinner.name,
+          avatar: preserved?.author?.avatar || '',
+          team: weeklyWinner.team,
+        },
+        content: `${weeklyWinner.name} leads the board with ${weekAmount} in closures this week. Outstanding consistency.`,
+        quoteFormatted: weekAmount,
+        reactions: preserved?.reactions ? { ...preserved.reactions } : defaultReactions(),
+        comments: preserved?.comments && preserved.comments.length > 0 ? [...preserved.comments] : [],
+        commentsCount: preserved?.commentsCount || preserved?.comments?.length || 0,
+        department: 'Sales',
+      });
+      seenIds.add(weeklyId);
+    }
   }
 
   const mtdLeader = (topPerformers || []).find(
@@ -431,7 +525,7 @@ export function generateCrmAnnouncements({
         type: 'performer',
         categoryColor: '#EAB308',
         iconEmoji: '🏅',
-        title: 'This month’s top performer',
+        title: 'This Month’s Top Performer',
         timestamp: 'This month',
         createdAt: `${istYmd()}T12:00:00+05:30`,
         author: {
@@ -521,12 +615,27 @@ export function createDynamicCrmAnnouncement(params: {
   } else if (tmpl.scenarioNumber === 4) {
     title = 'Hat-Trick of Closures!';
     content = `3 bookings. One day. ${amount} added to the board by Team ${branch}.`;
+  } else if (tmpl.scenarioNumber === 5) {
+    title = `${branch} Hits 85%!`;
+    content = `${branch} has crossed 85% of its monthly target. The finish line is getting closer.`;
+  } else if (tmpl.scenarioNumber === 9) {
+    title = 'This Week’s Top Performer';
+    content = `${rep} leads the board with ${amount} in closures this week. Outstanding consistency.`;
   } else if (tmpl.scenarioNumber === 10) {
     title = `Spot Closure: ${amount} by ${rep}!`;
     content = `The customer walked in today and booked today. ${amount} closed for Project ${project} by ${rep} (${branch} Hub).`;
   } else if (tmpl.scenarioNumber === 16) {
     title = 'Renova Strikes Again!';
     content = `Another renovation project has joined the HUB family. ${amount} booked by Team Renova (${rep} - Project ${project}).`;
+  } else if (tmpl.scenarioNumber === 21) {
+    title = 'A New HUB Record Has Been Written';
+    content = `${amount} by ${rep} in a single month—the newest entry in the HUB Book of Records.`;
+  } else if (tmpl.scenarioNumber === 22) {
+    title = '3 Months. 3 Targets.';
+    content = `Team ${branch} has achieved its target for the third consecutive month. Consistency wins.`;
+  } else if (tmpl.scenarioNumber === 23) {
+    title = `${amount} Away From ₹3 Crore`;
+    content = `One final push. HUB is just ${amount} away from the monthly ₹3 Cr milestone.`;
   }
 
   if (params.customDetails?.trim()) {
