@@ -28,17 +28,24 @@ function resolveKind(post: FeedPost): CardKind {
   return 'announcement';
 }
 
-function categoryMeta(kind: CardKind): { label: string; colorClass: string; railBg: string } {
+function categoryMeta(
+  kind: CardKind,
+  post: FeedPost
+): { label: string; colorClass: string; railBg: string } {
   switch (kind) {
     case 'booking':
       return {
-        label: 'Deals & Bookings',
+        label: post.id.startsWith('crm-booking-token-') ? 'Tokens' : 'Deals & Bookings',
         colorClass: 'text-emerald-600 dark:text-emerald-400',
         railBg: 'bg-emerald-50/70 dark:bg-emerald-950/20',
       };
     case 'performer':
       return {
-        label: 'Top Performers',
+        label: post.id.startsWith('crm-weekly-top-')
+          ? 'Top Performers — This week'
+          : post.id.startsWith('crm-monthly-top-')
+            ? 'Top Performers — This month'
+            : 'Top Performers',
         colorClass: 'text-[#C88A3E] dark:text-accent-gold',
         railBg: 'bg-amber-50/70 dark:bg-amber-950/20',
       };
@@ -79,8 +86,18 @@ function extractMetric(post: FeedPost, kind: CardKind): { value: string; unit: s
       .replace(/\s+/g, '')
       .replace(/Lakhs?/i, 'L')
       .replace(/Crores?/i, 'Cr');
-    if (kind === 'booking') return { value: cleaned, unit: 'deal closed' };
-    if (kind === 'performer') return { value: cleaned, unit: 'closures' };
+    if (kind === 'booking') {
+      return {
+        value: cleaned,
+        unit: post.id.startsWith('crm-booking-token-') ? 'token issued' : 'deal closed',
+      };
+    }
+    if (kind === 'performer') {
+      return {
+        value: cleaned,
+        unit: post.id.startsWith('crm-weekly-top-') ? 'this week' : 'this month',
+      };
+    }
     return { value: cleaned, unit: 'booked' };
   }
 
@@ -156,7 +173,7 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
   const pickerRef = useRef<HTMLDivElement>(null);
 
   const kind = resolveKind(post);
-  const category = categoryMeta(kind);
+  const category = categoryMeta(kind, post);
   const metric = useMemo(() => extractMetric(post, kind), [post, kind]);
 
   const displayTitle = useMemo(

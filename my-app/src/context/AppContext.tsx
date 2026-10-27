@@ -234,6 +234,44 @@ interface AppContextType {
 }
 
 const HALLWAY_SESSION_KEY = 'hallway-auth';
+
+const DESIGN_HANDOFF_API_BASES = new Set([
+  'https://api.hubinterior.com',
+  'http://localhost:3001',
+  'http://127.0.0.1:3001',
+]);
+
+async function readDesignUser(response: Response) {
+  const data = await response.json().catch(() => null);
+  if (!response.ok || !data?.email) return null;
+  return data as { email: string; name?: string; role?: string };
+}
+
+/** Confirm the Design session, then stay on the home feed instead of /login. */
+async function verifyDesignHandoff(sessionId: string, apiBase?: string) {
+  try {
+    const proxied = await fetch('/api/design-module/auth/session', {
+      headers: { Authorization: `Bearer ${sessionId}` },
+      cache: 'no-store',
+    });
+    const fromProxy = await readDesignUser(proxied);
+    if (fromProxy) return fromProxy;
+  } catch {
+    // The Hallway server cannot reach a session that lives on this machine.
+  }
+
+  const base = (apiBase || '').replace(/\/$/, '');
+  if (!DESIGN_HANDOFF_API_BASES.has(base)) return null;
+  try {
+    const direct = await fetch(`${base}/api/auth/me`, {
+      headers: { Authorization: `Bearer ${sessionId}` },
+      cache: 'no-store',
+    });
+    return await readDesignUser(direct);
+  } catch {
+    return null;
+  }
+}
 const SESSION_EXPIRY_MS = 8 * 60 * 60 * 1000; // 8 hours shift expiry
 
 /**
@@ -586,49 +624,92 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Restore Hallway session before showing corridors
+  // Restore Hallway session before showing corridors.
+  // A Design app-switcher click arrives as #hub= so a new tab can open home instead of login.
   useEffect(() => {
-    try {
-      if (typeof window !== 'undefined') {
-        // Purge legacy persistent localStorage sessions to prevent unauthenticated direct entry
-        window.localStorage.removeItem(HALLWAY_SESSION_KEY);
-        window.localStorage.removeItem('hallway_session');
-
-        const raw = window.sessionStorage.getItem(HALLWAY_SESSION_KEY);
-        if (raw) {
-          const saved = JSON.parse(raw) as {
-            email?: string;
-            name?: string;
-            role?: string;
-            department?: User['department'];
-            portal?: 'crm' | 'design';
-            timestamp?: number;
-          };
-
-          const isExpired = saved.timestamp
-            ? Date.now() - saved.timestamp > SESSION_EXPIRY_MS
-            : false;
-
-          if (!isExpired && (saved.email || saved.name)) {
-            setCurrentUser(userFromSession(saved.email, saved.name, saved.role, saved.department));
-            setLoginPortal(saved.portal || (saved.department === 'Design' ? 'design' : 'crm'));
-            setIsAuthenticated(true);
-          } else {
-            window.sessionStorage.removeItem(HALLWAY_SESSION_KEY);
-            setIsAuthenticated(false);
-          }
-        } else {
-          setIsAuthenticated(false);
-        }
-      }
-    } catch {
-      if (typeof window !== 'undefined') {
+    let cancelled = false;
+    const stripHubHash = () => {
+      if (!window.location.hash.includes('hub=')) return;
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    };
+    const applySaved = (raw: string) => {
+      const saved = JSON.parse(raw) as {
+        email?: string;
+        name?: string;
+        role?: string;
+        department?: User['department'];
+        portal?: 'crm' | 'design';
+        timestamp?: number;
+      };
+      const isExpired = saved.timestamp
+        ? Date.now() - saved.timestamp > SESSION_EXPIRY_MS
+        : false;
+      if (isExpired || (!saved.email && !saved.name)) {
         window.sessionStorage.removeItem(HALLWAY_SESSION_KEY);
+        window.localStorage.removeItem(HALLWAY_SESSION_KEY);
+        return false;
       }
-      setIsAuthenticated(false);
-    } finally {
-      setAuthReady(true);
-    }
+      setCurrentUser(userFromSession(saved.email, saved.name, saved.role, saved.department));
+      setLoginPortal(saved.portal || (saved.department === 'Design' ? 'design' : 'crm'));
+      setIsAuthenticated(true);
+      window.sessionStorage.setItem(HALLWAY_SESSION_KEY, raw);
+      window.localStorage.setItem(HALLWAY_SESSION_KEY, raw);
+      return true;
+    };
+
+    (async () => {
+      try {
+        window.localStorage.removeItem('hallway_session');
+        const raw =
+          window.sessionStorage.getItem(HALLWAY_SESSION_KEY) ||
+          window.localStorage.getItem(HALLWAY_SESSION_KEY);
+        if (raw && applySaved(raw)) {
+          stripHubHash();
+          return;
+        }
+
+        const hub = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('hub');
+        if (hub) {
+          let handoff: { sessionId?: string; apiBase?: string } | null = null;
+          try {
+            handoff = JSON.parse(hub);
+          } catch {
+            handoff = JSON.parse(decodeURIComponent(hub));
+          }
+          if (handoff?.sessionId) {
+            const data = await verifyDesignHandoff(handoff.sessionId, handoff.apiBase);
+            if (!cancelled && data?.email) {
+              const nextUser = userFromSession(data.email, data.name, data.role, 'Design');
+              const savedSession = JSON.stringify({
+                email: nextUser.email,
+                name: nextUser.name,
+                role: nextUser.role,
+                department: 'Design',
+                portal: 'design',
+                timestamp: Date.now(),
+              });
+              setCurrentUser(nextUser);
+              setLoginPortal('design');
+              setIsAuthenticated(true);
+              window.sessionStorage.setItem(HALLWAY_SESSION_KEY, savedSession);
+              window.localStorage.setItem(HALLWAY_SESSION_KEY, savedSession);
+              stripHubHash();
+              return;
+            }
+          }
+          stripHubHash();
+        }
+        if (!cancelled) setIsAuthenticated(false);
+      } catch {
+        if (!cancelled) setIsAuthenticated(false);
+      } finally {
+        if (!cancelled) setAuthReady(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const publishLiveAnnouncements = (input: {
@@ -796,7 +877,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       .sort((a, b) => {
         const tA = new Date(a.createdAt || 0).getTime();
         const tB = new Date(b.createdAt || 0).getTime();
-        return tB - tA;
+        const safeA = Number.isFinite(tA) ? tA : 0;
+        const safeB = Number.isFinite(tB) ? tB : 0;
+        if (safeB !== safeA) return safeB - safeA;
+        const rank = (p: FeedPost) => {
+          if (p.id.startsWith('crm-weekly-top-')) return 5;
+          if (p.id.startsWith('crm-monthly-top-')) return 4;
+          if (p.id.startsWith('crm-month-milestone-')) return 3;
+          if (p.type === 'booking') return 2;
+          return 0;
+        };
+        return rank(b) - rank(a);
       });
   };
 
@@ -855,20 +946,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       let partialAnnouncements: any = undefined;
       let partialFeed: any[] | undefined;
-      let partialPainted = false;
+      let partialTargets: any[] | undefined;
+      let partialLeaderboard: any[] | undefined;
       let sealed = false;
       const paintPartial = () => {
         if (stale() || sealed) return;
-        if (announcementPostsRef.current.length > 0 && !partialPainted) return;
         const feedSettled = partialFeed !== undefined;
         const broadcasts = Array.isArray(partialAnnouncements) ? partialAnnouncements : [];
         if (!feedSettled && broadcasts.length === 0) return;
+        // Paint as soon as feed lands; upgrade again when leaderboard / overall targets arrive
+        // so Top Performer + Milestones appear without waiting on branch/people/records fan-out.
         const early = publishLiveAnnouncements({
           announcementsData: broadcasts,
           crmItems: partialFeed || [],
+          overallTargets: partialTargets || [],
+          leaderboardData: partialLeaderboard || [],
         });
         if (early.length > 0 || feedSettled) {
-          partialPainted = true;
           setAnnouncementPosts(early);
           setAnnouncementsLoading(false);
         }
@@ -881,22 +975,78 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         partialFeed = items;
         paintPartial();
       });
+      void crmTargetsPromise.then((cards) => {
+        partialTargets = Array.isArray(cards)
+          ? cards.map((card) => ({
+              ...card,
+              branchId: 'all',
+              branchName: 'All Hubs (Overall)',
+              team: 'Operations HQ',
+            }))
+          : [];
+        paintPartial();
+      });
+      void crmLeaderboardPromise.then((rows) => {
+        partialLeaderboard = Array.isArray(rows) ? rows : [];
+        paintPartial();
+      });
+
+      // Critical path: feed now carries weekly/monthly/milestone board cards — paint as soon as
+      // announcements + feed land. Targets/leaderboard only refine fallbacks if board cards missing.
+      const [announcementsData, crmItems] = await Promise.all([
+        announcementsPromise,
+        crmFeedPromise,
+      ]);
+      if (stale()) return;
+
+      const combinedAnnouncementsEarly = publishLiveAnnouncements({
+        announcementsData,
+        crmItems: Array.isArray(crmItems) ? crmItems : [],
+        overallTargets: partialTargets || [],
+        leaderboardData: partialLeaderboard || [],
+      });
+      if (!stale()) {
+        sealed = true;
+        setAnnouncementPosts(combinedAnnouncementsEarly);
+        setAnnouncementsLoading(false);
+      }
+
+      const [overallTargetsData, leaderboardData] = await Promise.all([
+        crmTargetsPromise,
+        crmLeaderboardPromise,
+      ]);
+      if (stale()) return;
+
+      const overallTargets: any[] = [];
+      if (Array.isArray(overallTargetsData) && overallTargetsData.length > 0) {
+        for (const card of overallTargetsData) {
+          overallTargets.push({
+            ...card,
+            branchId: 'all',
+            branchName: 'All Hubs (Overall)',
+            team: 'Operations HQ',
+          });
+        }
+      }
+
+      // Soft upgrade if feed lacked board cards and targets/leaderboard filled gaps
+      const upgraded = publishLiveAnnouncements({
+        announcementsData,
+        crmItems: Array.isArray(crmItems) ? crmItems : [],
+        overallTargets,
+        leaderboardData,
+      });
+      if (!stale()) {
+        setAnnouncementPosts(upgraded);
+      }
 
       const [
-        announcementsData,
-        crmItems,
-        overallTargetsData,
-        leaderboardData,
         crmPeopleData,
         crmRecordsData,
         todayEventsData,
         crmActionsData,
         ...branchTargetsArrays
       ] = await Promise.all([
-        announcementsPromise,
-        crmFeedPromise,
-        crmTargetsPromise,
-        crmLeaderboardPromise,
         crmPeoplePromise,
         crmRecordsPromise,
         todayEventsPromise,
@@ -932,22 +1082,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // 1. Target Data Processing:
-      // a. Company-wide "All Hubs (Overall)" target data first
-      const overallTargets: any[] = [];
-      if (Array.isArray(overallTargetsData) && overallTargetsData.length > 0) {
-        for (const card of overallTargetsData) {
-          overallTargets.push({
-            ...card,
-            branchId: 'all',
-            branchName: 'All Hubs (Overall)',
-            team: 'Operations HQ',
-          });
-        }
-      }
-      // Empty overall/branch targets is fine — UI shows live empty state (no synthetic pacing)
-
-      // b. Out of 3 branches (Sarjapura, JP Nagar, HBR), order by achieved target descending
+      // Branch targets for dashboard pacing cards (announcements already painted above)
       const branchTargets: any[] = [];
       for (const list of branchTargetsArrays) {
         if (Array.isArray(list)) branchTargets.push(...list);
@@ -1605,19 +1740,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setIsAuthenticated(true);
     try {
       if (typeof window !== 'undefined') {
-        window.sessionStorage.setItem(
-          HALLWAY_SESSION_KEY,
-          JSON.stringify({
-            email: nextUser.email,
-            name: nextUser.name,
-            role: nextUser.role,
-            department: nextUser.department,
-            portal,
-            timestamp: Date.now(),
-          })
-        );
-        // Ensure localStorage is cleared of persistent sessions
-        window.localStorage.removeItem(HALLWAY_SESSION_KEY);
+        const savedSession = JSON.stringify({
+          email: nextUser.email,
+          name: nextUser.name,
+          role: nextUser.role,
+          department: nextUser.department,
+          portal,
+          timestamp: Date.now(),
+        });
+        window.sessionStorage.setItem(HALLWAY_SESSION_KEY, savedSession);
+        window.localStorage.setItem(HALLWAY_SESSION_KEY, savedSession);
         window.localStorage.removeItem('hallway_session');
       }
     } catch {

@@ -450,6 +450,163 @@ function matchExecutive(raw?: string | null) {
 }
 
 const bookingLeaderboardCache = new Map<string, { expiresAt: number; data: any }>();
+const bookingTokenDealsCache = new Map<string, { expiresAt: number; deals: any[] }>();
+const bookingTokenDealsInflight = new Map<string, Promise<any[]>>();
+const BOOKING_TOKEN_DEALS_TTL_MS = 30_000;
+
+function isBookingOrTokenListing(listingType: unknown): boolean {
+  const t = String(listingType || '').toLowerCase();
+  return t === 'booking' || t === 'token';
+}
+
+/** Confirmed booking rows only — excludes token-stage deals from weekly/monthly boards. */
+function isBookingListing(listingType: unknown): boolean {
+  return String(listingType || '').toLowerCase() === 'booking';
+}
+
+function addDaysYmd(ymd: string, days: number): string {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + days));
+  return dt.toISOString().slice(0, 10);
+}
+
+function dayOfWeekIst(ymd: string): number {
+  // Noon IST shares the same civil weekday in UTC.
+  return new Date(`${ymd}T12:00:00+05:30`).getUTCDay();
+}
+
+function istYmdNow(now = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
+}
+
+function istMonthBoundsMs(now = new Date()) {
+  const today = istYmdNow(now);
+  const [y, m] = today.split('-').map(Number);
+  const monthStart = `${y}-${String(m).padStart(2, '0')}-01`;
+  const nextMonth =
+    m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`;
+  return {
+    monthFromMs: new Date(`${monthStart}T00:00:00+05:30`).getTime(),
+    monthToMs: new Date(`${nextMonth}T00:00:00+05:30`).getTime() - 1,
+    monthKey: monthStart.slice(0, 7),
+  };
+}
+
+function isTestAssignee(who: string): boolean {
+  const w = who.toLowerCase();
+  return w.includes('test') || w.includes('alice') || w.includes('shalny') || w.includes('razi');
+}
+
+function dealTimestampMs(d: any): number {
+  const raw = d?.submittedAt || d?.bookingDate || d?.createdAt;
+  const t = raw ? new Date(raw).getTime() : NaN;
+  return Number.isFinite(t) ? t : NaN;
+}
+
+/** Shared Booking & Token deals fetch (both listing types) with short TTL + request coalesce. */
+async function fetchBookingAndTokenDeals(opts: {
+  submittedFrom?: string;
+  submittedTo?: string;
+  dateRange?: string;
+}): Promise<any[]> {
+  const cacheKey = `${opts.submittedFrom || ''}|${opts.submittedTo || ''}|${opts.dateRange || ''}`;
+  const cached = bookingTokenDealsCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.deals;
+
+  const inflight = bookingTokenDealsInflight.get(cacheKey);
+  if (inflight) return inflight;
+
+  const run = (async () => {
+    const token = await getShowcaseCrmToken();
+    const dateQs = opts.dateRange
+      ? `&dateRange=${encodeURIComponent(opts.dateRange)}`
+      : `${
+          opts.submittedFrom
+            ? `&submittedFrom=${encodeURIComponent(opts.submittedFrom)}`
+            : ''
+        }${opts.submittedTo ? `&submittedTo=${encodeURIComponent(opts.submittedTo)}` : ''}`;
+
+    const listings = ['booking', 'token'] as const;
+    const results = await Promise.allSettled(
+      listings.map((listingType) =>
+        fetch(
+          `${CRM_BASE}/v1/booking-token/deals?page=0&size=500&listingType=${listingType}${dateQs}`,
+          {
+            headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+            signal: AbortSignal.timeout(10000),
+            cache: 'no-store',
+          }
+        )
+      )
+    );
+
+    const byId = new Map<string | number, any>();
+    for (const settled of results) {
+      if (settled.status !== 'fulfilled' || !settled.value.ok) continue;
+      try {
+        const data = await settled.value.json();
+        const deals: any[] = Array.isArray(data?.deals) ? data.deals : [];
+        for (const d of deals) {
+          if (!d || d.id == null) continue;
+          if (!isBookingOrTokenListing(d.listingType)) continue;
+          byId.set(d.id, d);
+        }
+      } catch {
+        /* ignore bad payload */
+      }
+    }
+
+    const deals = Array.from(byId.values());
+    bookingTokenDealsCache.set(cacheKey, {
+      expiresAt: Date.now() + BOOKING_TOKEN_DEALS_TTL_MS,
+      deals,
+    });
+    return deals;
+  })().finally(() => {
+    bookingTokenDealsInflight.delete(cacheKey);
+  });
+
+  bookingTokenDealsInflight.set(cacheKey, run);
+  return run;
+}
+
+/** IST Mon–Sun week. Resets every Monday; scores bookings through end of Sunday (or now). */
+function currentWeekBounds(now = new Date()) {
+  const today = istYmdNow(now);
+  const dow = dayOfWeekIst(today);
+  const diffToMonday = dow === 0 ? -6 : 1 - dow;
+  const mondayYmd = addDaysYmd(today, diffToMonday);
+  const sundayYmd = addDaysYmd(mondayYmd, 6);
+  const weekFromMs = new Date(`${mondayYmd}T00:00:00+05:30`).getTime();
+  const weekToMs = new Date(`${sundayYmd}T23:59:59.999+05:30`).getTime();
+  return {
+    monday: new Date(weekFromMs),
+    mondayYmd,
+    sundayYmd,
+    weekFromMs,
+    weekToMs,
+  };
+}
+
+/** Week for the board: current Mon–Sun (IST); if empty, prior Mon–Sun still inside this month. */
+function resolveWeeklyWindow(now = new Date()) {
+  const { monthFromMs, monthToMs, monthKey } = istMonthBoundsMs(now);
+  const current = currentWeekBounds(now);
+  const prevMondayYmd = addDaysYmd(current.mondayYmd, -7);
+  const fallback = currentWeekBounds(new Date(`${prevMondayYmd}T12:00:00+05:30`));
+  return {
+    monthFromMs,
+    monthToMs,
+    monthKey,
+    primary: current,
+    fallback,
+  };
+}
 
 async function getLeaderboardFromBookingDeals(
   period: 'mtd' | 'qtd' | 'all_time',
@@ -467,7 +624,7 @@ async function getLeaderboardFromBookingDeals(
   let submittedTo: string | undefined;
   let fromMs = Number.NEGATIVE_INFINITY;
   let toMs = Number.POSITIVE_INFINITY;
-  let apiDateParams = '';
+  let dateRange: string | undefined;
 
   if (period === 'mtd') {
     // Current local calendar month
@@ -479,7 +636,6 @@ async function getLeaderboardFromBookingDeals(
     submittedTo = toDate.toISOString();
     fromMs = fromDate.getTime();
     toMs = toDate.getTime();
-    apiDateParams = `&submittedFrom=${encodeURIComponent(submittedFrom)}&submittedTo=${encodeURIComponent(submittedTo)}`;
   } else if (period === 'qtd') {
     // Rolling 3 months (90 days) matching Booking & Token dateRange=3m
     const fromDate = new Date(now);
@@ -491,36 +647,30 @@ async function getLeaderboardFromBookingDeals(
     submittedTo = toDate.toISOString();
     fromMs = fromDate.getTime();
     toMs = toDate.getTime();
-    apiDateParams = `&dateRange=3m`;
+    dateRange = '3m';
   }
 
   try {
     const token = await getShowcaseCrmToken();
 
-    // 1. Fetch live booking deals from Booking & Token endpoint
-    const dealsUrl = `${CRM_BASE}/v1/booking-token/deals?page=0&size=500&listingType=booking${apiDateParams}`;
-
+    // 1. Shared Booking + Token deals (coalesced with feed sanitizer)
     // 2. Concurrently fetch insights team performance for real lead counts
     const insightsRange = period === 'mtd' ? 'current_month' : period === 'qtd' ? '3m' : '1y';
     const insightsUrl = `${CRM_BASE}/v1/crm/insights/dashboard?dateRange=${insightsRange}&teamPeriod=monthly&funnelMode=inventory&pathFilter=all`;
 
-    const [dealsRes, insightsRes] = await Promise.allSettled([
-      fetch(dealsUrl, {
-        headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
-        signal: AbortSignal.timeout(10000),
-        cache: 'no-store',
-      }),
+    const [rawDeals, insightsRes] = await Promise.all([
+      fetchBookingAndTokenDeals({ submittedFrom, submittedTo, dateRange }),
       fetch(insightsUrl, {
         headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
         signal: AbortSignal.timeout(6000),
         cache: 'no-store',
-      }),
+      }).catch(() => null),
     ]);
 
     let perfList: any[] = [];
-    if (insightsRes.status === 'fulfilled' && insightsRes.value.ok) {
+    if (insightsRes?.ok) {
       try {
-        const insData = await insightsRes.value.json();
+        const insData = await insightsRes.json();
         if (Array.isArray(insData?.teamPerformance)) {
           perfList = insData.teamPerformance;
         }
@@ -529,15 +679,12 @@ async function getLeaderboardFromBookingDeals(
       }
     }
 
-    if (dealsRes.status === 'fulfilled' && dealsRes.value.ok) {
-      const dealsData = await dealsRes.value.json();
-      const rawDeals: any[] = Array.isArray(dealsData?.deals) ? dealsData.deals : [];
-
+    if (Array.isArray(rawDeals)) {
       const validDeals = rawDeals.filter((d) => {
-        if (d.listingType !== 'booking') return false;
+        if (!isBookingOrTokenListing(d.listingType)) return false;
         if (d.cancellationApprovalStatus === 'APPROVED') return false;
         if (period !== 'all_time') {
-          const t = new Date(d.submittedAt).getTime();
+          const t = dealTimestampMs(d);
           if (isNaN(t) || t < fromMs || t > toMs) return false;
         }
         return true;
@@ -566,6 +713,8 @@ async function getLeaderboardFromBookingDeals(
       }
 
       for (const d of validDeals) {
+        // Leaderboard revenue follows Booking register only (exclude token-stage)
+        if (!isBookingListing(d.listingType)) continue;
         const who = d.assign || d.assignee || d.submittedByName;
         const matched = matchExecutive(who);
         if (!matched) continue;
@@ -936,10 +1085,6 @@ function repKey(name: string): string {
   return formatPersonName(name).toLowerCase();
 }
 
-function istNoon(ymd: string): string {
-  return `${ymd}T12:00:00+05:30`;
-}
-
 type ClosedBooking = {
   id: string;
   rep: string;
@@ -962,104 +1107,124 @@ function rankReps(rows: ClosedBooking[]) {
   )[0];
 }
 
+function teamNameForRep(exec: ReturnType<typeof matchExecutive>): string {
+  if (!exec) return 'Sales Hub';
+  if (exec.branchId === 'SARJAPUR') return 'Sarjapura Hub';
+  if (exec.branchId === 'HBR') return 'HBR Hub';
+  return 'JP Nagar Hub';
+}
+
+/** Aggregate gross deal value for confirmed bookings only (never token-stage). */
+function tallyBookingTotals(
+  deals: any[],
+  fromMs: number,
+  toMs: number,
+  monthFromMs: number,
+  monthToMs: number
+) {
+  const totals = new Map<string, { name: string; total: number; team: string; count: number }>();
+  let companyTotal = 0;
+  for (const d of deals) {
+    if (!isBookingListing(d.listingType)) continue;
+    if (d.cancellationApprovalStatus === 'APPROVED') continue;
+    const dealTime = dealTimestampMs(d);
+    if (
+      isNaN(dealTime) ||
+      dealTime < monthFromMs ||
+      dealTime > monthToMs ||
+      dealTime < fromMs ||
+      dealTime > toMs
+    ) {
+      continue;
+    }
+    const quote = Number(d.dealValue) || 0;
+    if (quote <= 0) continue;
+    const repRaw = String(d.assign || d.assignee || d.submittedByName || '').trim();
+    if (!repRaw || isTestAssignee(repRaw)) continue;
+    const exec = matchExecutive(repRaw);
+    const repName = exec ? exec.name : formatPersonName(repRaw);
+    if (!repName || repName === 'User') continue;
+    const teamName = teamNameForRep(exec);
+    const prev = totals.get(repName) || { name: repName, total: 0, team: teamName, count: 0 };
+    prev.total += quote;
+    prev.count += 1;
+    totals.set(repName, prev);
+    companyTotal += quote;
+  }
+  const winner = [...totals.values()].sort(
+    (a, b) => b.total - a.total || b.count - a.count || a.name.localeCompare(b.name)
+  )[0];
+  return { winner, companyTotal };
+}
+
 async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<UpstreamPayload> {
   try {
     void payload;
-    const token = await getShowcaseCrmToken();
     const now = new Date();
-    const y = now.getFullYear();
-    const m = now.getMonth();
-    const monthFrom = new Date(y, m, 1, 0, 0, 0, 0);
-    const monthTo = new Date(y, m + 1, 0, 23, 59, 59, 999);
-    const fromMs = monthFrom.getTime();
-    const toMs = monthTo.getTime();
+    const weekWindow = resolveWeeklyWindow(now);
+    const fromMs = weekWindow.monthFromMs;
+    const toMs = weekWindow.monthToMs;
+    const monthStartYmd = `${weekWindow.monthKey}-01`;
 
-    // Monday 00:00:00 to Sunday 23:59:59 IST for current week
-    const day = now.getDay();
-    const diffToMonday = day === 0 ? -6 : 1 - day;
-    const monday = new Date(now);
-    monday.setDate(now.getDate() + diffToMonday);
-    monday.setHours(0, 0, 0, 0);
-    const weekFromMs = monday.getTime();
-
-    const sunday = new Date(monday);
-    sunday.setDate(monday.getDate() + 6);
-    sunday.setHours(23, 59, 59, 999);
-    const weekToMs = sunday.getTime();
-    const weekStartStr = monday.toISOString().slice(0, 10);
-
-    const dealsUrl = `${CRM_BASE}/v1/booking-token/deals?page=0&size=500&listingType=booking&submittedFrom=${encodeURIComponent(
-      monthFrom.toISOString()
-    )}&submittedTo=${encodeURIComponent(monthTo.toISOString())}`;
-
-    const res = await fetch(dealsUrl, {
-      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
-      cache: 'no-store',
-      signal: AbortSignal.timeout(10000),
+    // Prefer CRM date window in IST month bounds
+    const rawDeals = await fetchBookingAndTokenDeals({
+      submittedFrom: new Date(`${monthStartYmd}T00:00:00+05:30`).toISOString(),
+      submittedTo: new Date(toMs).toISOString(),
     });
 
-    if (res.ok) {
-      const data = await res.json();
-      const rawDeals: any[] = Array.isArray(data?.deals) ? data.deals : [];
-
+    if (Array.isArray(rawDeals) && rawDeals.length >= 0) {
       const validDeals = rawDeals.filter((d) => {
-        if (d.listingType !== 'booking') return false;
+        if (!isBookingOrTokenListing(d.listingType)) return false;
         if (d.cancellationApprovalStatus === 'APPROVED') return false;
-        const who = (d.assign || d.assignee || d.submittedByName || '').toLowerCase();
-        if (
-          who.includes('test') ||
-          who.includes('alice') ||
-          who.includes('shalny') ||
-          who.includes('razi')
-        )
-          return false;
-        const rawDate = d.submittedAt || d.bookingDate || d.createdAt;
-        const t = rawDate ? new Date(rawDate).getTime() : NaN;
+        const who = String(d.assign || d.assignee || d.submittedByName || '');
+        if (isTestAssignee(who)) return false;
+        const t = dealTimestampMs(d);
         return !isNaN(t) && t >= fromMs && t <= toMs;
       });
 
-      // Sort newest deals first
-      validDeals.sort((a, b) => {
-        const tA = new Date(a.submittedAt || a.bookingDate || a.createdAt || 0).getTime();
-        const tB = new Date(b.submittedAt || b.bookingDate || b.createdAt || 0).getTime();
-        return tB - tA;
-      });
+      // Sort newest deals first so latest announcements land at the top of the feed
+      validDeals.sort((a, b) => dealTimestampMs(b) - dealTimestampMs(a));
 
       const feed: any[] = [];
-      const repWeekTotals = new Map<string, { name: string; total: number; team: string; count: number }>();
+      const boardNow = now.toISOString();
 
       for (const d of validDeals) {
+        const listing = String(d.listingType || '').toLowerCase();
+        const isToken = listing === 'token';
         const repRaw = String(d.assign || d.assignee || d.submittedByName || '').trim();
         const exec = matchExecutive(repRaw);
         const repName = exec ? exec.name : formatPersonName(repRaw);
-        const teamName = exec
-          ? exec.branchId === 'SARJAPUR'
-            ? 'Sarjapura Hub'
-            : exec.branchId === 'HBR'
-            ? 'HBR Hub'
-            : 'JP Nagar Hub'
-          : 'Sales Hub';
+        const teamName = teamNameForRep(exec);
 
         const quote = Number(d.dealValue) || 0;
         const amount = formatQuote(quote);
-        const big = quote >= TEN_LAKH_INR; // >= 10 Lakhs (10L) is "Big one closed", other will come as "New booking"
+        const big = !isToken && quote >= TEN_LAKH_INR;
         const customer = d.customerName ? formatPersonName(d.customerName) : '';
         const home = customer ? `${customer}'s home` : 'a home';
-        const rawDate = d.submittedAt || d.bookingDate || d.createdAt;
-        const dealTime = rawDate ? new Date(rawDate).getTime() : NaN;
+        const dealTime = dealTimestampMs(d);
         const ymd = (d.bookingDate || d.submittedAt || d.createdAt || '').slice(0, 10);
+        const createdAt =
+          d.submittedAt ||
+          d.createdAt ||
+          (Number.isFinite(dealTime) ? new Date(dealTime).toISOString() : boardNow);
 
         feed.push({
-          id: `crm-booking-${d.id}`,
+          id: isToken ? `crm-booking-token-${d.id}` : `crm-booking-${d.id}`,
           type: 'booking',
           registerKind: 'booking',
-          title: big ? `Big one closed — ${repName}` : `New booking — ${repName}`,
-          content: big
-            ? `${repName} closed ${home} for ${amount}.`
-            : `${repName} booked ${home} for ${amount}.`,
+          title: isToken
+            ? `New token — ${repName}`
+            : big
+              ? `Big one closed — ${repName}`
+              : `New booking — ${repName}`,
+          content: isToken
+            ? `${repName} issued a token on ${home} for ${amount}.`
+            : big
+              ? `${repName} closed ${home} for ${amount}.`
+              : `${repName} booked ${home} for ${amount}.`,
           quoteFormatted: amount,
           timestamp: ymd,
-          createdAt: d.submittedAt || d.createdAt || new Date().toISOString(),
+          createdAt,
           author: { name: repName, avatar: null, team: teamName },
           department: 'Sales',
           rawBooking: {
@@ -1068,43 +1233,117 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
             customerName: customer,
             isLargeBooking: big,
             bookingDoneDate: ymd,
+            listingType: listing || 'booking',
           },
         });
+      }
 
-        // Tally week totals: date must be valid, within current month AND current week
-        if (!isNaN(dealTime) && dealTime >= fromMs && dealTime <= toMs && dealTime >= weekFromMs && dealTime <= weekToMs) {
-          const prev = repWeekTotals.get(repName) || { name: repName, total: 0, team: teamName, count: 0 };
-          prev.total += quote;
-          prev.count += 1;
-          repWeekTotals.set(repName, prev);
+      // Top performer of the week — confirmed BOOKING gross only (Mon–Sun IST; prior week if empty)
+      let weekly = tallyBookingTotals(
+        validDeals,
+        weekWindow.primary.weekFromMs,
+        weekWindow.primary.weekToMs,
+        weekWindow.monthFromMs,
+        weekWindow.monthToMs
+      );
+      let weekMondayYmd = weekWindow.primary.mondayYmd;
+      if (!weekly.winner || weekly.winner.total <= 0) {
+        const prev = tallyBookingTotals(
+          validDeals,
+          weekWindow.fallback.weekFromMs,
+          weekWindow.fallback.weekToMs,
+          weekWindow.monthFromMs,
+          weekWindow.monthToMs
+        );
+        if (prev.winner && prev.winner.total > 0) {
+          weekly = prev;
+          weekMondayYmd = weekWindow.fallback.mondayYmd;
         }
       }
 
-      // Live week's top performer: salesperson with highest total gross bookings
-      const weeklyWinner = [...repWeekTotals.values()].sort(
-        (a, b) => b.total - a.total || b.count - a.count || a.name.localeCompare(b.name)
-      )[0];
-      if (weeklyWinner && weeklyWinner.total > 0) {
-        const weekAmount = formatQuote(weeklyWinner.total);
-        feed.unshift({
-          id: `crm-weekly-top-${weekStartStr}`,
+      const boardCards: any[] = [];
+
+      if (weekly.winner && weekly.winner.total > 0) {
+        const weekAmount = formatQuote(weekly.winner.total);
+        boardCards.push({
+          id: `crm-weekly-top-${weekMondayYmd}`,
           type: 'performer',
           registerKind: 'weekly',
           title: 'This Week’s Top Performer',
-          content: `${weeklyWinner.name} leads the board with ${weekAmount} in closures this week. Outstanding consistency.`,
+          content: `${weekly.winner.name} leads this week with ${weekAmount} in gross bookings.`,
           quoteFormatted: weekAmount,
           timestamp: 'This week',
-          createdAt: new Date().toISOString(),
-          author: { name: weeklyWinner.name, avatar: null, team: weeklyWinner.team },
+          createdAt: boardNow,
+          author: { name: weekly.winner.name, avatar: null, team: weekly.winner.team },
           department: 'Sales',
           rawBooking: {
-            bookingId: weekStartStr,
-            quoteAmount: weeklyWinner.total,
-            customerName: weeklyWinner.name,
-            bookingDoneDate: weekStartStr,
+            bookingId: weekMondayYmd,
+            quoteAmount: weekly.winner.total,
+            customerName: weekly.winner.name,
+            bookingDoneDate: weekMondayYmd,
+            listingType: 'booking',
           },
         });
       }
+
+      // Month board + ₹1 Cr milestone from the same booking register (no extra CRM round-trips)
+      const monthly = tallyBookingTotals(
+        validDeals,
+        weekWindow.monthFromMs,
+        weekWindow.monthToMs,
+        weekWindow.monthFromMs,
+        weekWindow.monthToMs
+      );
+
+      if (monthly.winner && monthly.winner.total > 0) {
+        const monthAmount = formatQuote(monthly.winner.total);
+        boardCards.push({
+          id: `crm-monthly-top-${weekWindow.monthKey}`,
+          type: 'performer',
+          registerKind: 'monthly',
+          title: 'This Month’s Top Performer',
+          content: `${monthly.winner.name} leads this month with ${monthAmount} in gross bookings.`,
+          quoteFormatted: monthAmount,
+          timestamp: 'This month',
+          createdAt: boardNow,
+          author: { name: monthly.winner.name, avatar: null, team: monthly.winner.team },
+          department: 'Sales',
+          rawBooking: {
+            bookingId: weekWindow.monthKey,
+            quoteAmount: monthly.winner.total,
+            customerName: monthly.winner.name,
+            bookingDoneDate: monthStartYmd,
+            listingType: 'booking',
+          },
+        });
+      }
+
+      const ONE_CRORE_INR = 10_000_000;
+      if (monthly.companyTotal >= ONE_CRORE_INR) {
+        const achieved = formatQuote(monthly.companyTotal);
+        boardCards.push({
+          id: `crm-month-milestone-${weekWindow.monthKey}`,
+          type: 'quota',
+          registerKind: 'milestone',
+          title: 'Company crossed ₹1 Cr this month',
+          content: `Achieved ${achieved} in bookings this month.`,
+          quoteFormatted: achieved,
+          timestamp: 'This month',
+          createdAt: boardNow,
+          author: { name: 'HUB', avatar: null, team: 'Company' },
+          department: 'Sales',
+          rawBooking: {
+            bookingId: weekWindow.monthKey,
+            quoteAmount: monthly.companyTotal,
+            customerName: 'HUB',
+            bookingDoneDate: monthStartYmd,
+            listingType: 'booking',
+          },
+        });
+      }
+
+      // Board highlights first, then newest deals — keeps Top Performer / Milestone instant on paint
+      feed.unshift(...boardCards);
 
       const resJson = JSON.stringify({
         source: 'CRM Booking & Token Deals',
@@ -1695,11 +1934,6 @@ export async function proxyToCrm(request: Request, pathParts: string[]): Promise
   const body = hasBody ? await request.clone().arrayBuffer() : undefined;
   const preferToken = clientBearer(request);
 
-  if (path.includes('hallway/feed')) {
-    let out = await fetchWithFallback(path, incoming.search, method, body, preferToken);
-    out = await sanitizeHallwayFeedPayload(out);
-    return toResponse(out.status, out.contentType, out.body);
-  }
   const key = `${method}:${path}${incoming.search}`;
   const now = Date.now();
   const isHallwayPublicApi =
@@ -1707,10 +1941,12 @@ export async function proxyToCrm(request: Request, pathParts: string[]): Promise
     path.startsWith('api/hallway/') ||
     path.includes('hallway/people') ||
     path.includes('hallway/leaderboard') ||
-    path.includes('hallway/records');
+    path.includes('hallway/records') ||
+    path.includes('hallway/feed');
 
   const cacheable = method === 'GET' && !isHubAuthPath(path) && (!preferToken || isHallwayPublicApi);
-  const ttl = path.includes('hallway/feed') ? 15_000 : isHallwayPublicApi ? 300_000 : CACHE_TTL_MS;
+  // Feed rebuilt from booking-token; keep short TTL + SWR so home paints fast
+  const ttl = path.includes('hallway/feed') ? 20_000 : isHallwayPublicApi ? 300_000 : CACHE_TTL_MS;
   const isPeopleApi = path.includes('hallway/people');
 
   const branchIdParam = incoming.searchParams.get('branchId') || undefined;

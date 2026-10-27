@@ -255,6 +255,7 @@ export interface HallwayFeedItem {
     branchName?: string;
     createdAt?: string;
     bookingDoneDate?: string;
+    listingType?: string;
   };
 }
 
