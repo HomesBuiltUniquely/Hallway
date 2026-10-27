@@ -25,7 +25,9 @@ export async function POST(request: Request, context: RouteContext) {
   const headers = corsHeaders(request);
   const { id } = await context.params;
   const body = await request.json().catch(() => ({}));
-  const viewer = normalizeViewerKey(body?.viewerKey);
+  const aliasList = Array.isArray(body?.viewerKeys) ? body.viewerKeys : [];
+  const viewers = [body?.viewerKey, ...aliasList].filter(Boolean) as string[];
+  const viewer = normalizeViewerKey(String(viewers[0] || ''));
   const authorName = String(body?.authorName || 'Hub member').trim() || 'Hub member';
   if (!viewer) {
     return NextResponse.json({ error: 'viewerKey is required' }, { status: 400, headers });
@@ -64,6 +66,6 @@ export async function POST(request: Request, context: RouteContext) {
     );
   }
 
-  await markCelebrationSeen(id, viewer, true);
+  await markCelebrationSeen(id, viewers, true);
   return NextResponse.json({ success: true }, { headers });
 }

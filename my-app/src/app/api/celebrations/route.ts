@@ -24,11 +24,11 @@ export async function OPTIONS(request: Request) {
 }
 
 export async function GET(request: Request) {
-  const viewer = normalizeViewerKey(new URL(request.url).searchParams.get('viewer'));
-  if (!viewer) {
+  const viewerParam = new URL(request.url).searchParams.get('viewer');
+  if (!normalizeViewerKey(viewerParam?.split(',')[0])) {
     return NextResponse.json({ events: [] }, { headers: corsHeaders(request) });
   }
-  const events = await listUnseenCelebrations(viewer, 5);
+  const events = await listUnseenCelebrations(viewerParam || '', 5);
   return NextResponse.json({ events }, { headers: corsHeaders(request) });
 }
 

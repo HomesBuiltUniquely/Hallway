@@ -56,6 +56,40 @@ export function normalizeViewerKey(raw: string | null | undefined): string {
   return key;
 }
 
+/**
+ * Expand one identity into all equivalent keys so Hallway (email),
+ * CRM (login username / user id), and Design (email) share one receipt.
+ */
+export function expandViewerKeys(
+  raw: string | string[] | null | undefined
+): string[] {
+  const seeds = Array.isArray(raw)
+    ? raw
+    : String(raw || '')
+        .split(',')
+        .map((part) => part.trim())
+        .filter(Boolean);
+
+  const out = new Set<string>();
+  for (const seed of seeds) {
+    const key = normalizeViewerKey(seed);
+    if (!key) continue;
+    out.add(key);
+    if (key.includes('@')) {
+      const local = key.split('@')[0]?.trim();
+      if (local) out.add(local.slice(0, 191));
+    }
+    // Numeric CRM user ids — keep plain + prefixed forms
+    if (/^\d+$/.test(key)) {
+      out.add(`uid:${key}`.slice(0, 191));
+    }
+    if (key.startsWith('uid:') && /^\d+$/.test(key.slice(4))) {
+      out.add(key.slice(4));
+    }
+  }
+  return Array.from(out);
+}
+
 function mapRow(row: Record<string, unknown>): CelebrationEvent {
   const amount = Number(row.quote_amount) || 0;
   const type = String(row.celebration_type || 'new_booking') as CelebrationType;
@@ -132,51 +166,60 @@ export async function createCelebration(input: {
   return { created, id };
 }
 
-/** Unseen celebrations for one person. Newest first, at most five. */
-export async function listUnseenCelebrations(viewerKey: string, limit = 5): Promise<CelebrationEvent[]> {
-  const viewer = normalizeViewerKey(viewerKey);
-  if (!viewer) return [];
+/** Unseen celebrations for one person (any of their identity aliases). Newest first, at most five. */
+export async function listUnseenCelebrations(
+  viewerKey: string | string[],
+  limit = 5
+): Promise<CelebrationEvent[]> {
+  const viewers = expandViewerKeys(viewerKey);
+  if (viewers.length === 0) return [];
   await ensureHallwaySchema();
   const pool = getPool();
   const cap = Math.min(Math.max(limit, 1), 5);
+  const placeholders = viewers.map(() => '?').join(', ');
   const [rows] = await pool.query<any[]>(
     `SELECT e.id, e.booking_id, e.celebration_type, e.salesperson_name, e.branch_name,
             e.customer_name, e.quote_amount, e.announcement_id, e.occurred_at
      FROM celebration_events e
-     LEFT JOIN celebration_receipts r
-       ON r.event_id = e.id AND r.viewer_key = ?
      WHERE e.occurred_at >= (NOW() - INTERVAL 1 DAY)
-       AND r.seen_at IS NULL
+       AND NOT EXISTS (
+         SELECT 1 FROM celebration_receipts r
+         WHERE r.event_id = e.id
+           AND r.viewer_key IN (${placeholders})
+           AND r.seen_at IS NOT NULL
+       )
      ORDER BY e.occurred_at DESC
      LIMIT ${cap}`,
-    [viewer]
+    viewers
   );
   return (rows || []).map(mapRow);
 }
 
 export async function markCelebrationSeen(
   eventId: string,
-  viewerKey: string,
+  viewerKey: string | string[],
   congratulated: boolean
 ): Promise<void> {
-  const viewer = normalizeViewerKey(viewerKey);
+  const viewers = expandViewerKeys(viewerKey);
   const id = String(eventId || '').trim();
-  if (!viewer || !id) return;
+  if (viewers.length === 0 || !id) return;
   await ensureHallwaySchema();
   const pool = getPool();
-  if (congratulated) {
-    await pool.query(
-      `INSERT INTO celebration_receipts (event_id, viewer_key, seen_at, congratulated_at)
-       VALUES (?, ?, NOW(), NOW())
-       ON DUPLICATE KEY UPDATE seen_at = COALESCE(seen_at, NOW()), congratulated_at = COALESCE(congratulated_at, NOW())`,
-      [id, viewer]
-    );
-    return;
+  for (const viewer of viewers) {
+    if (congratulated) {
+      await pool.query(
+        `INSERT INTO celebration_receipts (event_id, viewer_key, seen_at, congratulated_at)
+         VALUES (?, ?, NOW(), NOW())
+         ON DUPLICATE KEY UPDATE seen_at = COALESCE(seen_at, NOW()), congratulated_at = COALESCE(congratulated_at, NOW())`,
+        [id, viewer]
+      );
+    } else {
+      await pool.query(
+        `INSERT INTO celebration_receipts (event_id, viewer_key, seen_at)
+         VALUES (?, ?, NOW())
+         ON DUPLICATE KEY UPDATE seen_at = COALESCE(seen_at, NOW())`,
+        [id, viewer]
+      );
+    }
   }
-  await pool.query(
-    `INSERT INTO celebration_receipts (event_id, viewer_key, seen_at)
-     VALUES (?, ?, NOW())
-     ON DUPLICATE KEY UPDATE seen_at = COALESCE(seen_at, NOW())`,
-    [id, viewer]
-  );
 }

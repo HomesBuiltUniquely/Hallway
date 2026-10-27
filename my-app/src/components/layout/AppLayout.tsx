@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Sidebar from './Sidebar';
 import Header from './Header';
@@ -13,6 +13,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, authReady, sidebarCollapsed, isSidebarHovered, currentUser } = useApp();
   const isExpanded = !sidebarCollapsed || isSidebarHovered;
   const isLoginRoute = pathname === '/login';
+  const [crmAliases, setCrmAliases] = useState<string[]>([]);
 
   useEffect(() => {
     if (!authReady) return;
@@ -22,6 +23,36 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       router.replace('/');
     }
   }, [authReady, isAuthenticated, isLoginRoute, router]);
+
+  useEffect(() => {
+    try {
+      setCrmAliases(
+        [
+          localStorage.getItem('crm_login_username') || '',
+          localStorage.getItem('crm_user_id') || '',
+          localStorage.getItem('crm_user_name') || '',
+        ].filter(Boolean)
+      );
+    } catch {
+      setCrmAliases([]);
+    }
+  }, [isAuthenticated, currentUser.email, currentUser.id, currentUser.name]);
+
+  const celebrationViewerKey = useMemo(
+    () => (currentUser.email || currentUser.id || currentUser.name || '').toString().trim(),
+    [currentUser.email, currentUser.id, currentUser.name]
+  );
+
+  const celebrationAliases = useMemo(
+    () =>
+      [
+        currentUser.email,
+        String(currentUser.id || ''),
+        currentUser.name,
+        ...crmAliases,
+      ].filter(Boolean) as string[],
+    [crmAliases, currentUser.email, currentUser.id, currentUser.name]
+  );
 
   if (!authReady) {
     return <div className="min-h-screen bg-[#F9FAFB] dark:bg-[#060B13]" />;
@@ -53,8 +84,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <BookingCelebration
         apiBase=""
         placement="center"
-        enabled={isAuthenticated}
-        viewerKey={(currentUser.email || currentUser.id || currentUser.name || '').trim()}
+        enabled={isAuthenticated && Boolean(celebrationViewerKey)}
+        viewerKey={celebrationViewerKey}
+        viewerAliases={celebrationAliases}
         viewerName={currentUser.name || 'Hub member'}
       />
     </div>

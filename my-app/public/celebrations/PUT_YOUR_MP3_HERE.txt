@@ -1,0 +1,11 @@
+Place your booking-done celebration sound in this folder as:
+
+  booking-done.mp3
+
+Full path:
+  my-app/public/celebrations/booking-done.mp3
+
+It will play automatically with the booking celebration popup in Hallway,
+CRM, and Design (CRM/Design load it from the Hallway URL).
+
+Do not rename the file — the app looks specifically for booking-done.mp3.

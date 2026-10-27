@@ -23,10 +23,12 @@ export async function OPTIONS(request: Request) {
 export async function POST(request: Request, context: RouteContext) {
   const { id } = await context.params;
   const body = await request.json().catch(() => ({}));
-  const viewer = normalizeViewerKey(body?.viewerKey || new URL(request.url).searchParams.get('viewer'));
-  if (!viewer) {
+  const aliasList = Array.isArray(body?.viewerKeys) ? body.viewerKeys : [];
+  const primary = body?.viewerKey || new URL(request.url).searchParams.get('viewer');
+  const viewers = [primary, ...aliasList].filter(Boolean);
+  if (!normalizeViewerKey(String(viewers[0] || ''))) {
     return NextResponse.json({ error: 'viewerKey is required' }, { status: 400, headers: corsHeaders(request) });
   }
-  await markCelebrationSeen(id, viewer, Boolean(body?.congratulated));
+  await markCelebrationSeen(id, viewers as string[], Boolean(body?.congratulated));
   return NextResponse.json({ success: true }, { headers: corsHeaders(request) });
 }

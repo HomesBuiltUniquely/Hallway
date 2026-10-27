@@ -22,7 +22,8 @@ export async function OPTIONS(request: Request) {
 
 /** Pushes unseen celebrations for one signed-in person. Clients fall back to polling. */
 export async function GET(request: Request) {
-  const viewer = normalizeViewerKey(new URL(request.url).searchParams.get('viewer'));
+  const viewerParam = new URL(request.url).searchParams.get('viewer') || '';
+  const hasViewer = Boolean(normalizeViewerKey(viewerParam.split(',')[0]));
   const encoder = new TextEncoder();
   let timer: ReturnType<typeof setInterval> | null = null;
 
@@ -37,12 +38,12 @@ export async function GET(request: Request) {
         }
       };
       const tick = async () => {
-        if (!viewer) {
+        if (!hasViewer) {
           write('data: []\n\n');
           return;
         }
         try {
-          const events = await listUnseenCelebrations(viewer, 5);
+          const events = await listUnseenCelebrations(viewerParam, 5);
           const fresh = events.filter((event) => !sent.has(event.id));
           fresh.forEach((event) => sent.add(event.id));
           if (fresh.length > 0) write(`data: ${JSON.stringify(fresh)}\n\n`);
