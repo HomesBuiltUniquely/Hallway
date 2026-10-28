@@ -19,14 +19,20 @@ export default function AnnouncementsFeed({
   const { announcementPosts, announcementsLoading, searchQuery, setSearchQuery } = useApp();
   const [tagFilter, setTagFilter] = useState<TagFilter>('ALL');
 
-  const eligibleAnnouncements = (announcementPosts || []).filter(
-    (post) =>
-      !post.id.startsWith('crm-target-') &&
-      !post.id.startsWith('crm-booking-token-') &&
-      !String(post.title || '')
+  const eligibleAnnouncements = (announcementPosts || []).filter((post) => {
+    if (post.id.startsWith('crm-target-')) return false;
+    if (post.id.startsWith('crm-booking-token-')) return false;
+    if (
+      String(post.title || '')
         .toLowerCase()
         .startsWith('new token')
-  );
+    ) {
+      return false;
+    }
+    // Deals: only live crm-booking-* cards (CRM BOOKING + this month source)
+    if (post.type === 'booking' && !post.id.startsWith('crm-booking-')) return false;
+    return true;
+  });
 
   const tabCounts = {
     ALL: eligibleAnnouncements.length,

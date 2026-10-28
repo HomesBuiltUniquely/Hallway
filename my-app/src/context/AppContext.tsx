@@ -812,6 +812,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         pId === 'crm-announcement-official-corridor-broadcast' ||
         pId.startsWith('crm-token-') ||
         pId.startsWith('crm-booking-token-') ||
+        // Live CRM feed is the only source for booking cards (BOOKING + this month)
+        pId.startsWith('crm-booking-') ||
         pId.startsWith('crm-event-') ||
         pId.startsWith('deal-yesterday-') ||
         pId.startsWith('crm-target-') ||

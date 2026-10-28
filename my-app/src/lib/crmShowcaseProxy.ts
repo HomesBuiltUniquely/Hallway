@@ -459,9 +459,35 @@ function isBookingOrTokenListing(listingType: unknown): boolean {
   return t === 'booking' || t === 'token';
 }
 
-/** Confirmed booking rows only — excludes token-stage deals from weekly/monthly boards. */
-function isBookingListing(listingType: unknown): boolean {
-  return String(listingType || '').toLowerCase() === 'booking';
+/**
+ * Same rule as CRM Booking & Token tab (BOOKING filter):
+ * bookingStatus === confirmed → booking; cancel stays cancel; else token.
+ */
+function resolveCrmListingType(d: any): 'booking' | 'token' | 'cancel' {
+  const listing = String(d?.listingType || '').toLowerCase();
+  const status = String(d?.bookingStatus || '').toLowerCase();
+  const cancelled =
+    listing === 'cancel' ||
+    status === 'cancelled' ||
+    d?.isCancelled === true ||
+    String(d?.cancellationApprovalStatus || '').toUpperCase() === 'APPROVED';
+  if (cancelled) return 'cancel';
+  if (status === 'confirmed' || listing === 'booking') return 'booking';
+  return 'token';
+}
+
+/** CRM “This month” filter uses submittedAt (handoff / created). */
+function dealSubmittedMs(d: any): number {
+  const raw = d?.submittedAt || d?.createdAt || d?.bookingDate;
+  const t = raw ? new Date(raw).getTime() : NaN;
+  return Number.isFinite(t) ? t : NaN;
+}
+
+function branchLabelForTeam(teamName: string): string {
+  if (/sarjapur/i.test(teamName)) return 'SARJAPUR';
+  if (/hbr/i.test(teamName)) return 'HBR';
+  if (/jp\s*nagar/i.test(teamName)) return 'JP NAGAR';
+  return '';
 }
 
 function addDaysYmd(ymd: string, days: number): string {
@@ -713,8 +739,8 @@ async function getLeaderboardFromBookingDeals(
       }
 
       for (const d of validDeals) {
-        // Leaderboard revenue follows Booking register only (exclude token-stage)
-        if (!isBookingListing(d.listingType)) continue;
+        // Leaderboard revenue follows CRM BOOKING tab rule (confirmed) only
+        if (resolveCrmListingType(d) !== 'booking') continue;
         const who = d.assign || d.assignee || d.submittedByName;
         const matched = matchExecutive(who);
         if (!matched) continue;
@@ -1125,9 +1151,8 @@ function tallyBookingTotals(
   const totals = new Map<string, { name: string; total: number; team: string; count: number }>();
   let companyTotal = 0;
   for (const d of deals) {
-    if (!isBookingListing(d.listingType)) continue;
-    if (d.cancellationApprovalStatus === 'APPROVED') continue;
-    const dealTime = dealTimestampMs(d);
+    if (resolveCrmListingType(d) !== 'booking') continue;
+    const dealTime = dealSubmittedMs(d);
     if (
       isNaN(dealTime) ||
       dealTime < monthFromMs ||
@@ -1173,17 +1198,16 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
     });
 
     if (Array.isArray(rawDeals) && rawDeals.length >= 0) {
-      const validDeals = rawDeals.filter((d) => {
-        if (!isBookingOrTokenListing(d.listingType)) return false;
-        if (d.cancellationApprovalStatus === 'APPROVED') return false;
+      // Mirror CRM Booking & Token: BOOKING tab + This month (submittedAt window)
+      const monthBookingDeals = rawDeals.filter((d) => {
+        if (resolveCrmListingType(d) !== 'booking') return false;
         const who = String(d.assign || d.assignee || d.submittedByName || '');
         if (isTestAssignee(who)) return false;
-        const t = dealTimestampMs(d);
+        const t = dealSubmittedMs(d);
         return !isNaN(t) && t >= fromMs && t <= toMs;
       });
 
-      // Sort newest deals first so latest announcements land at the top of the feed
-      validDeals.sort((a, b) => dealTimestampMs(b) - dealTimestampMs(a));
+      monthBookingDeals.sort((a, b) => dealSubmittedMs(b) - dealSubmittedMs(a));
 
       const feed: any[] = [];
       // Stable IST anchors for the calendar day — never Date.now(), or every poll reshuffles the feed
@@ -1192,29 +1216,30 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
       const boardMonthlyAt = `${todayIst}T23:40:00+05:30`;
       const boardMilestoneAt = `${todayIst}T23:30:00+05:30`;
 
-      // Announcement cards: confirmed BOOKING only — never emit token-stage duplicates
-      for (const d of validDeals) {
-        const listing = String(d.listingType || '').toLowerCase();
-        if (listing !== 'booking') continue;
-
+      // Deal cards = exactly CRM BOOKING + this month rows (customer, assign, deal value)
+      for (const d of monthBookingDeals) {
         const repRaw = String(d.assign || d.assignee || d.submittedByName || '').trim();
         const exec = matchExecutive(repRaw);
         const repName = exec ? exec.name : formatPersonName(repRaw);
         const teamName = teamNameForRep(exec);
+        const branch = branchLabelForTeam(teamName);
 
         const quote = Number(d.dealValue) || 0;
+        if (quote <= 0) continue;
         const amount = formatQuote(quote);
         const big = quote >= TEN_LAKH_INR;
         const customer = d.customerName ? formatPersonName(d.customerName) : '';
         const home = customer ? `${customer}'s home` : 'a home';
-        const dealTime = dealTimestampMs(d);
-        const ymd = (d.bookingDate || d.submittedAt || d.createdAt || '').slice(0, 10);
+        const dealTime = dealSubmittedMs(d);
+        const ymd = String(d.submittedAt || d.bookingDate || d.createdAt || '')
+          .slice(0, 10);
         const createdAt =
           d.submittedAt ||
           d.createdAt ||
           (Number.isFinite(dealTime)
             ? new Date(dealTime).toISOString()
             : `${ymd || todayIst}T12:00:00+05:30`);
+        const whoLabel = branch ? `${repName} (${branch})` : repName;
 
         feed.push({
           id: `crm-booking-${d.id}`,
@@ -1222,8 +1247,8 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
           registerKind: 'booking',
           title: big ? `Big one closed — ${repName}` : `New booking — ${repName}`,
           content: big
-            ? `${repName} closed ${home} for ${amount}.`
-            : `${repName} booked ${home} for ${amount}.`,
+            ? `${whoLabel} closed ${home} for ${amount}.`
+            : `${whoLabel} booked ${home} for ${amount}.`,
           quoteFormatted: amount,
           timestamp: ymd,
           createdAt,
@@ -1236,9 +1261,12 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
             isLargeBooking: big,
             bookingDoneDate: ymd,
             listingType: 'booking',
+            branchName: branch || undefined,
           },
         });
       }
+
+      const validDeals = monthBookingDeals;
 
       // Top performer of the week — confirmed BOOKING gross only (Mon–Sun IST; prior week if empty)
       let weekly = tallyBookingTotals(

@@ -386,15 +386,20 @@ export function generateCrmAnnouncements({
 
   for (const item of register) {
     if (!item.id || seenIds.has(item.id)) continue;
-    // Never surface token-stage cards in the home / announcements register
+    // Only CRM BOOKING cards (this-month feed) — never token / cancel / legacy
     if (
       String(item.id).startsWith('crm-booking-token-') ||
       String(item.rawBooking?.listingType || '').toLowerCase() === 'token' ||
+      String(item.rawBooking?.listingType || '').toLowerCase() === 'cancel' ||
       String(item.title || '')
         .toLowerCase()
         .startsWith('new token')
     ) {
       continue;
+    }
+    if (item.registerKind === 'booking') {
+      const listing = String(item.rawBooking?.listingType || 'booking').toLowerCase();
+      if (listing !== 'booking') continue;
     }
 
     const rep = formatPersonName(item.author?.name || '');
