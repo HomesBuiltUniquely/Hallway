@@ -386,6 +386,16 @@ export function generateCrmAnnouncements({
 
   for (const item of register) {
     if (!item.id || seenIds.has(item.id)) continue;
+    // Never surface token-stage cards in the home / announcements register
+    if (
+      String(item.id).startsWith('crm-booking-token-') ||
+      String(item.rawBooking?.listingType || '').toLowerCase() === 'token' ||
+      String(item.title || '')
+        .toLowerCase()
+        .startsWith('new token')
+    ) {
+      continue;
+    }
 
     const rep = formatPersonName(item.author?.name || '');
     const quoteFormatted = item.quoteFormatted || '';

@@ -1192,9 +1192,11 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
       const boardMonthlyAt = `${todayIst}T23:40:00+05:30`;
       const boardMilestoneAt = `${todayIst}T23:30:00+05:30`;
 
+      // Announcement cards: confirmed BOOKING only — never emit token-stage duplicates
       for (const d of validDeals) {
         const listing = String(d.listingType || '').toLowerCase();
-        const isToken = listing === 'token';
+        if (listing !== 'booking') continue;
+
         const repRaw = String(d.assign || d.assignee || d.submittedByName || '').trim();
         const exec = matchExecutive(repRaw);
         const repName = exec ? exec.name : formatPersonName(repRaw);
@@ -1202,7 +1204,7 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
 
         const quote = Number(d.dealValue) || 0;
         const amount = formatQuote(quote);
-        const big = !isToken && quote >= TEN_LAKH_INR;
+        const big = quote >= TEN_LAKH_INR;
         const customer = d.customerName ? formatPersonName(d.customerName) : '';
         const home = customer ? `${customer}'s home` : 'a home';
         const dealTime = dealTimestampMs(d);
@@ -1215,19 +1217,13 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
             : `${ymd || todayIst}T12:00:00+05:30`);
 
         feed.push({
-          id: isToken ? `crm-booking-token-${d.id}` : `crm-booking-${d.id}`,
+          id: `crm-booking-${d.id}`,
           type: 'booking',
           registerKind: 'booking',
-          title: isToken
-            ? `New token — ${repName}`
-            : big
-              ? `Big one closed — ${repName}`
-              : `New booking — ${repName}`,
-          content: isToken
-            ? `${repName} issued a token on ${home} for ${amount}.`
-            : big
-              ? `${repName} closed ${home} for ${amount}.`
-              : `${repName} booked ${home} for ${amount}.`,
+          title: big ? `Big one closed — ${repName}` : `New booking — ${repName}`,
+          content: big
+            ? `${repName} closed ${home} for ${amount}.`
+            : `${repName} booked ${home} for ${amount}.`,
           quoteFormatted: amount,
           timestamp: ymd,
           createdAt,
@@ -1239,7 +1235,7 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
             customerName: customer,
             isLargeBooking: big,
             bookingDoneDate: ymd,
-            listingType: listing || 'booking',
+            listingType: 'booking',
           },
         });
       }

@@ -20,7 +20,12 @@ export default function AnnouncementsFeed({
   const [tagFilter, setTagFilter] = useState<TagFilter>('ALL');
 
   const eligibleAnnouncements = (announcementPosts || []).filter(
-    (post) => !post.id.startsWith('crm-target-')
+    (post) =>
+      !post.id.startsWith('crm-target-') &&
+      !post.id.startsWith('crm-booking-token-') &&
+      !String(post.title || '')
+        .toLowerCase()
+        .startsWith('new token')
   );
 
   const tabCounts = {

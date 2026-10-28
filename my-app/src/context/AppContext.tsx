@@ -811,6 +811,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         pId === 'performer-yesterday-1' ||
         pId === 'crm-announcement-official-corridor-broadcast' ||
         pId.startsWith('crm-token-') ||
+        pId.startsWith('crm-booking-token-') ||
         pId.startsWith('crm-event-') ||
         pId.startsWith('deal-yesterday-') ||
         pId.startsWith('crm-target-') ||
@@ -824,6 +825,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         pTitle.includes('jp nagar hit 80%') ||
         pContent.includes('on track to smash this month') ||
         pTitle.startsWith('new token') ||
+        pContent.includes('issued a token') ||
         pTitle.includes('client consultation') ||
         pTitle.includes('virtual meeting') ||
         pTitle.includes('quarterly operating corridor') ||
