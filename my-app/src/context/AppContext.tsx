@@ -569,7 +569,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [announcementsLoading, setAnnouncementsLoading] = useState(true);
   const announcementPostsRef = useRef<FeedPost[]>(announcementPosts);
   announcementPostsRef.current = announcementPosts;
+  const announcementFingerprintRef = useRef('');
   const feedRefreshGen = useRef(0);
+
+  /** Skip React re-renders when poll returns the same visible feed content. */
+  const fingerprintAnnouncements = (posts: FeedPost[]) =>
+    posts
+      .map(
+        (p) =>
+          `${p.id}|${p.title}|${p.content}|${p.quoteFormatted || ''}|${p.createdAt || ''}|${p.commentsCount || 0}|${p.author?.name || ''}`
+      )
+      .join('::');
+
+  const commitAnnouncementPosts = (next: FeedPost[], opts?: { force?: boolean }) => {
+    const fingerprint = fingerprintAnnouncements(next);
+    if (!opts?.force && fingerprint === announcementFingerprintRef.current) {
+      return false;
+    }
+    announcementFingerprintRef.current = fingerprint;
+    setAnnouncementPosts(next);
+    return true;
+  };
   const [actionItems, setActionItems] = useState<ActionItem[]>(actionItemsMock);
   const [crmLeads, setCrmLeads] = useState<CrmLeadItem[]>(crmLeadsMock);
   const [designProjects, setDesignProjects] = useState<DesignProject[]>(designProjectsMock);
@@ -949,13 +969,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       let partialTargets: any[] | undefined;
       let partialLeaderboard: any[] | undefined;
       let sealed = false;
+      // First paint only when the feed is still empty — avoids flicker on every background poll.
       const paintPartial = () => {
         if (stale() || sealed) return;
+        if (announcementPostsRef.current.length > 0) return;
         const feedSettled = partialFeed !== undefined;
         const broadcasts = Array.isArray(partialAnnouncements) ? partialAnnouncements : [];
         if (!feedSettled && broadcasts.length === 0) return;
-        // Paint as soon as feed lands; upgrade again when leaderboard / overall targets arrive
-        // so Top Performer + Milestones appear without waiting on branch/people/records fan-out.
         const early = publishLiveAnnouncements({
           announcementsData: broadcasts,
           crmItems: partialFeed || [],
@@ -963,7 +983,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           leaderboardData: partialLeaderboard || [],
         });
         if (early.length > 0 || feedSettled) {
-          setAnnouncementPosts(early);
+          commitAnnouncementPosts(early, { force: true });
           setAnnouncementsLoading(false);
         }
       };
@@ -991,8 +1011,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         paintPartial();
       });
 
-      // Critical path: feed now carries weekly/monthly/milestone board cards — paint as soon as
-      // announcements + feed land. Targets/leaderboard only refine fallbacks if board cards missing.
+      // Critical path: feed carries weekly/monthly/milestone — one commit when both land
       const [announcementsData, crmItems] = await Promise.all([
         announcementsPromise,
         crmFeedPromise,
@@ -1007,7 +1026,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       });
       if (!stale()) {
         sealed = true;
-        setAnnouncementPosts(combinedAnnouncementsEarly);
+        commitAnnouncementPosts(combinedAnnouncementsEarly);
         setAnnouncementsLoading(false);
       }
 
@@ -1029,7 +1048,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // Soft upgrade if feed lacked board cards and targets/leaderboard filled gaps
+      // Soft upgrade only when targets/leaderboard actually add/change board cards
       const upgraded = publishLiveAnnouncements({
         announcementsData,
         crmItems: Array.isArray(crmItems) ? crmItems : [],
@@ -1037,7 +1056,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         leaderboardData,
       });
       if (!stale()) {
-        setAnnouncementPosts(upgraded);
+        commitAnnouncementPosts(upgraded);
       }
 
       const [
@@ -1226,7 +1245,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       });
       sealed = true;
       if (stale()) return;
-      setAnnouncementPosts(combinedAnnouncements);
+      commitAnnouncementPosts(combinedAnnouncements);
       setAnnouncementsLoading(false);
 
       const liveNotifs = buildDynamicNotifications({
@@ -1278,7 +1297,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const refreshFeedRef = useRef(refreshFeed);
   refreshFeedRef.current = refreshFeed;
 
-  // Load once the person is signed in, then keep the live feed fresh.
+  // Load once signed in; quiet background sync (no UI churn unless content actually changes).
   useEffect(() => {
     if (!authReady || !isAuthenticated) return;
     void refreshFeedRef.current();
@@ -1286,7 +1305,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         void refreshFeedRef.current();
       }
-    }, 25000);
+    }, 60_000);
 
     const onVisible = () => {
       if (document.visibilityState === 'visible') {
@@ -1575,7 +1594,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const news = [newPost, ...prev.filter((p) => p.type !== 'quota' && p.id !== newPost.id)];
       return [...targets, ...news];
     });
-    setAnnouncementPosts((prev) => [newPost, ...prev.filter((p) => p.id !== newPost.id)]);
+    commitAnnouncementPosts([newPost, ...announcementPostsRef.current.filter((p) => p.id !== newPost.id)], {
+      force: true,
+    });
 
     const apiUrl = resolveHallwayLocalApi();
     try {
@@ -1602,10 +1623,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           postWithDate,
           ...prev.filter((p) => p.id !== newPost.id && p.id !== created.id),
         ]);
-        setAnnouncementPosts((prev) => [
-          postWithDate,
-          ...prev.filter((p) => p.id !== newPost.id && p.id !== created.id),
-        ]);
+        commitAnnouncementPosts(
+          [
+            postWithDate,
+            ...announcementPostsRef.current.filter((p) => p.id !== newPost.id && p.id !== created.id),
+          ],
+          { force: true }
+        );
         return postWithDate;
       }
       const errBody = await res.text().catch(() => '');
@@ -1624,7 +1648,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     setFeedPosts((prev) => prev.filter((p) => p.id !== postId));
-    setAnnouncementPosts((prev) => prev.filter((p) => p.id !== postId));
+    commitAnnouncementPosts(
+      announcementPostsRef.current.filter((p) => p.id !== postId),
+      { force: true }
+    );
 
     // CRM / dynamic snippets: suppress so refreshFeed does not recreate them
     if (postId.startsWith('crm-') || postId.startsWith('dynamic-sim-')) {
@@ -1835,7 +1862,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       console.warn('Could not persist simulated deal to backend DB:', err);
     }
 
-    setAnnouncementPosts((prev) => [post, ...prev.filter((p) => p.id !== post.id)]);
+    commitAnnouncementPosts([post, ...announcementPostsRef.current.filter((p) => p.id !== post.id)], {
+      force: true,
+    });
     setFeedPosts((prev) => [post, ...prev.filter((p) => p.id !== post.id)]);
     return post;
   };

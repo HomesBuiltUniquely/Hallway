@@ -535,7 +535,7 @@ export function generateCrmAnnouncements({
         iconEmoji: '🏅',
         title: 'This Week’s Top Performer',
         timestamp: 'This week',
-        createdAt: new Date().toISOString(),
+        createdAt: `${istYmd()}T23:50:00+05:30`,
         author: {
           name: weeklyWinner.name,
           avatar: preserved?.author?.avatar || '',
@@ -576,7 +576,7 @@ export function generateCrmAnnouncements({
           iconEmoji: '🏅',
           title: 'This Month’s Top Performer',
           timestamp: 'This month',
-          createdAt: new Date().toISOString(),
+          createdAt: `${istYmd()}T23:40:00+05:30`,
           author: {
             name,
             avatar: preserved?.author?.avatar || '',
@@ -609,7 +609,7 @@ export function generateCrmAnnouncements({
           iconEmoji: '🎯',
           title: 'Company crossed ₹1 Cr this month',
           timestamp: 'This month',
-          createdAt: new Date().toISOString(),
+          createdAt: `${istYmd()}T23:30:00+05:30`,
           author: {
             name: 'HUB',
             avatar: preserved?.author?.avatar || '',

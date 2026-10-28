@@ -1186,7 +1186,11 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
       validDeals.sort((a, b) => dealTimestampMs(b) - dealTimestampMs(a));
 
       const feed: any[] = [];
-      const boardNow = now.toISOString();
+      // Stable IST anchors for the calendar day — never Date.now(), or every poll reshuffles the feed
+      const todayIst = istYmdNow(now);
+      const boardWeeklyAt = `${todayIst}T23:50:00+05:30`;
+      const boardMonthlyAt = `${todayIst}T23:40:00+05:30`;
+      const boardMilestoneAt = `${todayIst}T23:30:00+05:30`;
 
       for (const d of validDeals) {
         const listing = String(d.listingType || '').toLowerCase();
@@ -1206,7 +1210,9 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
         const createdAt =
           d.submittedAt ||
           d.createdAt ||
-          (Number.isFinite(dealTime) ? new Date(dealTime).toISOString() : boardNow);
+          (Number.isFinite(dealTime)
+            ? new Date(dealTime).toISOString()
+            : `${ymd || todayIst}T12:00:00+05:30`);
 
         feed.push({
           id: isToken ? `crm-booking-token-${d.id}` : `crm-booking-${d.id}`,
@@ -1273,7 +1279,7 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
           content: `${weekly.winner.name} leads this week with ${weekAmount} in gross bookings.`,
           quoteFormatted: weekAmount,
           timestamp: 'This week',
-          createdAt: boardNow,
+          createdAt: boardWeeklyAt,
           author: { name: weekly.winner.name, avatar: null, team: weekly.winner.team },
           department: 'Sales',
           rawBooking: {
@@ -1305,7 +1311,7 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
           content: `${monthly.winner.name} leads this month with ${monthAmount} in gross bookings.`,
           quoteFormatted: monthAmount,
           timestamp: 'This month',
-          createdAt: boardNow,
+          createdAt: boardMonthlyAt,
           author: { name: monthly.winner.name, avatar: null, team: monthly.winner.team },
           department: 'Sales',
           rawBooking: {
@@ -1329,7 +1335,7 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
           content: `Achieved ${achieved} in bookings this month.`,
           quoteFormatted: achieved,
           timestamp: 'This month',
-          createdAt: boardNow,
+          createdAt: boardMilestoneAt,
           author: { name: 'HUB', avatar: null, team: 'Company' },
           department: 'Sales',
           rawBooking: {
