@@ -1475,7 +1475,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       authorAvatar,
       authorRole,
       content: content.trim(),
-      timestamp: 'Just now',
+      timestamp: '',
       createdAt: new Date().toISOString(),
       likes: 0,
       userLiked: false

@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Heart, MessageCircle, Send, Sparkles, Award, Smile, Trash2 } from 'lucide-react';
 import { FeedPost } from '../../types';
 import { useApp } from '../../context/AppContext';
-import { formatRelativeTime, cleanPostContent } from '../../lib/hallwayDisplay';
+import { formatRelativeTime, formatCommentTime, cleanPostContent } from '../../lib/hallwayDisplay';
 import { canDeleteAnnouncement, canDeleteComment } from '../../lib/permissions';
 import UserAvatar from '../common/UserAvatar';
 
@@ -351,7 +351,7 @@ export default function FeedCard({ post }: { post: FeedPost }) {
                         {comm.content}
                       </p>
                       <div className="flex items-center gap-3 mt-1 text-[10px] text-slate-400">
-                        <span>{formatRelativeTime(comm.createdAt || comm.timestamp)}</span>
+                        <span>{formatCommentTime(comm.createdAt, comm.timestamp)}</span>
                         {comm.likes && comm.likes > 0 ? (
                           <span className="font-semibold text-slate-500 dark:text-slate-400">
                             {comm.likes} {comm.likes === 1 ? 'like' : 'likes'}

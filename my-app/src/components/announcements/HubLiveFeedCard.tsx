@@ -1,10 +1,16 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { KeyRound, Trophy, Target, Megaphone, SmilePlus, Trash2 } from 'lucide-react';
+import { KeyRound, Trophy, Target, Megaphone, SmilePlus, Trash2, Heart } from 'lucide-react';
 import { FeedPost } from '../../types/index';
 import { useApp } from '../../context/AppContext';
-import { cleanPostContent, formatRelativeTime, getYesterdayYmd, istYmd } from '../../lib/hallwayDisplay';
+import {
+  cleanPostContent,
+  formatCommentTime,
+  formatRelativeTime,
+  getYesterdayYmd,
+  istYmd,
+} from '../../lib/hallwayDisplay';
 import { canDeleteAnnouncement, canDeleteComment } from '../../lib/permissions';
 import UserAvatar from '../common/UserAvatar';
 
@@ -164,12 +170,14 @@ function userKeyFor(id: string) {
 }
 
 export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
-  const { currentUser, addReaction, addComment, deleteAnnouncement, deleteComment } = useApp();
+  const { currentUser, addReaction, addComment, likeComment, deleteAnnouncement, deleteComment } =
+    useApp();
   const [showComments, setShowComments] = useState(false);
   const [newCommentText, setNewCommentText] = useState('');
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const [showReactionPicker, setShowReactionPicker] = useState(false);
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
+  const [likingCommentId, setLikingCommentId] = useState<string | null>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
 
   const kind = resolveKind(post);
@@ -244,6 +252,16 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
       await deleteComment(post.id, commentId);
     } finally {
       setDeletingCommentId(null);
+    }
+  };
+
+  const handleLikeComment = async (commentId: string) => {
+    if (likingCommentId) return;
+    setLikingCommentId(commentId);
+    try {
+      await likeComment(post.id, commentId);
+    } finally {
+      setLikingCommentId(null);
     }
   };
 
@@ -385,6 +403,7 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
             ) : (
               commentsList.map((comm) => {
                 const canDelete = canDeleteComment(comm, currentUser);
+                const likes = Number(comm.likes) || 0;
                 return (
                   <div key={comm.id} className="group flex items-start gap-3">
                     <UserAvatar
@@ -400,22 +419,53 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
                         </span>
                         <span className="mx-1.5 font-normal">{comm.content}</span>
                       </p>
-                      <p className="mt-1 text-[11px] text-slate-400">
-                        {comm.timestamp || formatRelativeTime(comm.createdAt)}
-                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-slate-400">
+                        <span>{formatCommentTime(comm.createdAt, comm.timestamp)}</span>
+                        {likes > 0 ? (
+                          <span className="font-semibold text-slate-500 dark:text-slate-400">
+                            {likes} {likes === 1 ? 'like' : 'likes'}
+                          </span>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => void handleLikeComment(comm.id)}
+                          disabled={likingCommentId === comm.id}
+                          className={`font-semibold transition-colors ${
+                            comm.userLiked
+                              ? 'text-brand'
+                              : 'hover:text-slate-700 dark:hover:text-slate-200'
+                          }`}
+                        >
+                          {comm.userLiked ? 'Liked' : 'Like'}
+                        </button>
+                        {canDelete && (
+                          <button
+                            type="button"
+                            disabled={deletingCommentId === comm.id}
+                            onClick={() => void handleDeleteComment(comm.id)}
+                            className="font-semibold text-slate-400 transition-colors hover:text-brand"
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    {canDelete && (
-                      <button
-                        type="button"
-                        disabled={deletingCommentId === comm.id}
-                        onClick={() => void handleDeleteComment(comm.id)}
-                        className="mt-1 shrink-0 rounded-full p-1.5 text-slate-300 opacity-70 transition-all hover:bg-slate-200/80 hover:text-brand group-hover:opacity-100 dark:hover:bg-slate-800"
-                        title="Delete your comment"
-                        aria-label="Delete comment"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      disabled={likingCommentId === comm.id}
+                      onClick={() => void handleLikeComment(comm.id)}
+                      className="mt-1 shrink-0 rounded-full p-1.5 text-slate-300 transition-all hover:text-brand group-hover:opacity-100"
+                      title={comm.userLiked ? 'Unlike' : 'Like comment'}
+                      aria-label={comm.userLiked ? 'Unlike comment' : 'Like comment'}
+                    >
+                      <Heart
+                        className={`h-3.5 w-3.5 transition-transform ${
+                          comm.userLiked
+                            ? 'fill-brand text-brand scale-110'
+                            : 'text-slate-300 dark:text-slate-600'
+                        }`}
+                      />
+                    </button>
                   </div>
                 );
               })

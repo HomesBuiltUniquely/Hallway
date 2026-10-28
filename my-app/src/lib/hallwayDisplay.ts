@@ -38,10 +38,8 @@ export function formatRelativeTime(dateInput?: string | Date | null): string {
     return typeof dateInput === 'string' ? dateInput : 'Just now';
   }
 
-  const now = new Date();
-  const todayYmd = istYmd(now);
-  const itemYmd = istYmd(date);
   const yesterdayYmd = getYesterdayYmd();
+  const itemYmd = istYmd(date);
 
   if (itemYmd === yesterdayYmd) {
     return 'Yesterday';
@@ -52,11 +50,34 @@ export function formatRelativeTime(dateInput?: string | Date | null): string {
   const diffMinutes = Math.floor(diffMs / 60_000);
   if (diffMinutes < 60) return `${diffMinutes}m ago`;
   const diffHours = Math.floor(diffMinutes / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffHours < 24 && itemYmd === istYmd()) return `${diffHours}h ago`;
   const diffDays = Math.floor(diffHours / 24);
   if (diffDays === 1) return 'Yesterday';
   if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
+  return date.toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'Asia/Kolkata',
+  });
+}
+
+/**
+ * Comment times must use createdAt — DB often freezes timestamp_text as "Just now"
+ * from the celebration Congratulate action.
+ */
+export function formatCommentTime(
+  createdAt?: string | Date | null,
+  frozenTimestamp?: string | null
+): string {
+  if (createdAt) {
+    const parsed = typeof createdAt === 'string' ? new Date(createdAt) : createdAt;
+    if (!isNaN(parsed.getTime())) return formatRelativeTime(parsed);
+  }
+  const fb = String(frozenTimestamp || '').trim();
+  if (!fb || /^just\s*now$/i.test(fb)) return 'Just now';
+  const asDate = new Date(fb);
+  if (!isNaN(asDate.getTime())) return formatRelativeTime(asDate);
+  return fb;
 }
 
 export function isTodayOrYesterday(

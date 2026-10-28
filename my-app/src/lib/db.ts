@@ -277,18 +277,26 @@ export async function getAnnouncements() {
         reactions,
         commentsCount: comments.length,
         department: row.department || 'Sales',
-        comments: comments.map((c) => ({
-          id: c.id,
-          authorName: c.author_name,
-          authorHandle: c.author_handle,
-          authorAvatar: c.author_avatar || '',
-          authorRole: c.author_role || 'Team Member',
-          content: c.content,
-          timestamp: c.timestamp_text || 'Just now',
-          createdAt: c.created_at ? new Date(c.created_at).toISOString() : new Date().toISOString(),
-          likes: c.likes || 0,
-          userLiked: Boolean(c.user_liked),
-        })),
+        comments: comments.map((c) => {
+          const createdAt = c.created_at
+            ? new Date(c.created_at).toISOString()
+            : new Date().toISOString();
+          const frozen = String(c.timestamp_text || '').trim();
+          const useFrozen =
+            frozen && !/^just\s*now$/i.test(frozen) ? frozen : '';
+          return {
+            id: c.id,
+            authorName: c.author_name,
+            authorHandle: c.author_handle,
+            authorAvatar: c.author_avatar || '',
+            authorRole: c.author_role || 'Team Member',
+            content: c.content,
+            timestamp: useFrozen,
+            createdAt,
+            likes: c.likes || 0,
+            userLiked: Boolean(c.user_liked),
+          };
+        }),
       });
     }
 
@@ -351,18 +359,26 @@ export async function getAnnouncementById(id: string) {
         reactions,
         commentsCount: comments.length,
         department: row.department || 'Sales',
-        comments: comments.map((c) => ({
-          id: c.id,
-          authorName: c.author_name,
-          authorHandle: c.author_handle,
-          authorAvatar: c.author_avatar || '',
-          authorRole: c.author_role || 'Team Member',
-          content: c.content,
-          timestamp: c.timestamp_text || 'Just now',
-          createdAt: c.created_at ? new Date(c.created_at).toISOString() : new Date().toISOString(),
-          likes: c.likes || 0,
-          userLiked: Boolean(c.user_liked),
-        })),
+        comments: comments.map((c) => {
+          const createdAt = c.created_at
+            ? new Date(c.created_at).toISOString()
+            : new Date().toISOString();
+          const frozen = String(c.timestamp_text || '').trim();
+          const useFrozen =
+            frozen && !/^just\s*now$/i.test(frozen) ? frozen : '';
+          return {
+            id: c.id,
+            authorName: c.author_name,
+            authorHandle: c.author_handle,
+            authorAvatar: c.author_avatar || '',
+            authorRole: c.author_role || 'Team Member',
+            content: c.content,
+            timestamp: useFrozen,
+            createdAt,
+            likes: c.likes || 0,
+            userLiked: Boolean(c.user_liked),
+          };
+        }),
       };
     }
   } catch (err: any) {
@@ -634,6 +650,8 @@ export async function addComment(
   const pool = getPool();
   await ensureAnnouncementExists(pool, announcementId, postMetadata);
 
+  // Keep timestamp_text empty — UI always derives relative time from created_at
+  // (storing "Just now" permanently made celebration comments look brand-new forever).
   await pool.query(
     `INSERT INTO comments (
       id, announcement_id, author_name, author_handle, author_avatar,
@@ -647,7 +665,7 @@ export async function addComment(
       commentData.authorAvatar || '',
       commentData.authorRole || 'CRM Lead',
       commentData.content.trim(),
-      'Just now',
+      '',
       0,
       0,
       now,
@@ -678,7 +696,7 @@ export async function addComment(
       authorAvatar: commentData.authorAvatar || '',
       authorRole: commentData.authorRole || 'CRM Lead',
       content: commentData.content.trim(),
-      timestamp: 'Just now',
+      timestamp: '',
       createdAt: nowIso,
       likes: 0,
       userLiked: false,
