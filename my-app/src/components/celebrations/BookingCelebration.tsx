@@ -2,8 +2,8 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-/** Short enough to stay out of the way, long enough to read the name and amount. */
-export const CELEBRATION_VISIBLE_MS = 6000;
+/** Readable time for name + amount; extended further if the audio is longer. */
+export const CELEBRATION_VISIBLE_MS = 8000;
 
 /**
  * Drop your celebration sound here (Hallway public folder):
@@ -63,10 +63,13 @@ export default function BookingCelebration({
   const [queue, setQueue] = useState<CelebrationEvent[]>([]);
   const [paused, setPaused] = useState(false);
   const [congratsState, setCongratsState] = useState<'idle' | 'sending' | 'sent'>('idle');
+  const [visibleMs, setVisibleMs] = useState(CELEBRATION_VISIBLE_MS);
   const tabId = useRef(`tab-${Math.random().toString(36).slice(2)}`);
   const leader = useRef(false);
   const claimedIds = useRef<Set<string>>(new Set());
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioPlayedRef = useRef(false);
+  const audioPendingRef = useRef(false);
   const current = queue[0] || null;
 
   const identityKeys = useMemo(
@@ -110,29 +113,69 @@ export default function BookingCelebration({
     setQueue((prev) => prev.slice(1));
     setCongratsState('idle');
     setPaused(false);
+    setVisibleMs(CELEBRATION_VISIBLE_MS);
+    audioPlayedRef.current = false;
+    audioPendingRef.current = false;
+    try {
+      audioRef.current?.pause();
+      if (audioRef.current) audioRef.current.currentTime = 0;
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const syncVisibleFromAudio = useCallback((audio: HTMLAudioElement) => {
+    const durationMs = Number.isFinite(audio.duration) ? audio.duration * 1000 : 0;
+    if (durationMs > 0) {
+      setVisibleMs(Math.max(CELEBRATION_VISIBLE_MS, Math.ceil(durationMs) + 500));
+    }
   }, []);
 
   const playCelebrationSound = useCallback(() => {
     if (typeof window === 'undefined') return;
-    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reduceMotion) return;
+    if (audioPlayedRef.current) return;
     try {
       const base = hallwayOrigin(apiBase) || window.location.origin;
       const src = `${base}${CELEBRATION_SOUND_PATH}`;
       if (!audioRef.current) {
         audioRef.current = new Audio(src);
         audioRef.current.preload = 'auto';
+        audioRef.current.addEventListener('loadedmetadata', () => {
+          if (audioRef.current) syncVisibleFromAudio(audioRef.current);
+        });
+        audioRef.current.addEventListener('error', () => {
+          console.warn(
+            `[BookingCelebration] Failed to load celebration sound at ${src}. Expected public file: celebrations/booking-done.mp3`
+          );
+          audioPendingRef.current = false;
+        });
       } else if (audioRef.current.src !== src) {
         audioRef.current.src = src;
       }
+      if (audioRef.current.readyState >= 1) {
+        syncVisibleFromAudio(audioRef.current);
+      }
       audioRef.current.currentTime = 0;
-      void audioRef.current.play().catch(() => {
-        /* Autoplay may be blocked until a user gesture; popup still shows. */
-      });
-    } catch {
-      /* Missing mp3 or playback error — keep popup silent. */
+      audioPendingRef.current = true;
+      void audioRef.current
+        .play()
+        .then(() => {
+          audioPlayedRef.current = true;
+          audioPendingRef.current = false;
+          if (audioRef.current) syncVisibleFromAudio(audioRef.current);
+        })
+        .catch((err) => {
+          audioPendingRef.current = true;
+          console.warn(
+            '[BookingCelebration] Celebration sound blocked or failed; will retry after a user gesture.',
+            err
+          );
+        });
+    } catch (err) {
+      console.warn('[BookingCelebration] Celebration sound error — popup stays silent.', err);
+      audioPendingRef.current = false;
     }
-  }, [apiBase]);
+  }, [apiBase, syncVisibleFromAudio]);
 
   useEffect(() => {
     if (!enabled || identityKeys.length === 0) return;
@@ -242,17 +285,36 @@ export default function BookingCelebration({
     if (!currentId) return;
     if (claimedIds.current.has(currentId)) return;
     claimedIds.current.add(currentId);
+    setVisibleMs(CELEBRATION_VISIBLE_MS);
+    audioPlayedRef.current = false;
+    audioPendingRef.current = false;
     playCelebrationSound();
     void markSeen(currentId, false).catch(() => undefined);
   }, [currentId, markSeen, playCelebrationSound]);
+
+  // Retry sound after the first user gesture if autoplay was blocked.
+  useEffect(() => {
+    if (!currentId) return;
+    const retry = () => {
+      if (!audioPlayedRef.current && audioPendingRef.current) {
+        playCelebrationSound();
+      }
+    };
+    window.addEventListener('pointerdown', retry, { passive: true });
+    window.addEventListener('keydown', retry);
+    return () => {
+      window.removeEventListener('pointerdown', retry);
+      window.removeEventListener('keydown', retry);
+    };
+  }, [currentId, playCelebrationSound]);
 
   useEffect(() => {
     if (!currentId || paused || congratsState === 'sending') return;
     const timer = window.setTimeout(() => {
       void markSeen(currentId, false).finally(dismiss);
-    }, CELEBRATION_VISIBLE_MS);
+    }, visibleMs);
     return () => window.clearTimeout(timer);
-  }, [congratsState, currentId, dismiss, markSeen, paused]);
+  }, [congratsState, currentId, dismiss, markSeen, paused, visibleMs]);
 
   useEffect(() => {
     if (!current || placement === 'corner') return;

@@ -25,6 +25,11 @@ const AVAILABLE_REACTIONS = [
   { id: 'joy', emoji: '😂', label: 'Joy' },
 ] as const;
 
+/** Instagram-style quick tap on React applies Celebrate by default. */
+const DEFAULT_REACTION_ID = 'party' as const;
+const LONG_PRESS_MS = 400;
+const HOVER_OPEN_MS = 280;
+
 type CardKind = 'booking' | 'performer' | 'quota' | 'announcement';
 
 function resolveKind(post: FeedPost): CardKind {
@@ -179,6 +184,9 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
   const [likingCommentId, setLikingCommentId] = useState<string | null>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
+  const longPressTimerRef = useRef<number | null>(null);
+  const hoverOpenTimerRef = useRef<number | null>(null);
+  const suppressClickRef = useRef(false);
 
   const kind = resolveKind(post);
   const category = categoryMeta(kind, post);
@@ -213,6 +221,27 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
   const commentsList = post.comments || [];
   const commentsCount = Math.max(commentsList.length, post.commentsCount || 0);
 
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current != null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const clearHoverOpenTimer = () => {
+    if (hoverOpenTimerRef.current != null) {
+      window.clearTimeout(hoverOpenTimerRef.current);
+      hoverOpenTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      clearLongPressTimer();
+      clearHoverOpenTimer();
+    };
+  }, []);
+
   useEffect(() => {
     if (!showReactionPicker) return;
     const onDoc = (e: MouseEvent) => {
@@ -230,6 +259,50 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
     } finally {
       setShowReactionPicker(false);
     }
+  };
+
+  const handleQuickReact = () => {
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      return;
+    }
+    if (showReactionPicker) {
+      setShowReactionPicker(false);
+      return;
+    }
+    // Toggle default Celebrate (or remove whatever is already mine).
+    void handleToggleReaction(myReaction ? myReaction.id : DEFAULT_REACTION_ID);
+  };
+
+  const handleReactPointerDown = (e: React.PointerEvent) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    clearLongPressTimer();
+    longPressTimerRef.current = window.setTimeout(() => {
+      suppressClickRef.current = true;
+      setShowReactionPicker(true);
+    }, LONG_PRESS_MS);
+  };
+
+  const handleReactPointerUp = () => {
+    clearLongPressTimer();
+  };
+
+  const handleReactPointerLeave = () => {
+    clearLongPressTimer();
+  };
+
+  const handleReactMouseEnter = () => {
+    // Desktop hover opens the bar; touch uses long-press instead.
+    if (typeof window !== 'undefined' && window.matchMedia('(hover: hover)').matches) {
+      clearHoverOpenTimer();
+      hoverOpenTimerRef.current = window.setTimeout(() => {
+        setShowReactionPicker(true);
+      }, HOVER_OPEN_MS);
+    }
+  };
+
+  const handleReactMouseLeave = () => {
+    clearHoverOpenTimer();
   };
 
   const handleCommentSubmit = async (e: React.FormEvent) => {
@@ -322,14 +395,28 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
               </button>
             ))}
 
-            <div className="relative shrink-0" ref={pickerRef}>
+            <div
+              className="relative shrink-0"
+              ref={pickerRef}
+              onMouseEnter={handleReactMouseEnter}
+              onMouseLeave={handleReactMouseLeave}
+            >
               <button
                 type="button"
-                onClick={() => setShowReactionPicker((v) => !v)}
+                onClick={handleQuickReact}
+                onPointerDown={handleReactPointerDown}
+                onPointerUp={handleReactPointerUp}
+                onPointerCancel={handleReactPointerUp}
+                onPointerLeave={handleReactPointerLeave}
                 className={`inline-flex h-7 items-center gap-1 rounded-full px-1.5 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 ${
                   myReaction ? 'text-brand' : 'text-slate-500'
                 }`}
-                aria-label="Add reaction"
+                aria-label={
+                  myReaction
+                    ? 'Remove reaction, or hold for more'
+                    : 'React with Celebrate, or hold for more'
+                }
+                title="Tap to Celebrate · Hold or hover for more"
               >
                 {myReaction ? (
                   <span className="text-sm leading-none">{myReaction.emoji}</span>
