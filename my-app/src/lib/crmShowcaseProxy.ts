@@ -1268,35 +1268,22 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
 
       const validDeals = monthBookingDeals;
 
-      // Top performer of the week — confirmed BOOKING gross only (Mon–Sun IST; prior week if empty)
-      let weekly = tallyBookingTotals(
+      // Exactly ONE weekly board card: current IST Mon–Sun only (no prior-week leftover titled "This week")
+      const weekly = tallyBookingTotals(
         validDeals,
         weekWindow.primary.weekFromMs,
         weekWindow.primary.weekToMs,
         weekWindow.monthFromMs,
         weekWindow.monthToMs
       );
-      let weekMondayYmd = weekWindow.primary.mondayYmd;
-      if (!weekly.winner || weekly.winner.total <= 0) {
-        const prev = tallyBookingTotals(
-          validDeals,
-          weekWindow.fallback.weekFromMs,
-          weekWindow.fallback.weekToMs,
-          weekWindow.monthFromMs,
-          weekWindow.monthToMs
-        );
-        if (prev.winner && prev.winner.total > 0) {
-          weekly = prev;
-          weekMondayYmd = weekWindow.fallback.mondayYmd;
-        }
-      }
+      const currentWeekMondayYmd = weekWindow.primary.mondayYmd;
 
       const boardCards: any[] = [];
 
       if (weekly.winner && weekly.winner.total > 0) {
         const weekAmount = formatQuote(weekly.winner.total);
         boardCards.push({
-          id: `crm-weekly-top-${weekMondayYmd}`,
+          id: `crm-weekly-top-${currentWeekMondayYmd}`,
           type: 'performer',
           registerKind: 'weekly',
           title: 'This Week’s Top Performer',
@@ -1307,10 +1294,10 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
           author: { name: weekly.winner.name, avatar: null, team: weekly.winner.team },
           department: 'Sales',
           rawBooking: {
-            bookingId: weekMondayYmd,
+            bookingId: currentWeekMondayYmd,
             quoteAmount: weekly.winner.total,
             customerName: weekly.winner.name,
-            bookingDoneDate: weekMondayYmd,
+            bookingDoneDate: currentWeekMondayYmd,
             listingType: 'booking',
           },
         });

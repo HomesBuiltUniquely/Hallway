@@ -34,14 +34,27 @@ export default function AnnouncementsFeed({
     return true;
   });
 
+  // Hard guard: never show more than one "This Week's Top Performer"
+  const weeklyCards = eligibleAnnouncements.filter((p) => p.id.startsWith('crm-weekly-top-'));
+  const keepWeeklyId =
+    weeklyCards.length <= 1
+      ? weeklyCards[0]?.id
+      : [...weeklyCards].sort((a, b) => String(b.id).localeCompare(String(a.id)))[0]?.id;
+  const dedupedAnnouncements =
+    weeklyCards.length <= 1
+      ? eligibleAnnouncements
+      : eligibleAnnouncements.filter(
+          (p) => !p.id.startsWith('crm-weekly-top-') || p.id === keepWeeklyId
+        );
+
   const tabCounts = {
-    ALL: eligibleAnnouncements.length,
-    ANNOUNCEMENTS: eligibleAnnouncements.filter(
+    ALL: dedupedAnnouncements.length,
+    ANNOUNCEMENTS: dedupedAnnouncements.filter(
       (p) => p.type === 'announcement' || p.type === 'general'
     ).length,
-    DEALS: eligibleAnnouncements.filter((p) => p.type === 'booking').length,
-    PERFORMERS: eligibleAnnouncements.filter((p) => p.type === 'performer').length,
-    MILESTONES: eligibleAnnouncements.filter((p) => p.type === 'quota').length,
+    DEALS: dedupedAnnouncements.filter((p) => p.type === 'booking').length,
+    PERFORMERS: dedupedAnnouncements.filter((p) => p.type === 'performer').length,
+    MILESTONES: dedupedAnnouncements.filter((p) => p.type === 'quota').length,
   };
 
   const allTabs = [
@@ -60,7 +73,7 @@ export default function AnnouncementsFeed({
     }
   }, [tagFilter, tabCounts.ANNOUNCEMENTS, tabCounts.DEALS, tabCounts.PERFORMERS, tabCounts.MILESTONES]);
 
-  const filteredAnnouncements = eligibleAnnouncements.filter((post) => {
+  const filteredAnnouncements = dedupedAnnouncements.filter((post) => {
     if (tagFilter === 'DEALS' && post.type !== 'booking') return false;
     if (tagFilter === 'ANNOUNCEMENTS' && post.type !== 'announcement' && post.type !== 'general')
       return false;
