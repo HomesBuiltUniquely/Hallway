@@ -1,4 +1,5 @@
 import { listUnseenCelebrations, normalizeViewerKey } from '@/lib/celebrations';
+import { CELEBRATION_STREAM_DB_POLL_MS } from '@/lib/celebrationRealtime';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -20,7 +21,7 @@ export async function OPTIONS(request: Request) {
   return new Response(null, { status: 204, headers: corsHeaders(request) });
 }
 
-/** Pushes unseen celebrations for one signed-in person. Clients fall back to polling. */
+/** SSE: DB check on an interval only; CRM pushes new events via POST /api/celebrations. */
 export async function GET(request: Request) {
   const viewerParam = new URL(request.url).searchParams.get('viewer') || '';
   const hasViewer = Boolean(normalizeViewerKey(viewerParam.split(',')[0]));
@@ -55,7 +56,7 @@ export async function GET(request: Request) {
       void tick();
       timer = setInterval(() => {
         void tick();
-      }, 3000);
+      }, CELEBRATION_STREAM_DB_POLL_MS);
       request.signal.addEventListener('abort', () => {
         if (timer) clearInterval(timer);
         try {
