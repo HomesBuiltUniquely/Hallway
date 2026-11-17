@@ -5,13 +5,19 @@ import { useRouter } from 'next/navigation';
 import { Lock, AlertCircle, X, Loader2, ArrowRight } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { loginToCrm, setCrmSession } from '../../lib/crmApi';
-import { isSuperAdmin, isRestrictedFromDesign } from '../../lib/permissions';
+import {
+  isSuperAdmin,
+  isRestrictedFromDesign,
+  isDesignPortalUser,
+  isSalesPortalUser,
+} from '../../lib/permissions';
 import {
   openCrmDashboard,
   openDesignDashboard,
   getValidCrmSession,
   getValidDesignSession,
   saveDesignHandoff,
+  probeModuleHealth,
 } from '../../lib/modulePortals';
 
 /** 4-tile launcher icon as in HOWS / CrmInceneration */
@@ -39,8 +45,8 @@ export default function ModuleLauncher() {
   const containerRef = useRef<HTMLDivElement>(null);
 
   const isSuper = isSuperAdmin(currentUser);
-  const isDesigner = !isSuper && (currentUser.department === 'Design' || loginPortal === 'design');
-  const isCrmSales = !isSuper && (currentUser.department === 'Sales' || loginPortal === 'crm');
+  const isDesigner = isDesignPortalUser(currentUser, loginPortal);
+  const isCrmSales = isSalesPortalUser(currentUser, loginPortal);
 
   // Module authentication prompt state
   const [authModalModule, setAuthModalModule] = useState<'crm' | 'design' | null>(null);
@@ -86,18 +92,21 @@ export default function ModuleLauncher() {
     setIsOpen(false);
   };
 
-  const handleCrmClick = () => {
+  const handleCrmClick = async () => {
     setIsOpen(false);
     if (!isSuper && isDesigner) {
       alert('Access Denied: Designers do not have access to the CRM module.');
       return;
     }
-    // Admins have unconditional, direct access to CRM
+    const health = await probeModuleHealth('crm');
+    if (!health.ok) {
+      alert(health.message || 'CRM is temporarily unavailable. Please try again shortly.');
+      return;
+    }
     if (isSuper) {
       openCrmDashboard(currentUser);
       return;
     }
-    // Check if the current user already has verified CRM credentials
     const validSession = getValidCrmSession(currentUser);
     if (validSession) {
       openCrmDashboard(currentUser);
@@ -106,7 +115,7 @@ export default function ModuleLauncher() {
     }
   };
 
-  const handleDesignClick = () => {
+  const handleDesignClick = async () => {
     setIsOpen(false);
     if (isRestrictedFromDesign(currentUser)) {
       alert('Access Denied: You do not have access to the Design Studio module.');
@@ -116,12 +125,15 @@ export default function ModuleLauncher() {
       alert('Access Denied: CRM personnel do not have access to the Design Studio module.');
       return;
     }
-    // Admins have unconditional, direct access to Design Studio
+    const health = await probeModuleHealth('design');
+    if (!health.ok) {
+      alert(health.message || 'Design Studio is temporarily unavailable. Please try again shortly.');
+      return;
+    }
     if (isSuper) {
       openDesignDashboard(currentUser);
       return;
     }
-    // Check if the current user already has verified Design Studio credentials
     const validSession = getValidDesignSession(currentUser);
     if (validSession) {
       openDesignDashboard(currentUser);

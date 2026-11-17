@@ -134,6 +134,29 @@ function saveJsonAnnouncements(data: any[]): boolean {
 
 let _schemaReady: Promise<void> | null = null;
 
+/** Upgrade legacy single-row-per-booking celebrations to token + booking_confirmed milestones. */
+async function migrateCelebrationMilestones(pool: ReturnType<typeof getPool>): Promise<void> {
+  try {
+    await pool.query(
+      `ALTER TABLE celebration_events ADD COLUMN milestone VARCHAR(32) NOT NULL DEFAULT 'token'`
+    );
+  } catch {
+    /* column exists */
+  }
+  try {
+    await pool.query(`ALTER TABLE celebration_events DROP INDEX uq_celebration_booking`);
+  } catch {
+    /* already migrated */
+  }
+  try {
+    await pool.query(
+      `ALTER TABLE celebration_events ADD UNIQUE KEY uq_celebration_booking_milestone (booking_id, milestone)`
+    );
+  } catch {
+    /* already exists */
+  }
+}
+
 /** Ensure announcements + comments tables exist before any write/read. */
 export async function ensureHallwaySchema(): Promise<void> {
   if (_schemaReady) return _schemaReady;
@@ -198,7 +221,8 @@ export async function ensureHallwaySchema(): Promise<void> {
         quote_amount DECIMAL(14,2) NOT NULL,
         announcement_id VARCHAR(191) NOT NULL,
         occurred_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE KEY uq_celebration_booking (booking_id),
+        milestone VARCHAR(32) NOT NULL DEFAULT 'token',
+        UNIQUE KEY uq_celebration_booking_milestone (booking_id, milestone),
         INDEX idx_celebration_occurred (occurred_at)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
@@ -211,6 +235,7 @@ export async function ensureHallwaySchema(): Promise<void> {
         PRIMARY KEY (event_id, viewer_key)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
+  await migrateCelebrationMilestones(pool);
   })().catch((err) => {
     _schemaReady = null;
     throw err;
@@ -1000,7 +1025,18 @@ export async function getActiveCampaign(): Promise<HallwayActiveCampaign | null>
     [COMPANY_CAMPAIGN_ID]
   );
   if (rows.length === 0) return null;
-  return rowToCampaign(rows[0]);
+  const campaign = rowToCampaign(rows[0]);
+  if (campaign.targetDate) {
+    const end = new Date(campaign.targetDate);
+    if (!Number.isNaN(end.getTime()) && end.getTime() < Date.now()) {
+      await pool.query(
+        `UPDATE active_campaign SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [campaign.id]
+      );
+      return { ...campaign, isActive: false };
+    }
+  }
+  return campaign;
 }
 
 /** Publish the one company campaign. Admin saves replace this row and turn it on. */

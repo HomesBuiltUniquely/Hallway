@@ -1,6 +1,7 @@
 import { ensureAnnouncementExists, ensureHallwaySchema, getPool } from './db';
 
-export type CelebrationType = 'new_booking' | 'big_one' | 'spot_closure';
+export type CelebrationMilestone = 'token' | 'booking_confirmed';
+export type CelebrationType = 'new_booking' | 'big_one' | 'spot_closure' | 'booking_confirmed';
 
 export type CelebrationEvent = {
   id: string;
@@ -39,12 +40,25 @@ export function formatQuoteInr(amount: number): string {
 export function typeLabel(type: string): string {
   if (type === 'big_one') return 'Big one';
   if (type === 'spot_closure') return 'Spot closure';
+  if (type === 'booking_confirmed') return 'Booking confirmed';
   return 'New booking';
+}
+
+export function normalizeMilestone(raw: string | null | undefined): CelebrationMilestone {
+  const key = String(raw || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_');
+  if (key === 'booking_confirmed' || key === 'booking' || key === 'full_booking' || key === 'convert') {
+    return 'booking_confirmed';
+  }
+  return 'token';
 }
 
 function titleFor(type: CelebrationType, salesperson: string): string {
   if (type === 'big_one') return `Big one closed — ${salesperson}`;
   if (type === 'spot_closure') return `Spot closure — ${salesperson}`;
+  if (type === 'booking_confirmed') return `Booking confirmed — ${salesperson}`;
   return `New booking — ${salesperson}`;
 }
 
@@ -112,6 +126,7 @@ function mapRow(row: Record<string, unknown>): CelebrationEvent {
 export async function createCelebration(input: {
   bookingId: string;
   celebrationType?: string;
+  milestone?: string;
   salespersonName?: string;
   branchName?: string;
   customerName?: string;
@@ -121,6 +136,7 @@ export async function createCelebration(input: {
   const salesperson = String(input.salespersonName || '').trim();
   const customer = String(input.customerName || '').trim();
   const quote = Number(input.quoteAmount);
+  const milestone = normalizeMilestone(input.milestone);
   if (!bookingId || !salesperson || !Number.isFinite(quote) || quote <= 0) {
     return { created: false };
   }
@@ -129,26 +145,49 @@ export async function createCelebration(input: {
   }
 
   let type: CelebrationType = 'new_booking';
-  if (input.celebrationType === 'spot_closure') type = 'spot_closure';
-  else if (input.celebrationType === 'big_one' || quote >= TEN_LAKH) type = 'big_one';
+  if (milestone === 'booking_confirmed') {
+    type = 'booking_confirmed';
+  } else if (input.celebrationType === 'spot_closure') {
+    type = 'spot_closure';
+  } else if (input.celebrationType === 'big_one' || quote >= TEN_LAKH) {
+    type = 'big_one';
+  }
 
-  const id = `cele-${bookingId}`.slice(0, 64);
-  const announcementId = `crm-booking-${bookingId}`;
+  const id = `cele-${bookingId}-${milestone}`.slice(0, 64);
+  const announcementId =
+    milestone === 'booking_confirmed'
+      ? `crm-booking-${bookingId}-confirmed`
+      : `crm-booking-${bookingId}`;
   const branch = String(input.branchName || '').trim() || 'Hub';
   const amountLabel = formatQuoteInr(quote);
   const who = customer ? `${customer}'s home` : 'a home';
-  const verb = type === 'new_booking' ? 'booked' : 'closed';
+  const verb =
+    type === 'booking_confirmed'
+      ? 'confirmed full booking for'
+      : type === 'new_booking'
+        ? 'booked'
+        : 'closed';
   const content = `${salesperson} (${branch}) ${verb} ${who} for ${amountLabel}.`;
 
   await ensureHallwaySchema();
   const pool = getPool();
   const [result] = await pool.query<any>(
     `INSERT INTO celebration_events (
-      id, booking_id, celebration_type, salesperson_name, branch_name,
+      id, booking_id, milestone, celebration_type, salesperson_name, branch_name,
       customer_name, quote_amount, announcement_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON DUPLICATE KEY UPDATE id = id`,
-    [id, bookingId.slice(0, 64), type, salesperson.slice(0, 255), branch.slice(0, 255), customer.slice(0, 255) || null, quote, announcementId]
+    [
+      id,
+      bookingId.slice(0, 64),
+      milestone,
+      type,
+      salesperson.slice(0, 255),
+      branch.slice(0, 255),
+      customer.slice(0, 255) || null,
+      quote,
+      announcementId,
+    ]
   );
 
   const created = Number(result?.affectedRows) === 1;
@@ -181,7 +220,7 @@ export async function listUnseenCelebrations(
     `SELECT e.id, e.booking_id, e.celebration_type, e.salesperson_name, e.branch_name,
             e.customer_name, e.quote_amount, e.announcement_id, e.occurred_at
      FROM celebration_events e
-     WHERE e.occurred_at >= (NOW() - INTERVAL 1 DAY)
+     WHERE e.occurred_at >= (NOW() - INTERVAL 30 DAY)
        AND NOT EXISTS (
          SELECT 1 FROM celebration_receipts r
          WHERE r.event_id = e.id

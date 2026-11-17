@@ -476,11 +476,40 @@ function resolveCrmListingType(d: any): 'booking' | 'token' | 'cancel' {
   return 'token';
 }
 
-/** CRM “This month” filter uses submittedAt (handoff / created). */
+/** CRM handoff timestamp — legacy; prefer {@link dealRecognitionMs} for BOOKING tab filters. */
 function dealSubmittedMs(d: any): number {
   const raw = d?.submittedAt || d?.createdAt || d?.bookingDate;
   const t = raw ? new Date(raw).getTime() : NaN;
   return Number.isFinite(t) ? t : NaN;
+}
+
+/** Booking & Token listing recognition date (IST), aligned with {@code BookingTokenRecognitionDates}. */
+function dealRecognitionYmd(d: any): string {
+  const raw =
+    d?.listingDate ||
+    d?.bookingRecognitionDate ||
+    d?.bookingDoneDate ||
+    d?.tenPercentPaidDate ||
+    d?.bookingDate ||
+    null;
+  if (raw) {
+    const s = String(raw).slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  }
+  const fallback = d?.submittedAt || d?.createdAt;
+  if (!fallback) return '';
+  const t = new Date(fallback);
+  if (!Number.isNaN(t.getTime())) {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(t);
+  }
+  const s = String(fallback).slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : '';
+}
+
+function dealRecognitionMs(d: any): number {
+  const ymd = dealRecognitionYmd(d);
+  if (!ymd) return NaN;
+  return new Date(`${ymd}T12:00:00+05:30`).getTime();
 }
 
 function branchLabelForTeam(teamName: string): string {
@@ -529,6 +558,10 @@ function isTestAssignee(who: string): boolean {
 }
 
 function dealTimestampMs(d: any): number {
+  if (resolveCrmListingType(d) === 'booking') {
+    const recognition = dealRecognitionMs(d);
+    if (Number.isFinite(recognition)) return recognition;
+  }
   const raw = d?.submittedAt || d?.bookingDate || d?.createdAt;
   const t = raw ? new Date(raw).getTime() : NaN;
   return Number.isFinite(t) ? t : NaN;
@@ -646,274 +679,219 @@ async function getLeaderboardFromBookingDeals(
   }
 
   const now = new Date();
-  let submittedFrom: string | undefined;
-  let submittedTo: string | undefined;
-  let fromMs = Number.NEGATIVE_INFINITY;
-  let toMs = Number.POSITIVE_INFINITY;
-  let dateRange: string | undefined;
+  const { periodBounds, loadBookingDealsForPeriod } = await import('./hallwayBookingFeedFromCrm');
+  const bounds = periodBounds(period, now);
+  const submittedFrom = bounds.dateFrom ? `${bounds.dateFrom}T00:00:00+05:30` : undefined;
+  const submittedTo = bounds.dateTo ? `${bounds.dateTo}T23:59:59.999+05:30` : undefined;
 
-  if (period === 'mtd') {
-    // Current local calendar month
-    const y = now.getFullYear();
-    const m = now.getMonth();
-    const fromDate = new Date(y, m, 1, 0, 0, 0, 0);
-    const toDate = new Date(y, m + 1, 0, 23, 59, 59, 999);
-    submittedFrom = fromDate.toISOString();
-    submittedTo = toDate.toISOString();
-    fromMs = fromDate.getTime();
-    toMs = toDate.getTime();
-  } else if (period === 'qtd') {
-    // Rolling 3 months (90 days) matching Booking & Token dateRange=3m
-    const fromDate = new Date(now);
-    fromDate.setMonth(fromDate.getMonth() - 3);
-    fromDate.setHours(0, 0, 0, 0);
-    const toDate = new Date(now);
-    toDate.setHours(23, 59, 59, 999);
-    submittedFrom = fromDate.toISOString();
-    submittedTo = toDate.toISOString();
-    fromMs = fromDate.getTime();
-    toMs = toDate.getTime();
-    dateRange = '3m';
-  }
-
-  try {
-    const token = await getShowcaseCrmToken();
-
-    // 1. Shared Booking + Token deals (coalesced with feed sanitizer)
-    // 2. Concurrently fetch insights team performance for real lead counts
-    const insightsRange = period === 'mtd' ? 'current_month' : period === 'qtd' ? '3m' : '1y';
-    const insightsUrl = `${CRM_BASE}/v1/crm/insights/dashboard?dateRange=${insightsRange}&teamPeriod=monthly&funnelMode=inventory&pathFilter=all`;
-
-    const [rawDeals, insightsRes] = await Promise.all([
-      fetchBookingAndTokenDeals({ submittedFrom, submittedTo, dateRange }),
-      fetch(insightsUrl, {
-        headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
-        signal: AbortSignal.timeout(6000),
-        cache: 'no-store',
-      }).catch(() => null),
-    ]);
-
-    let perfList: any[] = [];
-    if (insightsRes?.ok) {
-      try {
-        const insData = await insightsRes.json();
-        if (Array.isArray(insData?.teamPerformance)) {
-          perfList = insData.teamPerformance;
-        }
-      } catch {
-        /* ignore */
+  const buildFromDeals = (periodDeals: Array<{ assign: string; dealValue: number }>) => {
+    const execStats = new Map<
+      number,
+      {
+        executive: (typeof EXECUTIVE_ROSTER)[0];
+        revenue: number;
+        tenPercent: number;
+        bookings: number;
+        leads: number;
       }
+    >();
+
+    for (const exec of EXECUTIVE_ROSTER) {
+      execStats.set(exec.id, {
+        executive: exec,
+        revenue: 0,
+        tenPercent: 0,
+        bookings: 0,
+        leads: 0,
+      });
     }
 
-    if (Array.isArray(rawDeals)) {
-      const validDeals = rawDeals.filter((d) => {
-        if (!isBookingOrTokenListing(d.listingType)) return false;
-        if (d.cancellationApprovalStatus === 'APPROVED') return false;
-        if (period !== 'all_time') {
-          const t = dealTimestampMs(d);
-          if (isNaN(t) || t < fromMs || t > toMs) return false;
-        }
-        return true;
-      });
+    for (const d of periodDeals) {
+      if (isTestAssignee(String(d.assign || ''))) continue;
+      const matched = matchExecutive(d.assign);
+      if (!matched) continue;
+      const stat = execStats.get(matched.id);
+      if (!stat) continue;
+      const dealVal = Number(d.dealValue) || 0;
+      stat.revenue += dealVal;
+      stat.tenPercent += dealVal * 0.1;
+      stat.bookings += 1;
+    }
 
-      const execStats = new Map<
-        number,
-        {
-          executive: (typeof EXECUTIVE_ROSTER)[0];
-          revenue: number;
-          tenPercent: number;
-          bookings: number;
-          leads: number;
-        }
-      >();
-
-      for (const exec of EXECUTIVE_ROSTER) {
-        const perf = perfList.find((p: any) => Number(p.userId) === exec.id);
-        execStats.set(exec.id, {
-          executive: exec,
-          revenue: 0,
-          tenPercent: 0,
-          bookings: 0,
-          leads: Number(perf?.leads) || 0,
-        });
-      }
-
-      for (const d of validDeals) {
-        // Leaderboard revenue follows CRM BOOKING tab rule (confirmed) only
-        if (resolveCrmListingType(d) !== 'booking') continue;
-        const who = d.assign || d.assignee || d.submittedByName;
-        const matched = matchExecutive(who);
-        if (!matched) continue;
-        const stat = execStats.get(matched.id);
-        if (stat) {
-          const dealVal = Number(d.dealValue) || 0;
-          const tenVal = Number(d.tenPercentAmount) || dealVal * 0.1 || 0;
-          stat.revenue += dealVal;
-          stat.tenPercent += tenVal;
-          stat.bookings += 1;
-        }
-      }
-
-      let individuals = Array.from(execStats.values()).map(
-        ({ executive, revenue, tenPercent, bookings, leads }) => {
-          const conversionRate =
-            leads > 0
-              ? Math.round((bookings / leads) * 1000) / 10
-              : bookings > 0
+    let individuals = Array.from(execStats.values()).map(
+      ({ executive, revenue, tenPercent, bookings, leads }) => {
+        const conversionRate =
+          leads > 0
+            ? Math.round((bookings / leads) * 1000) / 10
+            : bookings > 0
               ? Math.min(25, Math.round((bookings / (bookings + 8)) * 1000) / 10)
               : 0;
 
-          return {
-            id: String(executive.id),
-            userId: executive.id,
-            name: executive.name,
-            role: executive.role,
-            avatar: null,
-            department: 'Sales',
-            branchId: executive.branchId,
-            managerId: executive.managerId,
-            managerName: executive.managerName,
-            revenue,
-            revenueFormatted: formatQuote(revenue),
-            tenPercent,
-            tenPercentFormatted: formatQuote(tenPercent),
-            bookings,
-            conversionRate,
-            trend: 'up' as const,
-          };
-        }
-      );
-
-      individuals.sort((a, b) => b.revenue - a.revenue || b.bookings - a.bookings);
-      let rank = 1;
-      individuals = individuals.map((ind) => ({
-        ...ind,
-        rank: ind.revenue > 0 || ind.bookings > 0 ? rank++ : null,
-      }));
-
-      const managerMap: Record<
-        string,
-        {
-          id: string;
-          salesManagerId: number;
-          teamName: string;
-          leadName: string;
-          branchId: string;
-          totalRevenueInr: number;
-          tenPercentInr: number;
-          dealsClosed: number;
-          leadsTotal: number;
-        }
-      > = {
-        SARJAPUR: { id: '192', salesManagerId: 192, teamName: 'SARJAPUR — arjun hub', leadName: 'arjun hub', branchId: 'SARJAPUR', totalRevenueInr: 0, tenPercentInr: 0, dealsClosed: 0, leadsTotal: 0 },
-        HBR: { id: '13', salesManagerId: 13, teamName: 'HBR — Kulwanth P', leadName: 'Kulwanth P', branchId: 'HBR', totalRevenueInr: 0, tenPercentInr: 0, dealsClosed: 0, leadsTotal: 0 },
-        JP_NAGAR: { id: '143', salesManagerId: 143, teamName: 'JP_NAGAR — marfani hub', leadName: 'marfani hub', branchId: 'JP_NAGAR', totalRevenueInr: 0, tenPercentInr: 0, dealsClosed: 0, leadsTotal: 0 },
-      };
-
-      for (const ind of individuals) {
-        const t = managerMap[ind.branchId];
-        if (t) {
-          t.totalRevenueInr += ind.revenue;
-          t.tenPercentInr += ind.tenPercent;
-          t.dealsClosed += ind.bookings;
-          const stat = execStats.get(ind.userId);
-          if (stat) t.leadsTotal += stat.leads;
-        }
+        return {
+          id: String(executive.id),
+          userId: executive.id,
+          name: executive.name,
+          role: executive.role,
+          avatar: null,
+          department: 'Sales',
+          branchId: executive.branchId,
+          managerId: executive.managerId,
+          managerName: executive.managerName,
+          revenue,
+          revenueFormatted: formatQuote(revenue),
+          tenPercent,
+          tenPercentFormatted: formatQuote(tenPercent),
+          bookings,
+          conversionRate,
+          trend: 'up' as const,
+        };
       }
+    );
 
-      let teams = Object.values(managerMap)
-        .map((t) => {
-          const winRate =
-            t.leadsTotal > 0
-              ? Math.round((t.dealsClosed / t.leadsTotal) * 1000) / 10
-              : t.dealsClosed > 0
-              ? Math.min(25, Math.round((t.dealsClosed / (t.dealsClosed + 15)) * 1000) / 10)
-              : 0;
+    individuals.sort((a, b) => b.revenue - a.revenue || b.bookings - a.bookings);
+    let rank = 1;
+    individuals = individuals.map((ind) => ({
+      ...ind,
+      rank: ind.revenue > 0 || ind.bookings > 0 ? rank++ : null,
+    }));
 
-          return {
-            id: t.id,
-            salesManagerId: t.salesManagerId,
-            teamName: t.teamName,
-            leadName: t.leadName,
-            avatar: null,
-            department: 'Sales',
-            branchId: t.branchId,
-            totalRevenue: formatQuote(t.totalRevenueInr),
-            totalRevenueInr: t.totalRevenueInr,
-            tenPercentFormatted: formatQuote(t.tenPercentInr),
-            dealsClosed: t.dealsClosed,
-            winRate,
-            trend: 'up' as const,
-          };
-        })
-        .sort((a, b) => b.totalRevenueInr - a.totalRevenueInr);
-
-      let tRank = 1;
-      teams = teams.map((tm) => ({
-        ...tm,
-        rank: tm.totalRevenueInr > 0 ? tRank++ : null,
-      }));
-
-      if (branchId) {
-        const normBranch = branchId.toUpperCase() === 'SARJAPURA' ? 'SARJAPUR' : branchId.toUpperCase();
-        individuals = individuals.filter((i) => (i.branchId || '').toUpperCase() === normBranch);
-        teams = teams.filter((t) => (t.branchId || '').toUpperCase() === normBranch);
+    const managerMap: Record<
+      string,
+      {
+        id: string;
+        salesManagerId: number;
+        teamName: string;
+        leadName: string;
+        branchId: string;
+        totalRevenueInr: number;
+        tenPercentInr: number;
+        dealsClosed: number;
+        leadsTotal: number;
       }
-      if (salesManagerId != null && salesManagerId > 0) {
-        individuals = individuals.filter((i) => i.managerId === salesManagerId);
-        teams = teams.filter((t) => t.salesManagerId === salesManagerId);
+    > = {
+      SARJAPUR: { id: '192', salesManagerId: 192, teamName: 'SARJAPUR — arjun hub', leadName: 'arjun hub', branchId: 'SARJAPUR', totalRevenueInr: 0, tenPercentInr: 0, dealsClosed: 0, leadsTotal: 0 },
+      HBR: { id: '13', salesManagerId: 13, teamName: 'HBR — Kulwanth P', leadName: 'Kulwanth P', branchId: 'HBR', totalRevenueInr: 0, tenPercentInr: 0, dealsClosed: 0, leadsTotal: 0 },
+      JP_NAGAR: { id: '143', salesManagerId: 143, teamName: 'JP_NAGAR — marfani hub', leadName: 'marfani hub', branchId: 'JP_NAGAR', totalRevenueInr: 0, tenPercentInr: 0, dealsClosed: 0, leadsTotal: 0 },
+    };
+
+    for (const ind of individuals) {
+      const t = managerMap[ind.branchId];
+      if (t) {
+        t.totalRevenueInr += ind.revenue;
+        t.tenPercentInr += ind.tenPercent;
+        t.dealsClosed += ind.bookings;
       }
-
-      const responsePayload = {
-        period,
-        asOf: new Date().toISOString(),
-        source: 'CRM Booking & Token Deals',
-        periodWindow: {
-          dateFrom: submittedFrom,
-          dateTo: submittedTo,
-        },
-        metricDefinitions: {
-          revenue: 'Gross Booking Value',
-          bookings: 'Confirmed Bookings (10%)',
-          conversionRate: 'Win Rate %',
-          teamName: 'Squad',
-        },
-        individuals,
-        teams,
-      };
-
-      bookingLeaderboardCache.set(cacheKey, {
-        expiresAt: Date.now() + 30_000,
-        data: responsePayload,
-      });
-
-      return responsePayload;
     }
+
+    let teams = Object.values(managerMap)
+      .map((t) => {
+        const winRate =
+          t.dealsClosed > 0
+            ? Math.min(25, Math.round((t.dealsClosed / (t.dealsClosed + 15)) * 1000) / 10)
+            : 0;
+        return {
+          id: t.id,
+          salesManagerId: t.salesManagerId,
+          teamName: t.teamName,
+          leadName: t.leadName,
+          avatar: null,
+          department: 'Sales',
+          branchId: t.branchId,
+          totalRevenue: formatQuote(t.totalRevenueInr),
+          totalRevenueInr: t.totalRevenueInr,
+          tenPercentFormatted: formatQuote(t.tenPercentInr),
+          dealsClosed: t.dealsClosed,
+          winRate,
+          trend: 'up' as const,
+        };
+      })
+      .sort((a, b) => b.totalRevenueInr - a.totalRevenueInr);
+
+    let tRank = 1;
+    teams = teams.map((tm) => ({
+      ...tm,
+      rank: tm.totalRevenueInr > 0 ? tRank++ : null,
+    }));
+
+    if (branchId) {
+      const normBranch = branchId.toUpperCase() === 'SARJAPURA' ? 'SARJAPUR' : branchId.toUpperCase();
+      individuals = individuals.filter((i) => (i.branchId || '').toUpperCase() === normBranch);
+      teams = teams.filter((t) => (t.branchId || '').toUpperCase() === normBranch);
+    }
+    if (salesManagerId != null && salesManagerId > 0) {
+      individuals = individuals.filter((i) => i.managerId === salesManagerId);
+      teams = teams.filter((t) => t.salesManagerId === salesManagerId);
+    }
+
+    return {
+      period,
+      asOf: new Date().toISOString(),
+      source: 'CRM Booking recognition (IST)',
+      periodWindow: {
+        dateFrom: submittedFrom || null,
+        dateTo: submittedTo || null,
+        label: bounds.label,
+      },
+      metricDefinitions: {
+        revenue: 'Gross Booking Value',
+        bookings: 'Confirmed Bookings (10%)',
+        conversionRate: 'Win Rate %',
+        teamName: 'Squad',
+      },
+      individuals,
+      teams,
+    };
+  };
+
+  try {
+    let periodDeals = await loadBookingDealsForPeriod(period, now);
+
+    if (periodDeals.length === 0 && period !== 'mtd') {
+      // Soft Hub fallback only when DB returns empty for broader windows
+      const hubDeals = await fetchBookingAndTokenDeals({
+        submittedFrom,
+        submittedTo,
+        dateRange: period === 'all_time' ? 'all' : undefined,
+      });
+      periodDeals = hubDeals
+        .filter((d) => resolveCrmListingType(d) === 'booking')
+        .filter((d) => {
+          if (period === 'all_time') return true;
+          const ymd = dealRecognitionYmd(d);
+          return Boolean(
+            ymd && bounds.dateFrom && bounds.dateTo && ymd >= bounds.dateFrom && ymd <= bounds.dateTo
+          );
+        })
+        .map((d) => ({
+          id: String(d.id),
+          customerName: String(d.customerName || ''),
+          assign: String(d.assign || d.assignee || d.submittedByName || ''),
+          dealValue: Number(d.dealValue) || 0,
+          listingType: 'booking' as const,
+          bookingStatus: String(d.bookingStatus || 'confirmed'),
+          listingDate: dealRecognitionYmd(d),
+          bookingDoneDate: null,
+          tenPercentPaidDate: null,
+          tokenTakenDate: null,
+          bookingDate: null,
+          createdAt: null,
+        }));
+    }
+
+    const responsePayload = buildFromDeals(periodDeals);
+    bookingLeaderboardCache.set(cacheKey, {
+      expiresAt: Date.now() + 30_000,
+      data: responsePayload,
+    });
+    return responsePayload;
   } catch (err) {
     console.warn(`Live Booking Deals fetch fallback for ${period}:`, err);
   }
 
-  // Fallback if live Hub API fails
-  let fallbackInd = period === 'all_time' ? [...ALL_TIME_LEADERBOARD_INDIVIDUALS] : [...QTD_LEADERBOARD_INDIVIDUALS];
-  let fallbackTeams = period === 'all_time' ? [...ALL_TIME_LEADERBOARD_TEAMS] : [...QTD_LEADERBOARD_TEAMS];
-
-  if (branchId) {
-    const normBranch = branchId.toUpperCase() === 'SARJAPURA' ? 'SARJAPUR' : branchId.toUpperCase();
-    fallbackInd = fallbackInd.filter((i) => (i.branchId || '').toUpperCase() === normBranch);
-    fallbackTeams = fallbackTeams.filter((t) => (t.branchId || '').toUpperCase() === normBranch);
-  }
-  if (salesManagerId != null && salesManagerId > 0) {
-    fallbackInd = fallbackInd.filter((i: any) => i.managerId === salesManagerId);
-    fallbackTeams = fallbackTeams.filter((t: any) => t.salesManagerId === salesManagerId);
-  }
-
-  return {
-    period,
-    asOf: new Date().toISOString(),
-    source: 'CRM Benchmark Fallback',
-    individuals: fallbackInd,
-    teams: fallbackTeams,
-  };
+  // Honest empty board — never seed fake MTD/QTD/All-Time numbers
+  const empty = buildFromDeals([]);
+  empty.source = 'CRM Booking recognition (empty/error)';
+  return empty;
 }
 
 function sanitizeHallwayLeaderboardPayload(payload: UpstreamPayload): UpstreamPayload {
@@ -1152,7 +1130,7 @@ function tallyBookingTotals(
   let companyTotal = 0;
   for (const d of deals) {
     if (resolveCrmListingType(d) !== 'booking') continue;
-    const dealTime = dealSubmittedMs(d);
+    const dealTime = dealRecognitionMs(d);
     if (
       isNaN(dealTime) ||
       dealTime < monthFromMs ||
@@ -1187,29 +1165,38 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
     void payload;
     const now = new Date();
     const weekWindow = resolveWeeklyWindow(now);
-    const fromMs = weekWindow.monthFromMs;
-    const toMs = weekWindow.monthToMs;
     const monthStartYmd = `${weekWindow.monthKey}-01`;
 
-    // Prefer CRM date window in IST month bounds
-    const rawDeals = await fetchBookingAndTokenDeals({
-      submittedFrom: new Date(`${monthStartYmd}T00:00:00+05:30`).toISOString(),
-      submittedTo: new Date(toMs).toISOString(),
-    });
+    // Source of truth = CRM DB booking_token_record with BookingTokenRecognitionDates
+    // (BOOKING tab + This month, incl. token-old + 10% this month). Hub dateRange=month
+    // is UTC + showcase-token fragile — do not depend on it for home cards.
+    const { loadThisMonthBookingDeals, istCalendarMonthBounds } = await import(
+      './hallwayBookingFeedFromCrm'
+    );
+    let monthBookingDeals: any[] = await loadThisMonthBookingDeals(now);
 
-    if (Array.isArray(rawDeals) && rawDeals.length >= 0) {
-      // Mirror CRM Booking & Token: BOOKING tab + This month (submittedAt window)
-      const monthBookingDeals = rawDeals.filter((d) => {
+    if (monthBookingDeals.length === 0) {
+      // Rare fallback: Hub with explicit IST month bounds (avoids SE rewriting dateRange→all)
+      const { dateFrom, dateTo } = istCalendarMonthBounds(now);
+      const hubDeals = await fetchBookingAndTokenDeals({
+        submittedFrom: `${dateFrom}T00:00:00+05:30`,
+        submittedTo: `${dateTo}T23:59:59.999+05:30`,
+      });
+      monthBookingDeals = hubDeals.filter((d) => {
         if (resolveCrmListingType(d) !== 'booking') return false;
         const who = String(d.assign || d.assignee || d.submittedByName || '');
         if (isTestAssignee(who)) return false;
-        const t = dealSubmittedMs(d);
-        return !isNaN(t) && t >= fromMs && t <= toMs;
+        const ymd = dealRecognitionYmd(d);
+        return Boolean(ymd && ymd >= dateFrom && ymd <= dateTo);
       });
+    } else {
+      monthBookingDeals = monthBookingDeals.filter((d) => {
+        const who = String(d.assign || '');
+        return who && !isTestAssignee(who);
+      });
+    }
 
-      monthBookingDeals.sort((a, b) => dealSubmittedMs(b) - dealSubmittedMs(a));
-
-      const feed: any[] = [];
+    const feed: any[] = [];
       // Stable IST anchors for the calendar day — never Date.now(), or every poll reshuffles the feed
       const todayIst = istYmdNow(now);
       const boardWeeklyAt = `${todayIst}T23:50:00+05:30`;
@@ -1230,15 +1217,11 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
         const big = quote >= TEN_LAKH_INR;
         const customer = d.customerName ? formatPersonName(d.customerName) : '';
         const home = customer ? `${customer}'s home` : 'a home';
-        const dealTime = dealSubmittedMs(d);
-        const ymd = String(d.submittedAt || d.bookingDate || d.createdAt || '')
-          .slice(0, 10);
-        const createdAt =
-          d.submittedAt ||
-          d.createdAt ||
-          (Number.isFinite(dealTime)
-            ? new Date(dealTime).toISOString()
-            : `${ymd || todayIst}T12:00:00+05:30`);
+        const ymd = dealRecognitionYmd(d) || String(d.listingDate || '').slice(0, 10) || todayIst;
+        const dealTime = dealRecognitionMs(d);
+        const createdAt = Number.isFinite(dealTime)
+          ? new Date(dealTime).toISOString()
+          : `${ymd}T12:00:00+05:30`;
         const whoLabel = branch ? `${repName} (${branch})` : repName;
 
         feed.push({
@@ -1362,18 +1345,17 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
       // Board highlights first, then newest deals — keeps Top Performer / Milestone instant on paint
       feed.unshift(...boardCards);
 
-      const resJson = JSON.stringify({
-        source: 'CRM Booking & Token Deals',
-        feed,
-      });
-      const newBuf = Buffer.from(resJson, 'utf-8');
-      const newAb = newBuf.buffer.slice(newBuf.byteOffset, newBuf.byteOffset + newBuf.byteLength);
-      return {
-        status: 200,
-        contentType: 'application/json',
-        body: newAb,
-      };
-    }
+    const resJson = JSON.stringify({
+      source: 'CRM Booking & Token (this month recognition)',
+      feed,
+    });
+    const newBuf = Buffer.from(resJson, 'utf-8');
+    const newAb = newBuf.buffer.slice(newBuf.byteOffset, newBuf.byteOffset + newBuf.byteLength);
+    return {
+      status: 200,
+      contentType: 'application/json',
+      body: newAb,
+    };
   } catch (err) {
     console.warn('Failed to sanitize live hallway feed payload:', err);
   }
@@ -1839,112 +1821,77 @@ export async function proxyToCrm(request: Request, pathParts: string[]): Promise
     return toResponse(200, 'application/json', ab);
   }
 
+  if (path.includes('hallway/feed')) {
+    // Home booking cards from CRM DB recognition (BOOKING + This month). Skip Hub.
+    const emptyBody = Buffer.from(JSON.stringify({ feed: [] }), 'utf-8');
+    const empty: UpstreamPayload = {
+      status: 200,
+      contentType: 'application/json',
+      body: emptyBody.buffer.slice(emptyBody.byteOffset, emptyBody.byteOffset + emptyBody.byteLength),
+    };
+    const built = await sanitizeHallwayFeedPayload(empty);
+    return toResponse(built.status, built.contentType, built.body);
+  }
+
   if (path.includes('hallway/today-events')) {
+    // Hallway BFF builds Today from CRM appointments (IST). Remote Hub may not have
+    // the MeetingBoard todayEvents changes — do not depend on it.
+    const preferToken = clientBearer(request);
+    let hubPayload: any = null;
     try {
-      const pool = getPool();
-      const crmDb = process.env.CRM_DB_NAME || 'CRM';
-      const [rows]: any = await pool.query(`
-        SELECT 
-          a.id,
-          a.start_time,
-          a.end_time,
-          a.description,
-          a.customer_name,
-          a.designer_name,
-          a.meeting_type,
-          u.full_name as sales_person_name,
-          u.username as sales_username
-        FROM ${crmDb}.appointment a
-        LEFT JOIN ${crmDb}.users u ON a.sales_user_id = u.id
-        WHERE a.start_time IS NOT NULL
-        ORDER BY a.start_time DESC
-        LIMIT 25
-      `).catch(() => [[]]);
+      const upstream = await fetchWithFallback(
+        'v1/hallway/today-events',
+        incoming.search,
+        'GET',
+        undefined,
+        preferToken
+      );
+      if (upstream.status === 200 && upstream.body?.byteLength) {
+        hubPayload = JSON.parse(Buffer.from(upstream.body).toString('utf-8'));
+      }
+    } catch (err) {
+      console.warn('[hallway/today-events] hub fetch skipped:', err);
+    }
 
-      const formatTime = (d: Date | null) => {
-        if (!d || isNaN(d.getTime())) return '';
-        return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
-      };
+    const viewer = {
+      name: incoming.searchParams.get('viewerName'),
+      username: incoming.searchParams.get('viewerUsername'),
+      email: incoming.searchParams.get('viewerEmail'),
+      userId: incoming.searchParams.get('viewerId'),
+      role: incoming.searchParams.get('viewerRole'),
+      scope: (incoming.searchParams.get('scope') as 'my' | 'team' | 'all' | null) || 'my',
+    };
 
-      const events = (Array.isArray(rows) ? rows : []).map((r: any) => {
-        const startTime = r.start_time ? new Date(r.start_time) : null;
-        const endTime = r.end_time ? new Date(r.end_time) : null;
-        const timeStr = startTime && endTime
-          ? `${formatTime(startTime)} – ${formatTime(endTime)}`
-          : startTime ? formatTime(startTime) : '11:00 AM';
-
-        const typeLabel = (r.meeting_type || 'Showroom Consultation')
-          .replace(/_/g, ' ')
-          .toLowerCase()
-          .replace(/\b\w/g, (c: string) => c.toUpperCase());
-
-        return {
-          id: `apt-${r.id}`,
-          time: timeStr,
-          title: r.description || `${typeLabel} Briefing`,
-          clientName: r.customer_name || null,
-          crmPersonName: r.sales_person_name || r.sales_username || null,
-          designerName: r.designer_name || null,
-          meetingType: typeLabel,
-          category: typeLabel,
-          startAt: r.start_time ? new Date(r.start_time).toISOString() : undefined,
-          endAt: r.end_time ? new Date(r.end_time).toISOString() : undefined,
-        };
-      });
-
-      const todayJson = JSON.stringify({
-        dayBasis: 'today',
-        date: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date()),
-        events,
-      });
-      const buf = Buffer.from(todayJson, 'utf-8');
+    try {
+      const { buildTodayEventsPayload } = await import('./hallwayTodayFromCrm');
+      const merged = await buildTodayEventsPayload(hubPayload, viewer);
+      const buf = Buffer.from(JSON.stringify(merged), 'utf-8');
       const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
       return toResponse(200, 'application/json', ab);
     } catch (err) {
-      console.warn('Failed to fetch live appointments from CRM, falling back:', err);
+      console.warn('[hallway/today-events] BFF build failed:', err);
+      if (hubPayload) {
+        const buf = Buffer.from(JSON.stringify(hubPayload), 'utf-8');
+        const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+        return toResponse(200, 'application/json', ab);
+      }
+      return Response.json(
+        { dayBasis: 'error', date: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date()), events: [] },
+        { status: 200 }
+      );
     }
   }
 
   if (path.includes('hallway/actions')) {
-    try {
-      const pool = getPool();
-      const crmDb = process.env.CRM_DB_NAME || 'CRM';
-      const [leadRows]: any = await pool.query(`
-        SELECT id, lead_identifier, name, assignee, budget, stage, substage, created_at, updated_at
-        FROM ${crmDb}.addlead
-        WHERE stage NOT IN ('LOST', 'DROPPED') OR stage IS NULL
-        ORDER BY updated_at DESC
-        LIMIT 6
-      `).catch(() => [[]]);
-
-      const leadItems = (Array.isArray(leadRows) ? leadRows : []).map((l: any) => ({
-        id: `lead-act-${l.id}`,
-        name: `Follow up: ${l.name || 'Client Lead'} (${l.lead_identifier || `#${l.id}`})`,
-        detail: `Stage: ${l.stage || 'Discussion'} · Assigned to ${l.assignee || 'Sales Team'}`,
-        done: false,
-      }));
-
-      const actionsBody = JSON.stringify({
-        dayBasis: 'today',
-        actions:
-          leadItems.length > 0
-            ? [
-          {
-            id: 'crm-pipeline-actions',
-            title: 'Lead Follow-ups Due Today',
-                  count: leadItems.length,
-            urgent: true,
-                  items: leadItems,
-                },
-              ]
-            : [],
-      });
-      const buf = Buffer.from(actionsBody, 'utf-8');
-      const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-      return toResponse(200, 'application/json', ab);
-    } catch (err) {
-      console.warn('Failed to fetch live actions from CRM:', err);
-    }
+    const preferToken = clientBearer(request);
+    const upstream = await fetchWithFallback(
+      'v1/hallway/actions',
+      incoming.search,
+      'GET',
+      undefined,
+      preferToken
+    );
+    return toResponse(upstream.status, upstream.contentType, upstream.body);
   }
 
   const hasBody = method !== 'GET' && method !== 'HEAD';
@@ -1963,7 +1910,8 @@ export async function proxyToCrm(request: Request, pathParts: string[]): Promise
 
   const cacheable = method === 'GET' && !isHubAuthPath(path) && (!preferToken || isHallwayPublicApi);
   // Feed rebuilt from booking-token; keep short TTL + SWR so home paints fast
-  const ttl = path.includes('hallway/feed') ? 20_000 : isHallwayPublicApi ? 300_000 : CACHE_TTL_MS;
+  // Feed must stay fresh for recognition-date bookings (token old + 10% this month).
+  const ttl = path.includes('hallway/feed') ? 5_000 : isHallwayPublicApi ? 300_000 : CACHE_TTL_MS;
   const isPeopleApi = path.includes('hallway/people');
 
   const branchIdParam = incoming.searchParams.get('branchId') || undefined;

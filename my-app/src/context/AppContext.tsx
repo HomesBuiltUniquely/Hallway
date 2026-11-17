@@ -928,31 +928,38 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         .then((res) => (res.ok ? res.json() : null))
         .catch(() => null);
 
-      const crmFeedPromise = fetchFeed('', { limit: 50 })
+      const crmToken =
+        typeof window !== 'undefined'
+          ? window.localStorage.getItem('hallway-crm-token') ||
+            window.localStorage.getItem('crm_token') ||
+            ''
+          : '';
+
+      const crmFeedPromise = fetchFeed(crmToken, { limit: 50 })
         .then((res) => res?.feed || [])
         .catch(() => []);
 
-      const crmTargetsPromise = fetchTargets('', {})
+      const crmTargetsPromise = fetchTargets(crmToken, {})
         .then((res) => res?.cards || [])
         .catch(() => []);
 
-      const crmLeaderboardPromise = fetchLeaderboard('', { period: 'mtd' })
+      const crmLeaderboardPromise = fetchLeaderboard(crmToken, { period: 'mtd' })
         .then((res) => res?.individuals || [])
         .catch(() => []);
 
-      const crmPeoplePromise = fetchPeople('', {})
+      const crmPeoplePromise = fetchPeople(crmToken, {})
         .then((res) => res?.people || [])
         .catch(() => []);
 
-      const crmRecordsPromise = fetchRecords('', '')
+      const crmRecordsPromise = fetchRecords(crmToken, '')
         .then((res) => res || { individualRecords: [], teamRecords: [] })
         .catch(() => ({ individualRecords: [], teamRecords: [] }));
 
-      const todayEventsPromise = fetchTodayEvents('')
+      const todayEventsPromise = fetchTodayEvents(crmToken)
         .then((res) => res?.events || [])
         .catch(() => []);
 
-      const crmActionsPromise = fetchActions('')
+      const crmActionsPromise = fetchActions(crmToken)
         .then((res) => res?.actions || [])
         .catch(() => []);
 

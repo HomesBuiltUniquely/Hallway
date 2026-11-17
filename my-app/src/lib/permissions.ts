@@ -12,13 +12,15 @@ export function isSuperAdmin(user?: { role?: string; name?: string; email?: stri
   const name = (user.name || '').toLowerCase().trim();
   const email = (user.email || '').toLowerCase().trim();
 
-  // 1. Role-based matching
+  // 1. Role-based matching (explicit — SALES_MANAGER / *_MANAGER are not global admins)
   if (
-    role.includes('ADMIN') ||
-    role.includes('SUPER') ||
+    role === 'SUPER_ADMIN' ||
+    role === 'ADMIN' ||
+    role === 'SALES_ADMIN' ||
+    role === 'TERRITORY_DESIGN_MANAGER' ||
+    role === 'CRM_ADMIN' ||
     role === 'CRM_LEAD' ||
-    role === 'DESIGN_LEAD' ||
-    role.includes('LEAD')
+    role === 'DESIGN_LEAD'
   ) {
     return true;
   }
@@ -167,5 +169,50 @@ export function isRestrictedFromDesign(
     email.includes('sachin') ||
     username.includes('sachin')
   );
+}
+
+/** Pure design-side role (not global admin). Used when Design auth is down but CRM login still works. */
+export function isDesignRole(role?: string | null): boolean {
+  const r = String(role || '')
+    .toUpperCase()
+    .replace(/[\s-]+/g, '_');
+  if (!r) return false;
+  if (r === 'SUPER_ADMIN' || r === 'ADMIN' || r === 'SALES_ADMIN' || r === 'CRM_ADMIN') return false;
+  return (
+    r.includes('DESIGN') ||
+    r.includes('ARCHITECT') ||
+    r.includes('VISUALIZER') ||
+    r.includes('INTERIOR')
+  );
+}
+
+/**
+ * App-switcher portal: Design people must never see CRM even if Design module is down
+ * and they authenticated via a leftover CRM account.
+ */
+export function isDesignPortalUser(
+  user?: { role?: string; name?: string; email?: string; department?: string } | null,
+  loginPortal?: 'crm' | 'design' | null
+): boolean {
+  if (!user) return false;
+  if (isSuperAdmin(user)) return false;
+  if (loginPortal === 'design') return true;
+  if (user.department === 'Design') return true;
+  return isDesignRole(user.role);
+}
+
+export function isSalesPortalUser(
+  user?: { role?: string; name?: string; email?: string; department?: string } | null,
+  loginPortal?: 'crm' | 'design' | null
+): boolean {
+  if (!user) return false;
+  if (isSuperAdmin(user)) return false;
+  if (isDesignPortalUser(user, loginPortal)) return false;
+  if (loginPortal === 'crm') return true;
+  if (user.department === 'Sales') return true;
+  const r = String(user.role || '')
+    .toUpperCase()
+    .replace(/[\s-]+/g, '_');
+  return r.includes('SALES') || r.includes('CRM');
 }
 

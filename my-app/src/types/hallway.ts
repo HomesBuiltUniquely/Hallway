@@ -186,6 +186,7 @@ export interface HallwayTodayEvent {
   startAt?: string;
   endAt?: string;
   clientName?: string | null;
+  leadId?: string | number | null;
   crmPersonName?: string | null;
   designerName?: string | null;
   meetingType?: string | null;
@@ -195,6 +196,8 @@ export interface HallwayTodayEvent {
 export interface HallwayTodayEventsResponse {
   dayBasis?: string;
   date?: string;
+  /** When true, server already applied My / team / all scope — skip client re-filter. */
+  scoped?: boolean;
   events: HallwayTodayEvent[];
 }
 

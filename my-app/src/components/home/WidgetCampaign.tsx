@@ -17,7 +17,11 @@ export default function WidgetCampaign() {
 
   const canEdit = isAdmin(currentUser) || isSuperAdmin(currentUser);
   const campaignBadge = activeCampaign?.discountPercent?.trim();
-  const hasCampaign = Boolean(activeCampaign?.isActive && activeCampaign?.title?.trim());
+  const targetMs = activeCampaign?.targetDate ? new Date(activeCampaign.targetDate).getTime() : NaN;
+  const isExpired = Number.isFinite(targetMs) && targetMs < Date.now();
+  const hasCampaign = Boolean(
+    activeCampaign?.isActive && activeCampaign?.title?.trim() && !isExpired
+  );
 
   useEffect(() => {
     const calculateTimeRemaining = () => {

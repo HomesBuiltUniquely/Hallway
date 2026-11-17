@@ -1,11 +1,19 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   CELEBRATION_HTTP_FALLBACK_MAX_MS,
   CELEBRATION_HTTP_FALLBACK_MS,
   CELEBRATION_LEADER_STALE_MS,
 } from '@/lib/celebrationRealtime';
+import {
+  createCelebrationCoordinator,
+  pingHallwayCelebrationPrimary,
+} from '@/lib/celebrationCoordinator';
+import {
+  setCelebrationSurface,
+  shouldRunCelebrationConsumer,
+} from '@/lib/celebrationSurface';
 
 /** Readable time for name + amount; extended further if the audio is longer. */
 export const CELEBRATION_VISIBLE_MS = 8000;
@@ -36,6 +44,7 @@ type Props = {
   viewerAliases?: string[];
   viewerName: string;
   placement: 'center' | 'corner';
+  celebrationSurface?: 'hallway' | 'crm' | 'design';
   enabled?: boolean;
 };
 
@@ -63,13 +72,18 @@ export default function BookingCelebration({
   viewerAliases = [],
   viewerName,
   placement,
+  celebrationSurface,
   enabled = true,
 }: Props) {
+  const surface =
+    celebrationSurface || (placement === 'center' ? 'hallway' : 'crm');
   const [queue, setQueue] = useState<CelebrationEvent[]>([]);
   const [paused, setPaused] = useState(false);
   const [congratsState, setCongratsState] = useState<'idle' | 'sending' | 'sent'>('idle');
   const [visibleMs, setVisibleMs] = useState(CELEBRATION_VISIBLE_MS);
   const [isLeaderTab, setIsLeaderTab] = useState(false);
+  const [coordinatorLeader, setCoordinatorLeader] = useState(false);
+  const [cardReady, setCardReady] = useState(false);
   const [tabVisible, setTabVisible] = useState(
     () => typeof document !== 'undefined' && document.visibilityState === 'visible'
   );
@@ -186,8 +200,31 @@ export default function BookingCelebration({
     }
   }, [apiBase, syncVisibleFromAudio]);
 
+  const celebrationEnabled = enabled && shouldRunCelebrationConsumer(surface);
+
   useEffect(() => {
-    if (!enabled || identityKeys.length === 0) return;
+    setCelebrationSurface(surface === 'hallway' ? 'hallway' : 'crm');
+  }, [surface]);
+
+  useEffect(() => {
+    if (!celebrationEnabled) return;
+    if (placement === 'center') pingHallwayCelebrationPrimary();
+    const beat = window.setInterval(() => {
+      if (placement === 'center') pingHallwayCelebrationPrimary();
+    }, 45_000);
+    const coordinator = createCelebrationCoordinator(placement === 'center' ? 'hallway' : 'embed');
+    const release = coordinator.subscribe((role) => {
+      setCoordinatorLeader(role === 'leader');
+    });
+    return () => {
+      window.clearInterval(beat);
+      release();
+      setCoordinatorLeader(false);
+    };
+  }, [celebrationEnabled, placement]);
+
+  useEffect(() => {
+    if (!celebrationEnabled || identityKeys.length === 0) return;
     const lockKey = 'hw-cele-leader';
     const claim = () => {
       const now = Date.now();
@@ -220,8 +257,11 @@ export default function BookingCelebration({
     return () => document.removeEventListener('visibilitychange', onVis);
   }, []);
 
+  const canDeliver =
+    celebrationEnabled && Boolean(viewerQuery) && isLeaderTab && coordinatorLeader && tabVisible;
+
   useEffect(() => {
-    if (!enabled || !viewerQuery || !isLeaderTab || !tabVisible) return;
+    if (!canDeliver) return;
 
     const base = hallwayOrigin(apiBase);
     let source: EventSource | null = null;
@@ -324,11 +364,22 @@ export default function BookingCelebration({
       }
       source = null;
     };
-  }, [apiBase, enabled, enqueue, isLeaderTab, tabVisible, viewerQuery]);
+  }, [apiBase, canDeliver, enqueue, viewerQuery]);
 
   const currentId = current?.id || '';
 
-  // Claim + mark seen as soon as the popup appears so switching modules never re-shows it.
+  useEffect(() => {
+    setCardReady(false);
+  }, [currentId]);
+
+  useLayoutEffect(() => {
+    if (!currentId) return;
+    const frame = window.requestAnimationFrame(() => {
+      setCardReady(true);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [currentId]);
+
   useEffect(() => {
     if (!currentId) return;
     if (claimedIds.current.has(currentId)) return;
@@ -336,9 +387,12 @@ export default function BookingCelebration({
     setVisibleMs(CELEBRATION_VISIBLE_MS);
     audioPlayedRef.current = false;
     audioPendingRef.current = false;
+  }, [currentId]);
+
+  useEffect(() => {
+    if (!currentId || !cardReady) return;
     playCelebrationSound();
-    void markSeen(currentId, false).catch(() => undefined);
-  }, [currentId, markSeen, playCelebrationSound]);
+  }, [cardReady, currentId, playCelebrationSound]);
 
   // Retry sound after the first user gesture if autoplay was blocked.
   useEffect(() => {

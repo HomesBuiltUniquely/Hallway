@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { CrmApiError } from '../lib/crmApi';
+import { CrmApiError, getStoredCrmToken } from '../lib/crmApi';
 
 function isAbortError(err: unknown): boolean {
   return (
@@ -29,7 +29,8 @@ export function useHallwayQuery<T>(
       setLoading(true);
       setError(null);
       try {
-        const result = await fetcher('', signal ?? new AbortController().signal);
+        const token = getStoredCrmToken() || '';
+        const result = await fetcher(token, signal ?? new AbortController().signal);
         if (signal?.aborted) return;
         setData(result);
       } catch (err) {

@@ -141,13 +141,43 @@ export function getValidDesignSession(activeUser?: { email?: string; name?: stri
   }
 }
 
+export async function probeModuleHealth(
+  target: 'crm' | 'design'
+): Promise<{ ok: boolean; message?: string }> {
+  try {
+    const res = await fetch(`/api/modules/health?target=${target}`, {
+      method: 'GET',
+      cache: 'no-store',
+      signal: AbortSignal.timeout(3500),
+    });
+    const data = (await res.json().catch(() => null)) as { ok?: boolean; message?: string } | null;
+    if (res.ok && data?.ok) return { ok: true };
+    return {
+      ok: false,
+      message:
+        data?.message ||
+        (target === 'crm'
+          ? 'CRM is temporarily unavailable.'
+          : 'Design Studio is temporarily unavailable.'),
+    };
+  } catch {
+    return {
+      ok: false,
+      message:
+        target === 'crm'
+          ? 'CRM is temporarily unavailable.'
+          : 'Design Studio is temporarily unavailable.',
+    };
+  }
+}
+
 export function openCrmDashboard(activeUser?: { email?: string; name?: string } | null) {
   const origin = crmFrontendUrl();
   if (!origin) {
     if (typeof window !== 'undefined') {
-      window.location.assign('/crm-erp');
+      alert('CRM frontend is not configured. Set NEXT_PUBLIC_CRM_FRONTEND_URL.');
     }
-    return;
+    return false;
   }
 
   const session = getValidCrmSession(activeUser);
@@ -155,7 +185,7 @@ export function openCrmDashboard(activeUser?: { email?: string; name?: string } 
     window.location.assign(
       `${origin}/auth/accept#payload=${encodeURIComponent(JSON.stringify(session))}`
     );
-    return;
+    return true;
   }
 
   // Admins have unconditional access to CRM

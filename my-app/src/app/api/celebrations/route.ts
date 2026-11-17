@@ -45,6 +45,7 @@ export async function POST(request: Request) {
   const result = await createCelebration({
     bookingId: body.bookingId,
     celebrationType: body.celebrationType,
+    milestone: body.milestone,
     salespersonName: body.salespersonName,
     branchName: body.branchName,
     customerName: body.customerName,

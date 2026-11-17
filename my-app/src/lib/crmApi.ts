@@ -605,9 +605,37 @@ export async function fetchTargets(
 
 export async function fetchTodayEvents(
   token: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  viewer?: {
+    name?: string;
+    username?: string;
+    email?: string;
+    userId?: string | number;
+    role?: string;
+    scope?: 'my' | 'team' | 'all';
+  }
 ): Promise<HallwayTodayEventsResponse> {
-  return crmFetch('/v1/hallway/today-events', { signal }, token);
+  const crmUser = getStoredCrmUser();
+  const q = hallwayQuery({
+    viewerName: viewer?.name || crmDisplayName(crmUser) || undefined,
+    viewerUsername:
+      viewer?.username ||
+      crmUser?.username ||
+      (typeof window !== 'undefined'
+        ? window.localStorage.getItem(CRM_LOGIN_USERNAME_KEY) || undefined
+        : undefined),
+    viewerEmail: viewer?.email || crmUser?.email || undefined,
+    viewerId:
+      viewer?.userId ||
+      crmUser?.id ||
+      (typeof window !== 'undefined'
+        ? window.localStorage.getItem(CRM_USER_ID_STORAGE_KEY) || undefined
+        : undefined),
+    viewerRole: viewer?.role || extractCrmRole(crmUser) || getStoredCrmRole() || undefined,
+    scope: viewer?.scope || 'my',
+    _ts: String(Date.now()), // bust intermediary caches
+  });
+  return crmFetch(`/v1/hallway/today-events${q}`, { signal, cache: 'no-store' }, token);
 }
 
 export async function fetchActions(
@@ -627,6 +655,7 @@ export async function fetchFeed(
     `/v1/hallway/feed${hallwayQuery({
       branchId: params.branchId,
       limit: params.limit ?? 20,
+      _ts: String(Date.now()),
     })}`,
     { signal },
     token

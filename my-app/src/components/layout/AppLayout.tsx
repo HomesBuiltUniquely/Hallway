@@ -84,6 +84,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <BookingCelebration
         apiBase=""
         placement="center"
+        celebrationSurface="hallway"
         enabled={isAuthenticated && Boolean(celebrationViewerKey)}
         viewerKey={celebrationViewerKey}
         viewerAliases={celebrationAliases}

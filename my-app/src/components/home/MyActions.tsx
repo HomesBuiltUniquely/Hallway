@@ -4,16 +4,22 @@ import React, { useState } from 'react';
 import { CheckCircle, ArrowRight, Check, ShieldCheck, ListOrdered, Zap, AlertTriangle, Clock } from 'lucide-react';
 import { useActions } from '../../hooks/useActions';
 import { useApp } from '../../context/AppContext';
-import { isSuperAdmin } from '../../lib/permissions';
 import { getPersonalizedActions } from '../../lib/hallwayPersonalization';
+import {
+  defaultHomeViewMode,
+  homeViewModes,
+  type HallwayHomeViewMode,
+} from '../../lib/hallwayHomePermissions';
 import { CorridorBanner, CorridorSkeleton } from '../hallway/CorridorGate';
 import type { HallwayActionGroup, HallwayActionItem } from '../../types/hallway';
 
 export default function MyActions() {
   const { currentUser } = useApp();
-  const isAdmin = isSuperAdmin(currentUser);
+  const modes = homeViewModes(currentUser);
+  const showTeam = modes.includes('team');
+  const showAll = modes.includes('all');
   const { data, loading, error } = useActions();
-  const [viewMode, setViewMode] = useState<'my' | 'all'>('my');
+  const [viewMode, setViewMode] = useState<HallwayHomeViewMode>(defaultHomeViewMode(currentUser));
   const [selectedGroup, setSelectedGroup] = useState<HallwayActionGroup | null>(null);
   const [completedItemIds, setCompletedItemIds] = useState<Record<string, boolean>>({});
 
@@ -52,7 +58,7 @@ export default function MyActions() {
           </div>
 
           <div className="flex items-center gap-2">
-            {isAdmin && (
+            {(showTeam || showAll) && (
               <div className="flex items-center p-0.5 bg-slate-100 dark:bg-slate-800/80 rounded-lg text-[10px] font-bold">
                 <button
                   type="button"
@@ -62,24 +68,41 @@ export default function MyActions() {
                       ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs'
                       : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                   }`}
-                  title="Show personal action items and approvals"
+                  title="Show personal action items"
                 >
                   <ShieldCheck className="w-3 h-3" />
-                  <span>My Approvals ({myTotalCount})</span>
+                  <span>My ({myTotalCount})</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('all')}
-                  className={`px-2 py-0.5 rounded-md transition-all cursor-pointer flex items-center gap-1 ${
-                    viewMode === 'all'
-                      ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs'
-                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                  }`}
-                  title="Show all corridor follow-ups across sales reps"
-                >
-                  <ListOrdered className="w-3 h-3" />
-                  <span>Corridor Leads ({allTotalCount})</span>
-                </button>
+                {showTeam && (
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('team')}
+                    className={`px-2 py-0.5 rounded-md transition-all cursor-pointer flex items-center gap-1 ${
+                      viewMode === 'team'
+                        ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                    title="Team follow-ups in your scope"
+                  >
+                    <ListOrdered className="w-3 h-3" />
+                    <span>My team</span>
+                  </button>
+                )}
+                {showAll && (
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('all')}
+                    className={`px-2 py-0.5 rounded-md transition-all cursor-pointer flex items-center gap-1 ${
+                      viewMode === 'all'
+                        ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                    title="All follow-ups in your admin scope"
+                  >
+                    <ListOrdered className="w-3 h-3" />
+                    <span>All ({allTotalCount})</span>
+                  </button>
+                )}
               </div>
             )}
 
@@ -105,7 +128,7 @@ export default function MyActions() {
                   <p className="text-xs font-medium text-slate-400">
                     All caught up! No pending actions for {currentUser?.name?.split(' ')[0] || 'you'} today.
                   </p>
-                  {isAdmin && viewMode === 'my' && rawGroups.length > 0 && (
+                  {showAll && viewMode === 'my' && rawGroups.length > 0 && (
                     <button
                       type="button"
                       onClick={() => setViewMode('all')}

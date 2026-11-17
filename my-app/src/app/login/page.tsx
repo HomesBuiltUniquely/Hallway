@@ -16,6 +16,7 @@ import {
 import { useApp } from '../../context/AppContext';
 import { CrmApiError, crmDisplayName, loginToCrm, clearCrmSession } from '../../lib/crmApi';
 import { saveDesignHandoff, clearDesignHandoff } from '../../lib/modulePortals';
+import { isDesignRole } from '../../lib/permissions';
 import { LivingRoomScene } from '../../components/login/LivingRoomScene';
 
 export default function LoginPage() {
@@ -74,13 +75,25 @@ export default function LoginPage() {
     })
       .then(async (res) => {
         const data = await res.json().catch(() => null);
-        return { ok: res.ok, status: res.status, data };
+        return {
+          ok: res.ok,
+          status: res.status,
+          data,
+          outage: res.status >= 500 || res.status === 0,
+        };
       })
-      .catch(() => null);
+      .catch(() => ({ ok: false, status: 0, data: null, outage: true }));
 
     const crmAuthPromise = loginToCrm(id, password)
-      .then((data) => ({ ok: true as const, data, error: null }))
-      .catch((err) => ({ ok: false as const, data: null, error: err }));
+      .then((data) => ({ ok: true as const, data, error: null as unknown, outage: false }))
+      .catch((err) => ({
+        ok: false as const,
+        data: null,
+        error: err,
+        outage:
+          !(err instanceof CrmApiError) ||
+          (err.status >= 500 && err.status !== 401 && err.status !== 400),
+      }));
 
     // 2. Fast-track check: If Design auth returns a dedicated Designer role, log in immediately
     const designFirst = await Promise.race([
@@ -114,14 +127,29 @@ export default function LoginPage() {
       designAuthPromise,
     ]);
 
-    // 4. If CRM login succeeded (Sales / Admin)
+    // 4. If CRM login succeeded
     if (crmResult.ok && crmResult.data?.user) {
       const user = crmResult.data.user;
-      clearDesignHandoff();
+      const designUp =
+        fullDesignResult?.ok && fullDesignResult.data?.sessionId && fullDesignResult.data?.user;
 
-      // If user also has Design Studio access (e.g. Super Admin / Admin), link it
-      if (fullDesignResult?.ok && fullDesignResult.data?.sessionId && fullDesignResult.data?.user) {
-        saveDesignHandoff(fullDesignResult.data.user, fullDesignResult.data.sessionId);
+      // Design-role users must stay on Design portal — never unlock CRM switcher
+      // just because Design module was down and CRM auth happened to succeed.
+      if (isDesignRole(user.role) && !designUp) {
+        clearCrmSession();
+        login(
+          user.email || user.username || id,
+          crmDisplayName(user) || id,
+          user.role || 'DESIGN',
+          'Design'
+        );
+        router.replace('/');
+        return;
+      }
+
+      clearDesignHandoff();
+      if (designUp) {
+        saveDesignHandoff(fullDesignResult!.data!.user, fullDesignResult!.data!.sessionId);
       }
 
       login(
@@ -149,8 +177,20 @@ export default function LoginPage() {
       return;
     }
 
-    // 6. If both failed, display error
+    // 6. Both failed — distinguish outage vs bad credentials
     setIsLoading(false);
+    const designOutage = Boolean(fullDesignResult?.outage);
+    const crmOutage = Boolean(crmResult.outage);
+    if (designOutage && crmOutage) {
+      setErrorMessage('HUB services are temporarily unavailable. Please try again shortly.');
+      return;
+    }
+    if (designOutage && !crmResult.ok) {
+      setErrorMessage(
+        'Design Studio is temporarily unavailable, and CRM login did not succeed. Please retry shortly.'
+      );
+      return;
+    }
     const crmErr = crmResult.error;
     if (crmErr instanceof CrmApiError) {
       if (crmErr.status === 401 || crmErr.status === 400) {
