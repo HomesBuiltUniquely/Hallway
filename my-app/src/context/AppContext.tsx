@@ -652,7 +652,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!window.location.hash.includes('hub=')) return;
       window.history.replaceState(null, '', window.location.pathname + window.location.search);
     };
-    const applySaved = (raw: string) => {
+    const applySaved = async (raw: string) => {
       const saved = JSON.parse(raw) as {
         email?: string;
         name?: string;
@@ -669,11 +669,55 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         window.localStorage.removeItem(HALLWAY_SESSION_KEY);
         return false;
       }
-      setCurrentUser(userFromSession(saved.email, saved.name, saved.role, saved.department));
-      setLoginPortal(saved.portal || (saved.department === 'Design' ? 'design' : 'crm'));
+
+      let department = saved.department || 'Sales';
+      let portal: 'crm' | 'design' =
+        saved.portal || (department === 'Design' ? 'design' : 'crm');
+      let role = saved.role || '';
+
+      // Correct misclassified designers (e.g. Design down → old CRM path → Sales tile).
+      try {
+        const q = new URLSearchParams();
+        if (saved.email) q.set('email', saved.email);
+        if (saved.name) q.set('name', saved.name);
+        if (saved.role) q.set('role', saved.role);
+        const res = await fetch(`/api/hallway/portal?${q.toString()}`, {
+          cache: 'no-store',
+          signal: AbortSignal.timeout(4000),
+        });
+        if (res.ok) {
+          const identity = await res.json();
+          if (identity?.portal === 'design') {
+            portal = 'design';
+            department = 'Design';
+            role = identity.role || role || 'DESIGNER';
+            try {
+              // Prevent leftover CRM session unlocking CRM tile/handoff.
+              const { clearCrmSession } = await import('../lib/crmApi');
+              clearCrmSession();
+            } catch {
+              /* ignore */
+            }
+          }
+        }
+      } catch {
+        /* keep saved session if resolver unavailable */
+      }
+
+      const nextUser = userFromSession(saved.email, saved.name, role, department);
+      const nextRaw = JSON.stringify({
+        email: nextUser.email,
+        name: nextUser.name,
+        role: nextUser.role,
+        department: nextUser.department,
+        portal,
+        timestamp: saved.timestamp || Date.now(),
+      });
+      setCurrentUser(nextUser);
+      setLoginPortal(portal);
       setIsAuthenticated(true);
-      window.sessionStorage.setItem(HALLWAY_SESSION_KEY, raw);
-      window.localStorage.setItem(HALLWAY_SESSION_KEY, raw);
+      window.sessionStorage.setItem(HALLWAY_SESSION_KEY, nextRaw);
+      window.localStorage.setItem(HALLWAY_SESSION_KEY, nextRaw);
       return true;
     };
 
@@ -683,7 +727,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const raw =
           window.sessionStorage.getItem(HALLWAY_SESSION_KEY) ||
           window.localStorage.getItem(HALLWAY_SESSION_KEY);
-        if (raw && applySaved(raw)) {
+        if (raw && (await applySaved(raw))) {
           stripHubHash();
           return;
         }

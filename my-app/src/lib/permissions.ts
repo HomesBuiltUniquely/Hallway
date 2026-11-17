@@ -171,14 +171,16 @@ export function isRestrictedFromDesign(
   );
 }
 
-/** Pure design-side role (not global admin). Used when Design auth is down but CRM login still works. */
+/** Pure design-side role (not global admin). Used when Design auth is down but Hub auth still works. */
 export function isDesignRole(role?: string | null): boolean {
   const r = String(role || '')
     .toUpperCase()
     .replace(/[\s-]+/g, '_');
   if (!r) return false;
   if (r === 'SUPER_ADMIN' || r === 'ADMIN' || r === 'SALES_ADMIN' || r === 'CRM_ADMIN') return false;
+  // DesignMod uses "designer"; CRM uses "DESIGNER" / "DESIGN_MANAGER".
   return (
+    r === 'DESIGNER' ||
     r.includes('DESIGN') ||
     r.includes('ARCHITECT') ||
     r.includes('VISUALIZER') ||

@@ -11,12 +11,11 @@ import {
   EyeOff,
   ArrowRight,
   AlertCircle,
-  Loader2
+  Loader2,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { CrmApiError, crmDisplayName, loginToCrm, clearCrmSession } from '../../lib/crmApi';
+import { clearCrmSession, setCrmSession } from '../../lib/crmApi';
 import { saveDesignHandoff, clearDesignHandoff } from '../../lib/modulePortals';
-import { isDesignRole } from '../../lib/permissions';
 import { LivingRoomScene } from '../../components/login/LivingRoomScene';
 
 export default function LoginPage() {
@@ -28,6 +27,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const passwordTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const toggleShowPassword = () => {
@@ -37,7 +37,6 @@ export default function LoginPage() {
     } else {
       setShowPassword(true);
       if (passwordTimerRef.current) clearTimeout(passwordTimerRef.current);
-      // Automatically mask password back after 3.5 seconds
       passwordTimerRef.current = setTimeout(() => {
         setShowPassword(false);
       }, 3500);
@@ -53,6 +52,7 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
+    setInfoMessage(null);
     const id = identifier.trim();
 
     if (!id || !password) {
@@ -61,158 +61,64 @@ export default function LoginPage() {
     }
 
     setIsLoading(true);
+    try {
+      const res = await fetch('/api/hallway/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier: id, password }),
+      });
+      const data = await res.json().catch(() => null);
 
-    // 1. Kick off both Design Module and CRM authentications simultaneously in parallel
-    const designAuthPromise = fetch('/api/design-module/auth/login', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        email: id,
-        password: password,
-      }),
-    })
-      .then(async (res) => {
-        const data = await res.json().catch(() => null);
-        return {
-          ok: res.ok,
-          status: res.status,
-          data,
-          outage: res.status >= 500 || res.status === 0,
-        };
-      })
-      .catch(() => ({ ok: false, status: 0, data: null, outage: true }));
-
-    const crmAuthPromise = loginToCrm(id, password)
-      .then((data) => ({ ok: true as const, data, error: null as unknown, outage: false }))
-      .catch((err) => ({
-        ok: false as const,
-        data: null,
-        error: err,
-        outage:
-          !(err instanceof CrmApiError) ||
-          (err.status >= 500 && err.status !== 401 && err.status !== 400),
-      }));
-
-    // 2. Fast-track check: If Design auth returns a dedicated Designer role, log in immediately
-    const designFirst = await Promise.race([
-      designAuthPromise,
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), 500)),
-    ]);
-
-    if (designFirst?.ok && designFirst.data?.sessionId && designFirst.data?.user) {
-      const designUser = designFirst.data.user as { email?: string; name?: string; role?: string };
-      const roleUpper = (designUser?.role || '').toUpperCase();
-      const isPureDesigner =
-        roleUpper.includes('DESIGN') && !roleUpper.includes('ADMIN') && !roleUpper.includes('SUPER');
-
-      if (isPureDesigner) {
-        clearCrmSession();
-        saveDesignHandoff(designFirst.data.user, designFirst.data.sessionId);
-        login(
-          designUser.email || id,
-          designUser.name || designUser.email || id,
-          designUser.role || 'DESIGN',
-          'Design'
-        );
-        router.replace('/');
-        return;
-      }
-    }
-
-    // 3. Resolve both authentications concurrently
-    const [crmResult, fullDesignResult] = await Promise.all([
-      crmAuthPromise,
-      designAuthPromise,
-    ]);
-
-    // 4. If CRM login succeeded
-    if (crmResult.ok && crmResult.data?.user) {
-      const user = crmResult.data.user;
-      const designUp =
-        fullDesignResult?.ok && fullDesignResult.data?.sessionId && fullDesignResult.data?.user;
-
-      // Design-role users must stay on Design portal — never unlock CRM switcher
-      // just because Design module was down and CRM auth happened to succeed.
-      if (isDesignRole(user.role) && !designUp) {
-        clearCrmSession();
-        login(
-          user.email || user.username || id,
-          crmDisplayName(user) || id,
-          user.role || 'DESIGN',
-          'Design'
-        );
-        router.replace('/');
-        return;
-      }
-
-      clearDesignHandoff();
-      if (designUp) {
-        saveDesignHandoff(fullDesignResult!.data!.user, fullDesignResult!.data!.sessionId);
-      }
-
-      login(
-        user.email || user.username || id,
-        crmDisplayName(user) || id,
-        user.role || 'SALES',
-        'Sales'
-      );
-      router.replace('/');
-      return;
-    }
-
-    // 5. If CRM failed but Design succeeded
-    if (fullDesignResult?.ok && fullDesignResult.data?.sessionId && fullDesignResult.data?.user) {
-      clearCrmSession();
-      saveDesignHandoff(fullDesignResult.data.user, fullDesignResult.data.sessionId);
-      const designUser = fullDesignResult.data.user as { email?: string; name?: string; role?: string };
-      login(
-        designUser.email || id,
-        designUser.name || designUser.email || id,
-        designUser.role || 'DESIGN',
-        'Design'
-      );
-      router.replace('/');
-      return;
-    }
-
-    // 6. Both failed — distinguish outage vs bad credentials
-    setIsLoading(false);
-    const designOutage = Boolean(fullDesignResult?.outage);
-    const crmOutage = Boolean(crmResult.outage);
-    if (designOutage && crmOutage) {
-      setErrorMessage('HUB services are temporarily unavailable. Please try again shortly.');
-      return;
-    }
-    if (designOutage && !crmResult.ok) {
-      setErrorMessage(
-        'Design Studio is temporarily unavailable, and CRM login did not succeed. Please retry shortly.'
-      );
-      return;
-    }
-    const crmErr = crmResult.error;
-    if (crmErr instanceof CrmApiError) {
-      if (crmErr.status === 401 || crmErr.status === 400) {
+      if (!res.ok || !data?.ok) {
+        setIsLoading(false);
         setErrorMessage(
-          crmErr.message && !/authorization failed|bad request/i.test(crmErr.message)
-            ? crmErr.message
-            : 'Invalid username or password'
+          (data && typeof data.message === 'string' && data.message) ||
+            'Invalid email or password'
         );
-      } else {
-        setErrorMessage(crmErr.message);
+        return;
       }
-    } else {
-      setErrorMessage('Invalid username or password');
+
+      const portal = data.portal === 'design' ? 'design' : 'crm';
+      const department = portal === 'design' ? 'Design' : 'Sales';
+      const user = data.user || {};
+      const role = user.role || data.role || (portal === 'design' ? 'DESIGNER' : 'SALES');
+
+      if (portal === 'design') {
+        clearCrmSession();
+        if (data.designSession?.sessionId && data.designSession?.user) {
+          saveDesignHandoff(data.designSession.user, data.designSession.sessionId);
+        } else {
+          clearDesignHandoff();
+        }
+      } else {
+        clearDesignHandoff();
+        if (data.crmSession?.token) {
+          setCrmSession(data.crmSession.token, data.crmSession.user || user);
+        }
+      }
+
+      login(user.email || id, user.name || user.email || id, role, department);
+
+      if (typeof data.notice === 'string' && data.notice) {
+        // Persist briefly so home can show if needed; login navigates away immediately.
+        try {
+          window.sessionStorage.setItem('hallway-login-notice', data.notice);
+        } catch {
+          /* ignore */
+        }
+      }
+
+      router.replace('/');
+    } catch {
+      setIsLoading(false);
+      setErrorMessage('Login failed. Please try again.');
     }
   };
 
   return (
     <div className="min-h-screen bg-surface-login text-app-fg flex items-center justify-center p-4 relative overflow-hidden font-sans select-none transition-colors duration-700">
-      {/* Living Room Scene Background */}
       <LivingRoomScene isDark={theme === 'dark'} />
 
-      {/* Floating Theme Toggle */}
       <button
         onClick={toggleTheme}
         className="absolute top-6 right-6 p-2.5 rounded-2xl bg-white/90 dark:bg-panel/90 backdrop-blur-md border border-slate-200/80 dark:border-slate-700/80 shadow-sm hover:shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer z-20"
@@ -226,14 +132,9 @@ export default function LoginPage() {
         )}
       </button>
 
-      {/* Main Container */}
       <div className="max-w-[480px] w-full z-10">
-        {/* Pinterest-style Elevated Card */}
         <div className="bg-surface/98 dark:bg-panel/95 backdrop-blur-2xl border border-surface-warm/90 dark:border-slate-800/80 rounded-[32px] p-8 sm:p-10 shadow-[0_28px_65px_-12px_rgba(50,38,28,0.16),0_10px_25px_-5px_rgba(50,38,28,0.08),0_0_0_1px_rgba(255,255,255,0.9)] dark:shadow-[0_25px_60px_-15px_rgba(0,0,0,0.7),0_0_1px_1px_rgba(255,255,255,0.05)] space-y-6 sm:space-y-7 transition-all duration-300">
-          
-          {/* Brand Header */}
           <div className="text-center space-y-3">
-            {/* Theme-aware HUB Logo */}
             <div className="flex justify-center items-center">
               <img
                 src="/images/hub-logo-trimmed.png"
@@ -252,7 +153,6 @@ export default function LoginPage() {
             </div>
           </div>
 
-          {/* Error Message Alert */}
           {errorMessage && (
             <div className="p-3 bg-brand-soft border border-brand/30 rounded-2xl flex items-center gap-2.5 text-xs text-brand font-medium animate-in fade-in duration-150">
               <AlertCircle className="w-4 h-4 shrink-0 text-brand" />
@@ -260,113 +160,86 @@ export default function LoginPage() {
             </div>
           )}
 
-          {/* Form */}
+          {infoMessage && (
+            <div className="p-3 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl flex items-center gap-2.5 text-xs text-slate-600 dark:text-slate-300 font-medium">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{infoMessage}</span>
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Field 1: Username or Email */}
             <div>
-              <label className="block text-xs font-bold text-ink dark:text-slate-200 mb-1.5 ml-0.5 tracking-wide">
-                Username or Email
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 ml-0.5">
+                Username / Email
               </label>
-              <div className="relative group">
-                <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-brand transition-colors" />
+              <div className="relative">
+                <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input
                   type="text"
                   required
+                  autoComplete="username"
                   value={identifier}
                   onChange={(e) => {
                     setIdentifier(e.target.value);
                     if (errorMessage) setErrorMessage(null);
                   }}
-                  className="focus-brand w-full pl-10 pr-4 py-3 bg-surface-muted/90 hover:bg-surface-muted dark:bg-slate-800/50 dark:hover:bg-slate-800/80 border border-slate-300 hover:border-slate-400 dark:border-slate-700/80 dark:hover:border-slate-600 rounded-2xl text-xs sm:text-sm text-ink dark:text-white placeholder-slate-400 dark:placeholder-slate-500 shadow-[inset_0_1px_2px_rgba(0,0,0,0.02)] dark:shadow-none focus:bg-surface dark:focus:bg-slate-800 transition-all font-sans"
-                  placeholder="username or abc@hubinterior.com"
+                  className="w-full pl-10 pr-3.5 py-3 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-2xl text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/40"
+                  placeholder="you@hubinterior.com"
                 />
               </div>
             </div>
 
-            {/* Field 2: Password with timed Eye Preview */}
             <div>
-              <div className="flex items-center justify-between mb-1.5 ml-0.5">
-                <label className="text-xs font-bold text-ink dark:text-slate-200 tracking-wide">
-                  Password
-                </label>
-              </div>
-              <div className="relative group">
-                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-brand transition-colors" />
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 ml-0.5">
+                Password
+              </label>
+              <div className="relative">
+                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input
                   type={showPassword ? 'text' : 'password'}
                   required
+                  autoComplete="current-password"
                   value={password}
                   onChange={(e) => {
                     setPassword(e.target.value);
                     if (errorMessage) setErrorMessage(null);
                   }}
-                  className="focus-brand w-full pl-10 pr-11 py-3 bg-surface-muted/90 hover:bg-surface-muted dark:bg-slate-800/50 dark:hover:bg-slate-800/80 border border-slate-300 hover:border-slate-400 dark:border-slate-700/80 dark:hover:border-slate-600 rounded-2xl text-xs sm:text-sm text-ink dark:text-white placeholder-slate-400 dark:placeholder-slate-500 shadow-[inset_0_1px_2px_rgba(0,0,0,0.02)] dark:shadow-none focus:bg-surface dark:focus:bg-slate-800 transition-all font-sans"
+                  className="w-full pl-10 pr-11 py-3 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-2xl text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/40"
                   placeholder="••••••••"
                 />
                 <button
                   type="button"
                   onClick={toggleShowPassword}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:text-ink dark:hover:text-slate-200 hover:bg-surface-muted dark:hover:bg-slate-700/50 transition-all cursor-pointer"
-                  title={showPassword ? 'Hide password' : 'View password for a few seconds'}
-                  aria-label={showPassword ? 'Hide password' : 'View password'}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
                 >
-                  {showPassword ? <EyeOff className="w-4 h-4 text-brand" /> : <Eye className="w-4 h-4" />}
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
             </div>
 
-            {/* Remember me & Forgot Password */}
-            <div className="flex items-center justify-between text-xs pt-1 px-0.5">
-              <label className="flex items-center gap-2 text-slate-700 dark:text-slate-300 cursor-pointer select-none group">
+            <div className="flex items-center justify-between pt-1">
+              <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400 cursor-pointer select-none">
                 <input
                   type="checkbox"
                   checked={rememberMe}
                   onChange={(e) => setRememberMe(e.target.checked)}
-                  className="w-4 h-4 rounded-md border-slate-300 dark:border-slate-700 text-brand accent-[var(--brand)] focus:ring-brand/30 cursor-pointer"
+                  className="rounded border-slate-300 text-brand focus:ring-brand/40"
                 />
-                <span className="group-hover:text-ink dark:group-hover:text-slate-100 transition-colors font-medium">
-                  Remember me
-                </span>
+                Remember me
               </label>
-
-              <button
-                type="button"
-                onClick={() => alert('Please contact your System Administrator or IT Support to reset your password.')}
-                className="text-xs font-bold text-slate-600 hover:text-brand dark:text-slate-400 dark:hover:text-brand transition-colors cursor-pointer"
-              >
-                Forgot Password?
-              </button>
             </div>
 
-            {/* Primary Submit Button — brand gradient */}
             <button
               type="submit"
               disabled={isLoading}
-              className="btn-brand w-full mt-2 py-3.5 px-6 rounded-2xl text-sm font-bold tracking-wide transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer group"
+              className="w-full mt-2 py-3.5 rounded-2xl bg-brand hover:bg-brand/90 disabled:opacity-60 text-white text-sm font-bold shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer"
             >
-              {isLoading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Signing in...</span>
-                </>
-              ) : (
-                <>
-                  <span>Enter Home</span>
-                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform duration-200" />
-                </>
-              )}
+              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              <span>Enter Home</span>
+              {!isLoading ? <ArrowRight className="w-4 h-4" /> : null}
             </button>
           </form>
-
-          {/* Access Help / Support Footer */}
-          <div className="pt-4 border-t border-slate-200 dark:border-slate-800/80 text-center">
-            <p className="text-xs text-slate-600 dark:text-slate-400">
-              Not a member?{' '}
-              <span className="font-bold text-slate-800 dark:text-slate-200">
-                Contact your Admin for access
-              </span>
-            </p>
-          </div>
         </div>
       </div>
     </div>

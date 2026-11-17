@@ -4,7 +4,9 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const DESIGN_MODULE_BASE_URL = (
-  process.env.DESIGN_MODULE_BASE_URL || 'http://localhost:3001'
+  process.env.DESIGN_MODULE_BASE_URL ||
+  process.env.DESIGN_API_URL ||
+  'https://api.hubinterior.com'
 ).replace(/\/$/, '');
 
 /** Confirm a Design Module session before opening Hallway home from the app switcher. */
