@@ -238,6 +238,8 @@ export async function loadTodayMeetingsFromCrm(
         if (!inTeam) continue;
       }
     } else if (scope === 'my' && tokens.size > 0) {
+      // Sales "My Schedule" = sales owner / lead assignee only.
+      // Never match designer name or client title (Meghana ≠ meeting "Megha").
       const mine = matchesViewer(
         tokens,
         salesName,
@@ -245,8 +247,6 @@ export async function loadTodayMeetingsFromCrm(
         r.sales_person_name,
         r.sales_username,
         r.sales_email,
-        designerName,
-        r.designer_name,
         r.sales_user_id != null ? String(r.sales_user_id) : null
       );
       if (!mine) continue;

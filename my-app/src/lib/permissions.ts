@@ -219,16 +219,24 @@ export function isDesignRole(role?: string | null): boolean {
  * App-switcher portal: Design people must never see CRM even if Design module is down
  * and they authenticated via a leftover CRM account.
  */
+function isSalesFamilyRole(role?: string | null): boolean {
+  const r = String(role || '')
+    .toUpperCase()
+    .replace(/[\s-]+/g, '_');
+  return r.includes('PRESALES') || r.includes('SALES') || r === 'CRM_ADMIN' || r === 'SALES_ADMIN';
+}
+
 export function isDesignPortalUser(
   user?: { role?: string; name?: string; email?: string; department?: string } | null,
   loginPortal?: 'crm' | 'design' | null
 ): boolean {
   if (!user) return false;
   if (isSuperAdmin(user)) return false;
-  // Role / department win over a stale loginPortal=crm (Design-down misclassify).
+  // Sales / Presales never see Design — even with a stale loginPortal=design.
+  if (isSalesFamilyRole(user.role)) return false;
   if (isDesignRole(user.role)) return true;
-  if (user.department === 'Design') return true;
-  if (loginPortal === 'design') return true;
+  if (user.department === 'Design' && !isSalesFamilyRole(user.role)) return true;
+  if (loginPortal === 'design' && !isSalesFamilyRole(user.role)) return true;
   return false;
 }
 
@@ -238,7 +246,7 @@ export function isSalesPortalUser(
 ): boolean {
   if (!user) return false;
   if (isSuperAdmin(user)) return false;
-  // Never treat designers as sales — even if session portal was wrongly saved as crm.
+  if (isSalesFamilyRole(user.role)) return true;
   if (isDesignPortalUser(user, loginPortal)) return false;
   if (loginPortal === 'crm') return true;
   if (user.department === 'Sales') return true;

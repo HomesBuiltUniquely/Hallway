@@ -131,6 +131,9 @@ export default function MyActions() {
                 <div className="text-center py-4">
                   <p className="text-xs font-medium text-slate-400">
                     {isDesignHomeUser(currentUser) &&
+                    !String(currentUser?.role || '')
+                      .toUpperCase()
+                      .match(/SALES|PRESALES/) &&
                     String(data?.dayBasis || '').toLowerCase().includes('session missing')
                       ? 'Connect Design Studio once from the app switcher to load your live queues.'
                       : `All caught up! No pending actions for ${currentUser?.name?.split(' ')[0] || 'you'} today.`}
@@ -168,19 +171,20 @@ export default function MyActions() {
               )}
             </div>
             <p className="text-[10px] text-slate-400 mt-2">
-              {viewMode === 'my' && showPersonal
-                ? `Personalized for ${currentUser?.name?.split(' ')[0] || 'you'}`
-                : isDesignHomeUser(currentUser)
-                  ? 'Live from Design Module · role-scoped queues.'
-                  : String(currentUser?.role || '')
-                        .toUpperCase()
-                        .includes('PRESALES')
-                    ? viewMode === 'team'
-                      ? 'Presales team Fresh Data · verify then hand off to Sales.'
-                      : 'Presales Fresh Data · verify then hand off to Sales.'
-                    : viewMode === 'team'
-                      ? 'Team Fresh Lead oversight · CRM.'
-                      : 'Company Fresh Lead oversight · CRM.'}
+              {isDesignHomeUser(currentUser) &&
+              !String(currentUser?.role || '')
+                .toUpperCase()
+                .match(/SALES|PRESALES/)
+                ? 'Live from Design Module · role-scoped queues.'
+                : String(currentUser?.role || '')
+                      .toUpperCase()
+                      .includes('PRESALES')
+                  ? 'Presales Fresh Data · verify then hand off to Sales.'
+                  : viewMode === 'team'
+                    ? 'Team Fresh Lead oversight · CRM.'
+                    : viewMode === 'all'
+                      ? 'Company Fresh Lead oversight · CRM.'
+                      : 'Fresh leads due today · CRM.'}
             </p>
           </>
         )}

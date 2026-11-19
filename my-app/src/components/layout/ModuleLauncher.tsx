@@ -227,20 +227,27 @@ export default function ModuleLauncher() {
     },
   ];
 
-  // Strict cross-module isolation (never show CRM+Design to non-admins):
-  // - Design portal users → Design + HR only (even when Design Studio is down)
-  // - Sales / CRM portal users → CRM + HR only
-  // - Admin / Sachin → CRM + HR (Design restricted)
+  // Enterprise isolation — role wins over health / stale portal:
+  // - Sales + Presales → CRM + HR only (never Design, even if CRM is down)
+  // - Design Module roles → Design + HR only (never CRM, even if Design is down)
   // - Super → CRM + Design + HR
+  // - Admin / Sachin → CRM + HR
+  const roleUpper = String(currentUser?.role || '')
+    .toUpperCase()
+    .replace(/[\s-]+/g, '_');
+  const isSalesFamily =
+    roleUpper.includes('PRESALES') ||
+    roleUpper.includes('SALES') ||
+    roleUpper === 'SALES_ADMIN' ||
+    roleUpper === 'CRM_ADMIN' ||
+    isCrmSales;
+
   const modules = allModules.filter((m) => {
     if (m.id === 'hr') return true;
     if (m.id === 'design' && isRestrictedFromDesign(currentUser)) return false;
     if (isSuper) return true;
-    // Designers must never see CRM — this was the production bug when Design was down.
-    if (isDesigner) return m.id === 'design';
-    if (isCrmSales) return m.id === 'crm';
-    // Unknown: prefer Design if role/dept looks design, else CRM — never both.
-    if (isDesignPortalUser(currentUser, loginPortal)) return m.id === 'design';
+    if (isSalesFamily) return m.id === 'crm';
+    if (isDesigner || isDesignPortalUser(currentUser, loginPortal)) return m.id === 'design';
     return m.id === 'crm';
   });
 

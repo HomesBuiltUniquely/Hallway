@@ -17,10 +17,23 @@ function normRole(role?: string | null): string {
     .replace(/[\s-]+/g, '_');
 }
 
+function isSalesFamilyRole(role?: string | null): boolean {
+  const r = normRole(role);
+  if (!r) return false;
+  return (
+    r.includes('PRESALES') ||
+    r.includes('SALES') ||
+    r === 'CRM_ADMIN' ||
+    r === 'SALES_ADMIN'
+  );
+}
+
 /**
  * Resolve Hallway app-switcher portal from CRM / Design identity tables.
- * Designers must never get CRM in the switcher — even if Design auth is down
- * and Hub also has a CRM user row for them.
+ *
+ * CRITICAL: never use loose LIKE '%name%' against designer roster —
+ * "Uma" matched "Kumar*", "Meghana" matched "Meghana HP" (different person)
+ * and wrongly forced Design portal + Design switcher for sales/presales.
  */
 export async function resolveHallwayIdentity(input: {
   email?: string | null;
@@ -41,12 +54,14 @@ export async function resolveHallwayIdentity(input: {
 
   if (!email && !username && !name) return null;
 
-  // Fast path from authenticated role hint (CRM JWT / Design session).
   const hint = normRole(input.roleHint);
+  if (hint && isSalesFamilyRole(hint)) {
+    return { portal: 'crm', department: 'Sales', role: hint, source: 'hint' };
+  }
   if (hint && isSuperAdmin({ role: hint, email, name })) {
     return { portal: 'crm', department: 'Sales', role: hint, source: 'hint' };
   }
-  if (hint && isDesignRole(hint)) {
+  if (hint && isDesignRole(hint) && !isSalesFamilyRole(hint)) {
     return { portal: 'design', department: 'Design', role: hint, source: 'hint' };
   }
 
@@ -55,46 +70,7 @@ export async function resolveHallwayIdentity(input: {
     const crmDb = process.env.CRM_DB_NAME || 'CRM';
     const designDb = process.env.DESIGN_DB_NAME || 'DesignMod';
 
-    // Designer roster first — never classify a designer as Sales because of a dual CRM row.
-    const [designers]: any = await pool.query(
-      `
-      SELECT id, name, email
-      FROM ${crmDb}.designer
-      WHERE (? <> '' AND LOWER(TRIM(email)) = ?)
-         OR (? <> '' AND LOWER(TRIM(name)) = ?)
-         OR (? <> '' AND LOWER(TRIM(name)) LIKE ?)
-      LIMIT 3
-      `,
-      [email, email, name, name, local, `%${local}%`]
-    );
-    if (Array.isArray(designers) && designers.length > 0) {
-      return {
-        portal: 'design',
-        department: 'Design',
-        role: hint && isDesignRole(hint) ? hint : 'DESIGNER',
-        source: 'crm_designer',
-      };
-    }
-
-    try {
-      const [designUsers]: any = await pool.query(
-        `
-        SELECT id, email, name, role
-        FROM ${designDb}.users
-        WHERE (? <> '' AND LOWER(TRIM(email)) = ?)
-           OR (? <> '' AND LOWER(TRIM(name)) = ?)
-        LIMIT 3
-        `,
-        [email, email, name, name]
-      );
-      if (Array.isArray(designUsers) && designUsers.length > 0) {
-        const role = normRole(designUsers[0].role) || 'DESIGNER';
-        return { portal: 'design', department: 'Design', role, source: 'designmod_users' };
-      }
-    } catch {
-      /* DesignMod optional */
-    }
-
+    // 1) Exact CRM user match first — role is source of truth for sales vs design.
     const [crmUsers]: any = await pool.query(
       `
       SELECT id, email, username, full_name, role
@@ -110,23 +86,65 @@ export async function resolveHallwayIdentity(input: {
 
     for (const u of Array.isArray(crmUsers) ? crmUsers : []) {
       const role = normRole(u.role);
-      if (isDesignRole(role) || role === 'DESIGNER') {
-        return { portal: 'design', department: 'Design', role: role || 'DESIGNER', source: 'crm_users' };
+      if (isSalesFamilyRole(role)) {
+        return { portal: 'crm', department: 'Sales', role, source: 'crm_users' };
       }
       if (isSuperAdmin({ role, email: u.email, name: u.full_name })) {
         return { portal: 'crm', department: 'Sales', role: role || 'ADMIN', source: 'crm_users' };
       }
-      if (role.includes('PRESALES') || role === 'SALES_EXECUTIVE' || role === 'SALES_MANAGER') {
-        return { portal: 'crm', department: 'Sales', role, source: 'crm_users' };
+      if (isDesignRole(role)) {
+        return { portal: 'design', department: 'Design', role: role || 'DESIGNER', source: 'crm_users' };
       }
-      if (role.includes('SALES') || role.includes('CRM') || role === 'MANAGER') {
-        return { portal: 'crm', department: 'Sales', role, source: 'crm_users' };
+    }
+
+    // 2) Exact designer roster match (email or exact name) — no LIKE wildcards.
+    if (email || name) {
+      const [designers]: any = await pool.query(
+        `
+        SELECT id, name, email
+        FROM ${crmDb}.designer
+        WHERE (? <> '' AND LOWER(TRIM(email)) = ?)
+           OR (? <> '' AND LOWER(TRIM(name)) = ?)
+        LIMIT 3
+        `,
+        [email, email, name, name]
+      );
+      if (Array.isArray(designers) && designers.length > 0) {
+        return {
+          portal: 'design',
+          department: 'Design',
+          role: hint && isDesignRole(hint) ? hint : 'DESIGNER',
+          source: 'crm_designer',
+        };
       }
+    }
+
+    // 3) DesignMod users — exact email / name only.
+    try {
+      const [designUsers]: any = await pool.query(
+        `
+        SELECT id, email, name, role
+        FROM ${designDb}.users
+        WHERE (? <> '' AND LOWER(TRIM(email)) = ?)
+           OR (? <> '' AND LOWER(TRIM(name)) = ?)
+        LIMIT 3
+        `,
+        [email, email, name, name]
+      );
+      if (Array.isArray(designUsers) && designUsers.length > 0) {
+        const role = normRole(designUsers[0].role) || 'DESIGNER';
+        if (isSalesFamilyRole(role)) {
+          return { portal: 'crm', department: 'Sales', role, source: 'designmod_users' };
+        }
+        return { portal: 'design', department: 'Design', role, source: 'designmod_users' };
+      }
+    } catch {
+      /* DesignMod optional */
     }
 
     if (Array.isArray(crmUsers) && crmUsers.length > 0) {
       const role = normRole(crmUsers[0].role) || 'SALES_EXECUTIVE';
-      if (isDesignRole(role)) {
+      if (isDesignRole(role) && !isSalesFamilyRole(role)) {
         return { portal: 'design', department: 'Design', role, source: 'crm_users' };
       }
       return { portal: 'crm', department: 'Sales', role, source: 'crm_users' };
@@ -135,6 +153,9 @@ export async function resolveHallwayIdentity(input: {
     console.warn('[resolveHallwayIdentity] failed:', err);
   }
 
+  if (hint && isSalesFamilyRole(hint)) {
+    return { portal: 'crm', department: 'Sales', role: hint, source: 'hint' };
+  }
   if (hint && isDesignRole(hint)) {
     return { portal: 'design', department: 'Design', role: hint, source: 'hint' };
   }

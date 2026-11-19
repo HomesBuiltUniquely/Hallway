@@ -78,17 +78,13 @@ export function getPersonalizedSchedule(
 
   if (!Array.isArray(allEvents) || allEvents.length === 0) return [];
 
+  const isDesignUser = isDesignHomeUser(user);
   return allEvents.filter((ev) => {
     const sales = ev.crmPersonName || '';
     const designer = ev.designerName || '';
-    const title = ev.title || '';
-    const client = ev.clientName || '';
-    // Sales / designer ownership — never match only on client name.
-    return (
-      textMatchesIdentity(sales, tokens) ||
-      textMatchesIdentity(designer, tokens) ||
-      textMatchesIdentity(title, tokens)
-    );
+    // Sales exec: only sales owner. Design: only designer. Never client/title substrings.
+    if (isDesignUser) return textMatchesIdentity(designer, tokens);
+    return textMatchesIdentity(sales, tokens);
   });
 }
 
