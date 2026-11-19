@@ -55,33 +55,7 @@ export async function resolveHallwayIdentity(input: {
     const crmDb = process.env.CRM_DB_NAME || 'CRM';
     const designDb = process.env.DESIGN_DB_NAME || 'DesignMod';
 
-    const [crmUsers]: any = await pool.query(
-      `
-      SELECT id, email, username, full_name, role
-      FROM ${crmDb}.users
-      WHERE (? <> '' AND LOWER(TRIM(email)) = ?)
-         OR (? <> '' AND LOWER(TRIM(username)) = ?)
-         OR (? <> '' AND LOWER(TRIM(username)) = ?)
-         OR (? <> '' AND LOWER(TRIM(full_name)) = ?)
-      LIMIT 5
-      `,
-      [email, email, username, username, local, local, name, name]
-    );
-
-    for (const u of Array.isArray(crmUsers) ? crmUsers : []) {
-      const role = normRole(u.role);
-      if (isSuperAdmin({ role, email: u.email, name: u.full_name })) {
-        return { portal: 'crm', department: 'Sales', role: role || 'ADMIN', source: 'crm_users' };
-      }
-      if (isDesignRole(role) || role === 'DESIGNER') {
-        return { portal: 'design', department: 'Design', role: role || 'DESIGNER', source: 'crm_users' };
-      }
-      if (role.includes('SALES') || role.includes('CRM') || role === 'MANAGER') {
-        // Still check designer roster — some people have dual rows.
-        break;
-      }
-    }
-
+    // Designer roster first — never classify a designer as Sales because of a dual CRM row.
     const [designers]: any = await pool.query(
       `
       SELECT id, name, email
@@ -121,8 +95,40 @@ export async function resolveHallwayIdentity(input: {
       /* DesignMod optional */
     }
 
+    const [crmUsers]: any = await pool.query(
+      `
+      SELECT id, email, username, full_name, role
+      FROM ${crmDb}.users
+      WHERE (? <> '' AND LOWER(TRIM(email)) = ?)
+         OR (? <> '' AND LOWER(TRIM(username)) = ?)
+         OR (? <> '' AND LOWER(TRIM(username)) = ?)
+         OR (? <> '' AND LOWER(TRIM(full_name)) = ?)
+      LIMIT 5
+      `,
+      [email, email, username, username, local, local, name, name]
+    );
+
+    for (const u of Array.isArray(crmUsers) ? crmUsers : []) {
+      const role = normRole(u.role);
+      if (isDesignRole(role) || role === 'DESIGNER') {
+        return { portal: 'design', department: 'Design', role: role || 'DESIGNER', source: 'crm_users' };
+      }
+      if (isSuperAdmin({ role, email: u.email, name: u.full_name })) {
+        return { portal: 'crm', department: 'Sales', role: role || 'ADMIN', source: 'crm_users' };
+      }
+      if (role.includes('PRESALES') || role === 'SALES_EXECUTIVE' || role === 'SALES_MANAGER') {
+        return { portal: 'crm', department: 'Sales', role, source: 'crm_users' };
+      }
+      if (role.includes('SALES') || role.includes('CRM') || role === 'MANAGER') {
+        return { portal: 'crm', department: 'Sales', role, source: 'crm_users' };
+      }
+    }
+
     if (Array.isArray(crmUsers) && crmUsers.length > 0) {
       const role = normRole(crmUsers[0].role) || 'SALES_EXECUTIVE';
+      if (isDesignRole(role)) {
+        return { portal: 'design', department: 'Design', role, source: 'crm_users' };
+      }
       return { portal: 'crm', department: 'Sales', role, source: 'crm_users' };
     }
   } catch (err) {

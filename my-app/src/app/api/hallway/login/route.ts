@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { resolveHallwayIdentity } from '../../../lib/hallwayPortalResolve';
-import { isDesignRole } from '../../../lib/permissions';
+import { resolveHallwayIdentity } from '../../../../lib/hallwayPortalResolve';
+import { isDesignRole } from '../../../../lib/permissions';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,6 +16,10 @@ const CRM_BASE = (
   process.env.NEXT_PUBLIC_CRM_API_URL ||
   'https://hows.hubinterior.com'
 ).replace(/\/$/, '');
+
+/** Keep Hallway login snappy — never wait on a dead Design/CRM host. */
+const AUTH_TIMEOUT_MS = 4500;
+const IDENTITY_TIMEOUT_MS = 2500;
 
 type AuthAttempt = {
   ok: boolean;
@@ -38,13 +42,27 @@ function asRecord(v: unknown): Record<string, unknown> | null {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
 }
 
+async function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((resolve) => {
+        timer = setTimeout(() => resolve(fallback), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function tryDesignLogin(email: string, password: string): Promise<AuthAttempt> {
   try {
     const res = await fetch(`${DESIGN_MODULE_BASE_URL}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(AUTH_TIMEOUT_MS),
       cache: 'no-store',
     });
     const data = asRecord(await res.json().catch(() => null));
@@ -106,7 +124,7 @@ async function tryCrmLogin(identifier: string, password: string): Promise<AuthAt
       method: 'POST',
       headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: identifier, password }),
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(AUTH_TIMEOUT_MS),
       cache: 'no-store',
     });
     const data = asRecord(await res.json().catch(() => null));
@@ -173,11 +191,8 @@ async function tryCrmLogin(identifier: string, password: string): Promise<AuthAt
 }
 
 /**
- * Unified Hallway login.
- * - Designers always get Design portal (CRM tile hidden), even if Design API is down
- *   and Hub auth still works.
- * - Sales get Sales portal.
- * - Error copy is role-aware — never tell a designer "CRM login did not succeed".
+ * Unified Hallway login — identity-first so designers are never routed to CRM
+ * and we do not wait on both Design + CRM when we already know the portal.
  */
 export async function POST(request: Request) {
   try {
@@ -188,31 +203,80 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: 'Email and password are required' }, { status: 400 });
     }
 
-    const [design, crm] = await Promise.all([
-      tryDesignLogin(identifier, password),
-      tryCrmLogin(identifier, password),
-    ]);
+    const emailGuess = identifier.includes('@') ? identifier : '';
+    const usernameGuess = identifier.includes('@') ? identifier.split('@')[0] : identifier;
 
-    const identity = await resolveHallwayIdentity({
-      email: design.user?.email || crm.user?.email || (identifier.includes('@') ? identifier : ''),
-      username: crm.user?.username || (!identifier.includes('@') ? identifier : ''),
-      name: design.user?.name || crm.user?.name,
-      roleHint: design.user?.role || crm.user?.role,
-    });
+    // 1) Resolve portal from DB first (short timeout) — Anushka = DESIGNER.
+    const identity = await withTimeout(
+      resolveHallwayIdentity({
+        email: emailGuess,
+        username: usernameGuess,
+        name: '',
+        roleHint: null,
+      }),
+      IDENTITY_TIMEOUT_MS,
+      null
+    );
+
+    const preferDesign =
+      identity?.portal === 'design' || isDesignRole(identity?.role);
+
+    let design: AuthAttempt = {
+      ok: false,
+      status: 0,
+      outage: false,
+      authFailed: false,
+    };
+    let crm: AuthAttempt = {
+      ok: false,
+      status: 0,
+      outage: false,
+      authFailed: false,
+    };
+
+    if (preferDesign) {
+      // Designer path: Design first; CRM only as Hallway admit fallback (no CRM session).
+      design = await tryDesignLogin(identifier.includes('@') ? identifier : emailGuess || identifier, password);
+      if (!design.ok) {
+        crm = await tryCrmLogin(identifier, password);
+      }
+    } else if (identity?.portal === 'crm') {
+      crm = await tryCrmLogin(identifier, password);
+    } else {
+      // Unknown identity — parallel, but each call is hard-capped.
+      [design, crm] = await Promise.all([
+        tryDesignLogin(identifier.includes('@') ? identifier : identifier, password),
+        tryCrmLogin(identifier, password),
+      ]);
+    }
+
+    const resolvedIdentity =
+      identity ||
+      (await withTimeout(
+        resolveHallwayIdentity({
+          email: design.user?.email || crm.user?.email || emailGuess,
+          username: crm.user?.username || usernameGuess,
+          name: design.user?.name || crm.user?.name,
+          roleHint: design.user?.role || crm.user?.role,
+        }),
+        IDENTITY_TIMEOUT_MS,
+        null
+      ));
 
     const isDesigner =
-      identity?.portal === 'design' ||
+      preferDesign ||
+      resolvedIdentity?.portal === 'design' ||
       isDesignRole(design.user?.role) ||
       isDesignRole(crm.user?.role) ||
-      isDesignRole(identity?.role);
+      isDesignRole(resolvedIdentity?.role);
 
-    // 1) Design auth succeeded → Design portal
+    // Design auth succeeded → Design portal
     if (design.ok && design.sessionId && design.user) {
       return NextResponse.json({
         ok: true,
         portal: 'design',
         department: 'Design',
-        role: design.user.role || identity?.role || 'DESIGNER',
+        role: design.user.role || resolvedIdentity?.role || 'DESIGNER',
         user: {
           email: design.user.email || identifier,
           name: design.user.name || design.user.email || identifier,
@@ -223,26 +287,25 @@ export async function POST(request: Request) {
       });
     }
 
-    // 2) Hub auth succeeded
+    // Hub auth succeeded
     if (crm.ok && crm.token) {
       if (isDesigner) {
-        // Design module may be down — still admit designer to Hallway, never unlock CRM.
+        // Design module down — still admit designer to Hallway; never unlock CRM.
         return NextResponse.json({
           ok: true,
           portal: 'design',
           department: 'Design',
-          role: identity?.role || crm.user?.role || 'DESIGNER',
+          role: resolvedIdentity?.role || crm.user?.role || 'DESIGNER',
           user: {
             email: crm.user?.email || identifier,
             name: crm.user?.name || crm.user?.username || identifier,
-            role: identity?.role || crm.user?.role || 'DESIGNER',
+            role: resolvedIdentity?.role || crm.user?.role || 'DESIGNER',
           },
           designSession: null,
           crmSession: null,
-          notice:
-            design.outage
-              ? 'Design Studio is temporarily unavailable. You can use Hallway; Design module launch may be blocked until it recovers.'
-              : undefined,
+          notice: design.outage
+            ? 'Design Studio is temporarily unavailable. You can use Hallway; Design launch may be blocked until it recovers.'
+            : undefined,
         });
       }
 
@@ -250,11 +313,11 @@ export async function POST(request: Request) {
         ok: true,
         portal: 'crm',
         department: 'Sales',
-        role: identity?.role || crm.user?.role || 'SALES_EXECUTIVE',
+        role: resolvedIdentity?.role || crm.user?.role || 'SALES_EXECUTIVE',
         user: {
           email: crm.user?.email || identifier,
           name: crm.user?.name || crm.user?.username || identifier,
-          role: identity?.role || crm.user?.role || 'SALES_EXECUTIVE',
+          role: resolvedIdentity?.role || crm.user?.role || 'SALES_EXECUTIVE',
           username: crm.user?.username,
           id: crm.user?.id,
         },
@@ -266,22 +329,20 @@ export async function POST(request: Request) {
       });
     }
 
-    // 3) Failures — accurate, role-aware messages
-    if (isDesigner || design.outage) {
-      if (design.outage) {
+    // Failures — role-aware
+    if (isDesigner) {
+      if (design.outage && !crm.ok) {
         return NextResponse.json(
           {
             ok: false,
-            message: 'Design Studio is temporarily unavailable. Please try again shortly.',
+            message:
+              'Design Studio is temporarily unavailable and we could not verify your Hallway access. Please try again shortly.',
           },
           { status: 503 }
         );
       }
       if (design.authFailed || crm.authFailed) {
-        return NextResponse.json(
-          { ok: false, message: 'Invalid email or password' },
-          { status: 401 }
-        );
+        return NextResponse.json({ ok: false, message: 'Invalid email or password' }, { status: 401 });
       }
     }
 
@@ -291,7 +352,7 @@ export async function POST(request: Request) {
         { status: 503 }
       );
     }
-    if (crm.outage) {
+    if (crm.outage && !preferDesign) {
       return NextResponse.json(
         { ok: false, message: 'CRM is temporarily unavailable. Please try again shortly.' },
         { status: 503 }
@@ -307,9 +368,6 @@ export async function POST(request: Request) {
     );
   } catch (err) {
     console.error('[hallway/login]', err);
-    return NextResponse.json(
-      { ok: false, message: 'Login failed. Please try again.' },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, message: 'Login failed. Please try again.' }, { status: 500 });
   }
 }

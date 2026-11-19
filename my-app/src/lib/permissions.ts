@@ -171,6 +171,26 @@ export function isRestrictedFromDesign(
   );
 }
 
+/**
+ * Design Module roles — all of these login via Design Studio only
+ * (never CRM app-switcher), including when Design is temporarily down.
+ */
+const DESIGN_MODULE_ROLES = new Set([
+  'DESIGNER',
+  'DESIGN_MANAGER',
+  'TERRITORIAL_DESIGN_MANAGER',
+  'TERRITORY_DESIGN_MANAGER',
+  'DQC_MANAGER',
+  'DQE',
+  'MMT_MANAGER',
+  'MMT_EXECUTIVE',
+  'PROJECT_MANAGER',
+  'SENIOR_PROJECT_MANAGER',
+  'OPERATION_MANAGER',
+  'OPERATIONS_MANAGER',
+  'FINANCE',
+]);
+
 /** Pure design-side role (not global admin). Used when Design auth is down but Hub auth still works. */
 export function isDesignRole(role?: string | null): boolean {
   const r = String(role || '')
@@ -178,13 +198,20 @@ export function isDesignRole(role?: string | null): boolean {
     .replace(/[\s-]+/g, '_');
   if (!r) return false;
   if (r === 'SUPER_ADMIN' || r === 'ADMIN' || r === 'SALES_ADMIN' || r === 'CRM_ADMIN') return false;
-  // DesignMod uses "designer"; CRM uses "DESIGNER" / "DESIGN_MANAGER".
+  if (DESIGN_MODULE_ROLES.has(r)) return true;
+  // DesignMod sometimes stores lowercase / partial labels.
   return (
-    r === 'DESIGNER' ||
     r.includes('DESIGN') ||
+    r.includes('DQC') ||
+    r.includes('MMT') ||
+    r === 'DQE' ||
     r.includes('ARCHITECT') ||
     r.includes('VISUALIZER') ||
-    r.includes('INTERIOR')
+    r.includes('INTERIOR') ||
+    r === 'PROJECT_MANAGER' ||
+    r === 'SENIOR_PROJECT_MANAGER' ||
+    r.includes('OPERATION') ||
+    r === 'FINANCE'
   );
 }
 
@@ -198,9 +225,11 @@ export function isDesignPortalUser(
 ): boolean {
   if (!user) return false;
   if (isSuperAdmin(user)) return false;
-  if (loginPortal === 'design') return true;
+  // Role / department win over a stale loginPortal=crm (Design-down misclassify).
+  if (isDesignRole(user.role)) return true;
   if (user.department === 'Design') return true;
-  return isDesignRole(user.role);
+  if (loginPortal === 'design') return true;
+  return false;
 }
 
 export function isSalesPortalUser(
@@ -209,12 +238,13 @@ export function isSalesPortalUser(
 ): boolean {
   if (!user) return false;
   if (isSuperAdmin(user)) return false;
+  // Never treat designers as sales — even if session portal was wrongly saved as crm.
   if (isDesignPortalUser(user, loginPortal)) return false;
   if (loginPortal === 'crm') return true;
   if (user.department === 'Sales') return true;
   const r = String(user.role || '')
     .toUpperCase()
     .replace(/[\s-]+/g, '_');
-  return r.includes('SALES') || r.includes('CRM');
+  return r.includes('SALES') || r.includes('CRM') || r.includes('PRESALES');
 }
 

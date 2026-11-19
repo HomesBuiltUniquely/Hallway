@@ -1834,24 +1834,12 @@ export async function proxyToCrm(request: Request, pathParts: string[]): Promise
   }
 
   if (path.includes('hallway/today-events')) {
-    // Hallway BFF builds Today from CRM appointments (IST). Remote Hub may not have
-    // the MeetingBoard todayEvents changes — do not depend on it.
+    // Dynamic: Design portal → Design calendar API; CRM → Hub + CRM appointments BFF.
     const preferToken = clientBearer(request);
-    let hubPayload: any = null;
-    try {
-      const upstream = await fetchWithFallback(
-        'v1/hallway/today-events',
-        incoming.search,
-        'GET',
-        undefined,
-        preferToken
-      );
-      if (upstream.status === 200 && upstream.body?.byteLength) {
-        hubPayload = JSON.parse(Buffer.from(upstream.body).toString('utf-8'));
-      }
-    } catch (err) {
-      console.warn('[hallway/today-events] hub fetch skipped:', err);
-    }
+    const designSession =
+      incoming.searchParams.get('designSession') ||
+      request.headers.get('x-design-session') ||
+      '';
 
     const viewer = {
       name: incoming.searchParams.get('viewerName'),
@@ -1859,10 +1847,54 @@ export async function proxyToCrm(request: Request, pathParts: string[]): Promise
       email: incoming.searchParams.get('viewerEmail'),
       userId: incoming.searchParams.get('viewerId'),
       role: incoming.searchParams.get('viewerRole'),
-      scope: (incoming.searchParams.get('scope') as 'my' | 'team' | 'all' | null) || 'my',
+      department: incoming.searchParams.get('viewerDepartment'),
+      scope: (incoming.searchParams.get('scope') as 'my' | 'team' | 'all' | null) || undefined,
+      branchId: incoming.searchParams.get('branchId'),
     };
 
     try {
+      const { resolvePortalKind } = await import('./hallwayRoleMatrix');
+      const role = viewer.role || '';
+      const dept = (viewer.department || 'Sales') as 'Sales' | 'Design';
+      const portal = resolvePortalKind({ role, department: dept });
+
+      const { todayDataSource, isPresalesRole } = await import('./hallwayRoleMatrix');
+      const source = todayDataSource({ role, department: dept });
+
+      if (source === 'presales_callbacks' || isPresalesRole({ role: viewer.role || '' })) {
+        const { loadTodayPresalesCallbacks } = await import('./hallwayTodayFromPresales');
+        const presalesToday = await loadTodayPresalesCallbacks(viewer);
+        const buf = Buffer.from(JSON.stringify(presalesToday), 'utf-8');
+        const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+        return toResponse(200, 'application/json', ab);
+      }
+
+      if (portal === 'design' && designSession) {
+        const { loadTodayMeetingsFromDesign } = await import('./hallwayTodayFromDesign');
+        const fromDesign = await loadTodayMeetingsFromDesign(viewer, designSession);
+        if (fromDesign && fromDesign.events.length > 0) {
+          const buf = Buffer.from(JSON.stringify(fromDesign), 'utf-8');
+          const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+          return toResponse(200, 'application/json', ab);
+        }
+      }
+
+      let hubPayload: any = null;
+      try {
+        const upstream = await fetchWithFallback(
+          'v1/hallway/today-events',
+          incoming.search,
+          'GET',
+          undefined,
+          preferToken
+        );
+        if (upstream.status === 200 && upstream.body?.byteLength) {
+          hubPayload = JSON.parse(Buffer.from(upstream.body).toString('utf-8'));
+        }
+      } catch (err) {
+        console.warn('[hallway/today-events] hub fetch skipped:', err);
+      }
+
       const { buildTodayEventsPayload } = await import('./hallwayTodayFromCrm');
       const merged = await buildTodayEventsPayload(hubPayload, viewer);
       const buf = Buffer.from(JSON.stringify(merged), 'utf-8');
@@ -1870,13 +1902,12 @@ export async function proxyToCrm(request: Request, pathParts: string[]): Promise
       return toResponse(200, 'application/json', ab);
     } catch (err) {
       console.warn('[hallway/today-events] BFF build failed:', err);
-      if (hubPayload) {
-        const buf = Buffer.from(JSON.stringify(hubPayload), 'utf-8');
-        const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-        return toResponse(200, 'application/json', ab);
-      }
       return Response.json(
-        { dayBasis: 'error', date: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date()), events: [] },
+        {
+          dayBasis: 'error',
+          date: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date()),
+          events: [],
+        },
         { status: 200 }
       );
     }
@@ -1884,14 +1915,70 @@ export async function proxyToCrm(request: Request, pathParts: string[]): Promise
 
   if (path.includes('hallway/actions')) {
     const preferToken = clientBearer(request);
-    const upstream = await fetchWithFallback(
-      'v1/hallway/actions',
-      incoming.search,
-      'GET',
-      undefined,
-      preferToken
-    );
-    return toResponse(upstream.status, upstream.contentType, upstream.body);
+    const viewer = {
+      name: incoming.searchParams.get('viewerName'),
+      username: incoming.searchParams.get('viewerUsername'),
+      email: incoming.searchParams.get('viewerEmail'),
+      userId: incoming.searchParams.get('viewerId'),
+      role: incoming.searchParams.get('viewerRole'),
+      department: incoming.searchParams.get('viewerDepartment'),
+      scope: (incoming.searchParams.get('scope') as 'my' | 'team' | 'all' | null) || undefined,
+      branchId: incoming.searchParams.get('branchId'),
+    };
+    const designSession =
+      incoming.searchParams.get('designSession') ||
+      request.headers.get('x-design-session') ||
+      '';
+
+    try {
+      const { resolvePortalKind } = await import('./hallwayRoleMatrix');
+      const roleAct = viewer.role || '';
+      const deptAct = (viewer.department || 'Sales') as 'Sales' | 'Design';
+      const portal = resolvePortalKind({ role: roleAct, department: deptAct });
+
+      let payload;
+      if (portal === 'design') {
+        const { loadDesignActions } = await import('./hallwayDesignActionsBff');
+        payload = await loadDesignActions(viewer, designSession || null);
+      } else {
+        const { loadCrmFreshActions } = await import('./hallwayCrmFreshActions');
+        const { loadCrmActionsFromDb } = await import('./hallwayCrmActionsFromDb');
+        const { crmActionsStrategy } = await import('./hallwayRoleMatrix');
+        const strategy = crmActionsStrategy(viewer);
+        if (strategy === 'fresh_leads' || strategy === 'oversight') {
+          // Fresh Lead / oversight queues — never Hub "Lead Follow-ups"
+          // (admins/managers oversee owners; they do not personally follow up).
+          payload = await loadCrmFreshActions(viewer);
+        } else {
+          let hubActions: any = null;
+          try {
+            const upstream = await fetchWithFallback(
+              'v1/hallway/actions',
+              incoming.search,
+              'GET',
+              undefined,
+              preferToken
+            );
+            if (upstream.status === 200 && upstream.body?.byteLength) {
+              hubActions = JSON.parse(Buffer.from(upstream.body).toString('utf-8'));
+            }
+          } catch (err) {
+            console.warn('[hallway/actions] hub fetch skipped:', err);
+          }
+          payload = await loadCrmActionsFromDb(viewer, hubActions);
+        }
+      }
+
+      const buf = Buffer.from(JSON.stringify(payload), 'utf-8');
+      const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+      return toResponse(200, 'application/json', ab);
+    } catch (err) {
+      console.warn('[hallway/actions] BFF build failed:', err);
+      return Response.json(
+        { dayBasis: 'error', scoped: true, actions: [] },
+        { status: 200 }
+      );
+    }
   }
 
   const hasBody = method !== 'GET' && method !== 'HEAD';

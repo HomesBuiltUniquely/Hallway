@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { resolveHallwayIdentity } from '../../../lib/hallwayPortalResolve';
+import { resolveHallwayIdentity } from '../../../../lib/hallwayPortalResolve';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

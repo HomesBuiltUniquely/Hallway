@@ -66,11 +66,12 @@ export default function LoginPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ identifier: id, password }),
+        // Cap client wait — designers were stuck on "Signing in..." when Design was down.
+        signal: AbortSignal.timeout(16000),
       });
       const data = await res.json().catch(() => null);
 
       if (!res.ok || !data?.ok) {
-        setIsLoading(false);
         setErrorMessage(
           (data && typeof data.message === 'string' && data.message) ||
             'Invalid email or password'
@@ -100,7 +101,6 @@ export default function LoginPage() {
       login(user.email || id, user.name || user.email || id, role, department);
 
       if (typeof data.notice === 'string' && data.notice) {
-        // Persist briefly so home can show if needed; login navigates away immediately.
         try {
           window.sessionStorage.setItem('hallway-login-notice', data.notice);
         } catch {
@@ -109,9 +109,16 @@ export default function LoginPage() {
       }
 
       router.replace('/');
-    } catch {
+    } catch (err) {
+      const timedOut =
+        err instanceof DOMException && (err.name === 'TimeoutError' || err.name === 'AbortError');
+      setErrorMessage(
+        timedOut
+          ? 'Sign-in is taking too long. Design Studio may be down — please try again in a moment.'
+          : 'Login failed. Please try again.'
+      );
+    } finally {
       setIsLoading(false);
-      setErrorMessage('Login failed. Please try again.');
     }
   };
 
@@ -170,7 +177,7 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 ml-0.5">
-                Username / Email
+                Username or Email
               </label>
               <div className="relative">
                 <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -183,8 +190,8 @@ export default function LoginPage() {
                     setIdentifier(e.target.value);
                     if (errorMessage) setErrorMessage(null);
                   }}
-                  className="w-full pl-10 pr-3.5 py-3 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-2xl text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/40"
-                  placeholder="you@hubinterior.com"
+                  className="w-full pl-10 pr-3.5 py-3 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-slate-400 dark:focus:border-slate-500"
+                  placeholder="username or abc@hubinterior.com"
                 />
               </div>
             </div>
@@ -204,7 +211,7 @@ export default function LoginPage() {
                     setPassword(e.target.value);
                     if (errorMessage) setErrorMessage(null);
                   }}
-                  className="w-full pl-10 pr-11 py-3 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-2xl text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/40"
+                  className="w-full pl-10 pr-11 py-3 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-slate-400 dark:focus:border-slate-500"
                   placeholder="••••••••"
                 />
                 <button
@@ -236,7 +243,7 @@ export default function LoginPage() {
               className="w-full mt-2 py-3.5 rounded-2xl bg-brand hover:bg-brand/90 disabled:opacity-60 text-white text-sm font-bold shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer"
             >
               {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-              <span>Enter Home</span>
+              <span>{isLoading ? 'Signing in...' : 'Enter Home'}</span>
               {!isLoading ? <ArrowRight className="w-4 h-4" /> : null}
             </button>
           </form>

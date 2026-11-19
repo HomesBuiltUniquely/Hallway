@@ -603,6 +603,18 @@ export async function fetchTargets(
   );
 }
 
+function readDesignSessionId(): string | undefined {
+  if (typeof window === 'undefined') return undefined;
+  try {
+    const raw = window.localStorage.getItem('hallway-design-handoff');
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw) as { sessionId?: string };
+    return parsed?.sessionId || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function fetchTodayEvents(
   token: string,
   signal?: AbortSignal,
@@ -612,10 +624,13 @@ export async function fetchTodayEvents(
     email?: string;
     userId?: string | number;
     role?: string;
+    department?: string;
     scope?: 'my' | 'team' | 'all';
+    designSession?: string;
   }
 ): Promise<HallwayTodayEventsResponse> {
   const crmUser = getStoredCrmUser();
+  const designSession = viewer?.designSession || readDesignSessionId();
   const q = hallwayQuery({
     viewerName: viewer?.name || crmDisplayName(crmUser) || undefined,
     viewerUsername:
@@ -632,7 +647,9 @@ export async function fetchTodayEvents(
         ? window.localStorage.getItem(CRM_USER_ID_STORAGE_KEY) || undefined
         : undefined),
     viewerRole: viewer?.role || extractCrmRole(crmUser) || getStoredCrmRole() || undefined,
+    viewerDepartment: viewer?.department,
     scope: viewer?.scope || 'my',
+    designSession,
     _ts: String(Date.now()), // bust intermediary caches
   });
   return crmFetch(`/v1/hallway/today-events${q}`, { signal, cache: 'no-store' }, token);
@@ -641,9 +658,43 @@ export async function fetchTodayEvents(
 export async function fetchActions(
   token: string,
   branchId?: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  viewer?: {
+    name?: string;
+    username?: string;
+    email?: string;
+    userId?: string | number;
+    role?: string;
+    department?: string;
+    scope?: 'my' | 'team' | 'all';
+    designSession?: string;
+  }
 ): Promise<HallwayActionsResponse> {
-  return crmFetch(`/v1/hallway/actions${hallwayQuery({ branchId })}`, { signal }, token);
+  const crmUser = getStoredCrmUser();
+  const designSession = viewer?.designSession || readDesignSessionId();
+  const q = hallwayQuery({
+    branchId,
+    viewerName: viewer?.name || crmDisplayName(crmUser) || undefined,
+    viewerUsername:
+      viewer?.username ||
+      crmUser?.username ||
+      (typeof window !== 'undefined'
+        ? window.localStorage.getItem(CRM_LOGIN_USERNAME_KEY) || undefined
+        : undefined),
+    viewerEmail: viewer?.email || crmUser?.email || undefined,
+    viewerId:
+      viewer?.userId ||
+      crmUser?.id ||
+      (typeof window !== 'undefined'
+        ? window.localStorage.getItem(CRM_USER_ID_STORAGE_KEY) || undefined
+        : undefined),
+    viewerRole: viewer?.role || extractCrmRole(crmUser) || getStoredCrmRole() || undefined,
+    viewerDepartment: viewer?.department,
+    scope: viewer?.scope || 'my',
+    designSession,
+    _ts: String(Date.now()),
+  });
+  return crmFetch(`/v1/hallway/actions${q}`, { signal, cache: 'no-store' }, token);
 }
 
 export async function fetchFeed(

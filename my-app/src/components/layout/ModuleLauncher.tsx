@@ -227,17 +227,21 @@ export default function ModuleLauncher() {
     },
   ];
 
-  // Strict cross-module isolation:
-  // - Admin and Sachin have Design access explicitly removed (CRM + HR only)
-  // - CRM / Sales users see CRM + HR (Design is completely hidden)
-  // - Design users see Design + HR (CRM is completely hidden)
+  // Strict cross-module isolation (never show CRM+Design to non-admins):
+  // - Design portal users → Design + HR only (even when Design Studio is down)
+  // - Sales / CRM portal users → CRM + HR only
+  // - Admin / Sachin → CRM + HR (Design restricted)
+  // - Super → CRM + Design + HR
   const modules = allModules.filter((m) => {
     if (m.id === 'hr') return true;
     if (m.id === 'design' && isRestrictedFromDesign(currentUser)) return false;
     if (isSuper) return true;
-    if (isCrmSales && m.id === 'design') return false;
-    if (isDesigner && m.id === 'crm') return false;
-    return true;
+    // Designers must never see CRM — this was the production bug when Design was down.
+    if (isDesigner) return m.id === 'design';
+    if (isCrmSales) return m.id === 'crm';
+    // Unknown: prefer Design if role/dept looks design, else CRM — never both.
+    if (isDesignPortalUser(currentUser, loginPortal)) return m.id === 'design';
+    return m.id === 'crm';
   });
 
   return (

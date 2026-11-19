@@ -1,13 +1,16 @@
 'use client';
 
 import React, { useState } from 'react';
-import { CheckCircle, ArrowRight, Check, ShieldCheck, ListOrdered, Zap, AlertTriangle, Clock } from 'lucide-react';
+import { CheckCircle, ArrowRight, ShieldCheck, ListOrdered, Zap, AlertTriangle, Clock } from 'lucide-react';
 import { useActions } from '../../hooks/useActions';
 import { useApp } from '../../context/AppContext';
 import { getPersonalizedActions } from '../../lib/hallwayPersonalization';
 import {
   defaultHomeViewMode,
   homeViewModes,
+  showsPersonalHomeToggle,
+  showsScopeToggleStrip,
+  isDesignHomeUser,
   type HallwayHomeViewMode,
 } from '../../lib/hallwayHomePermissions';
 import { CorridorBanner, CorridorSkeleton } from '../hallway/CorridorGate';
@@ -18,13 +21,17 @@ export default function MyActions() {
   const modes = homeViewModes(currentUser);
   const showTeam = modes.includes('team');
   const showAll = modes.includes('all');
-  const { data, loading, error } = useActions();
-  const [viewMode, setViewMode] = useState<HallwayHomeViewMode>(defaultHomeViewMode(currentUser));
+  const showPersonal = showsPersonalHomeToggle(currentUser);
+  const showToggles = showsScopeToggleStrip(currentUser);
+  const defaultMode = defaultHomeViewMode(currentUser);
+  const [viewMode, setViewMode] = useState<HallwayHomeViewMode>(defaultMode);
   const [selectedGroup, setSelectedGroup] = useState<HallwayActionGroup | null>(null);
-  const [completedItemIds, setCompletedItemIds] = useState<Record<string, boolean>>({});
+  const { data, loading, error } = useActions(undefined, viewMode);
 
   const rawGroups = data?.actions || [];
-  const groups = getPersonalizedActions(rawGroups, currentUser, viewMode);
+  const groups = data?.scoped
+    ? rawGroups.filter((g) => (g.items?.length ?? g.count) > 0)
+    : getPersonalizedActions(rawGroups, currentUser, viewMode);
   const primary = groups[0];
 
   const myTotalCount = getPersonalizedActions(rawGroups, currentUser, 'my').reduce(
@@ -32,11 +39,6 @@ export default function MyActions() {
     0
   );
   const allTotalCount = rawGroups.reduce((acc, g) => acc + g.count, 0);
-
-  const toggleItemDone = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setCompletedItemIds((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
 
   return (
     <>
@@ -58,21 +60,23 @@ export default function MyActions() {
           </div>
 
           <div className="flex items-center gap-2">
-            {(showTeam || showAll) && (
+            {showToggles && (showPersonal || showTeam || showAll) && (
               <div className="flex items-center p-0.5 bg-slate-100 dark:bg-slate-800/80 rounded-lg text-[10px] font-bold">
-                <button
-                  type="button"
-                  onClick={() => setViewMode('my')}
-                  className={`px-2 py-0.5 rounded-md transition-all cursor-pointer flex items-center gap-1 ${
-                    viewMode === 'my'
-                      ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs'
-                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                  }`}
-                  title="Show personal action items"
-                >
-                  <ShieldCheck className="w-3 h-3" />
-                  <span>My ({myTotalCount})</span>
-                </button>
+                {showPersonal && (
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('my')}
+                    className={`px-2 py-0.5 rounded-md transition-all cursor-pointer flex items-center gap-1 ${
+                      viewMode === 'my'
+                        ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                    title="Show personal action items"
+                  >
+                    <ShieldCheck className="w-3 h-3" />
+                    <span>My ({myTotalCount})</span>
+                  </button>
+                )}
                 {showTeam && (
                   <button
                     type="button"
@@ -85,7 +89,7 @@ export default function MyActions() {
                     title="Team follow-ups in your scope"
                   >
                     <ListOrdered className="w-3 h-3" />
-                    <span>My team</span>
+                    <span>Team</span>
                   </button>
                 )}
                 {showAll && (
@@ -126,17 +130,11 @@ export default function MyActions() {
               {groups.length === 0 ? (
                 <div className="text-center py-4">
                   <p className="text-xs font-medium text-slate-400">
-                    All caught up! No pending actions for {currentUser?.name?.split(' ')[0] || 'you'} today.
+                    {isDesignHomeUser(currentUser) &&
+                    String(data?.dayBasis || '').toLowerCase().includes('session missing')
+                      ? 'Connect Design Studio once from the app switcher to load your live queues.'
+                      : `All caught up! No pending actions for ${currentUser?.name?.split(' ')[0] || 'you'} today.`}
                   </p>
-                  {showAll && viewMode === 'my' && rawGroups.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setViewMode('all')}
-                      className="text-[11px] text-emerald-600 dark:text-emerald-400 hover:underline mt-1 font-semibold cursor-pointer"
-                    >
-                      Inspect {allTotalCount} corridor lead follow-ups →
-                    </button>
-                  )}
                 </div>
               ) : (
                 groups.map((item) => (
@@ -170,9 +168,19 @@ export default function MyActions() {
               )}
             </div>
             <p className="text-[10px] text-slate-400 mt-2">
-              {viewMode === 'my'
-                ? `Personalized for ${currentUser?.name || 'current session'}`
-                : 'Based on meetingDate = today (IST) across all corridors.'}
+              {viewMode === 'my' && showPersonal
+                ? `Personalized for ${currentUser?.name?.split(' ')[0] || 'you'}`
+                : isDesignHomeUser(currentUser)
+                  ? 'Live from Design Module · role-scoped queues.'
+                  : String(currentUser?.role || '')
+                        .toUpperCase()
+                        .includes('PRESALES')
+                    ? viewMode === 'team'
+                      ? 'Presales team Fresh Data · verify then hand off to Sales.'
+                      : 'Presales Fresh Data · verify then hand off to Sales.'
+                    : viewMode === 'team'
+                      ? 'Team Fresh Lead oversight · CRM.'
+                      : 'Company Fresh Lead oversight · CRM.'}
             </p>
           </>
         )}
@@ -203,63 +211,16 @@ export default function MyActions() {
               </button>
             </div>
 
-            <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
+            <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
               {(selectedGroup.items || []).length === 0 ? (
                 <p className="text-xs text-slate-400 text-center py-6">No items in this group.</p>
               ) : (
-                selectedGroup.items.map((it: HallwayActionItem) => {
-                  const isDone = completedItemIds[it.id] ?? it.done;
-                  return (
-                    <div
-                      key={it.id}
-                      onClick={(e) => toggleItemDone(it.id, e)}
-                      className={`p-3 rounded-xl border text-xs flex items-start gap-3 cursor-pointer transition-all ${
-                        isDone
-                          ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800 text-slate-400 line-through'
-                          : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200/80 dark:border-slate-700 text-slate-800 dark:text-slate-200 hover:border-slate-300'
-                      }`}
-                    >
-                      <div
-                        className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 mt-0.5 transition-all ${
-                          isDone
-                            ? 'bg-emerald-500 border-emerald-500 text-white'
-                            : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900'
-                        }`}
-                      >
-                        {isDone && <Check className="w-3 h-3" />}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold">{it.name}</p>
-                        {it.detail && <p className="text-[11px] text-slate-400 mt-0.5">{it.detail}</p>}
-                        
-                        {/* XP and SLA Badges */}
-                        <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                          {it.dueTime && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-200/60 dark:bg-slate-700/60 text-[10px] text-slate-600 dark:text-slate-300">
-                              <Clock className="w-2.5 h-2.5" />
-                              {it.dueTime}
-                            </span>
-                          )}
-                          {it.xpPoints && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-violet-100 dark:bg-violet-950/50 text-[10px] font-bold text-violet-700 dark:text-violet-300">
-                              <Zap className="w-2.5 h-2.5 fill-violet-500" />
-                              +{it.xpPoints} XP
-                            </span>
-                          )}
-                          {it.xpPenaltyWarning && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-rose-100 dark:bg-rose-950/50 text-[10px] font-bold text-rose-700 dark:text-rose-300">
-                              <AlertTriangle className="w-2.5 h-2.5 text-rose-500" />
-                              {it.xpPenaltyWarning}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
+                selectedGroup.items.map((it: HallwayActionItem) => (
+                  <ActionLeadRow key={it.id} item={it} />
+                ))
               )}
             </div>
-            
+
             <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end">
               <button
                 type="button"
@@ -273,5 +234,77 @@ export default function MyActions() {
         </div>
       )}
     </>
+  );
+}
+
+/**
+ * One row layout for every role (SE / PE / manager / admin).
+ * Assignee avatar only when present (oversight). Same due + status pill chrome.
+ */
+function ActionLeadRow({ item }: { item: HallwayActionItem }) {
+  const initial = (item.assignee || '?').trim().charAt(0).toUpperCase() || '?';
+  const status = item.statusLabel;
+
+  return (
+    <div className="p-3 rounded-xl border border-slate-200/80 dark:border-slate-700 bg-white dark:bg-slate-800/60 text-xs">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold text-sm text-slate-900 dark:text-slate-100 truncate">{item.name}</p>
+          {item.assignee ? (
+            <div className="mt-1.5 flex items-center gap-1.5 min-w-0">
+              <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-200 dark:bg-slate-700 text-[10px] font-bold text-slate-600 dark:text-slate-200">
+                {initial}
+              </span>
+              <span className="truncate text-[11px] text-slate-600 dark:text-slate-300">{item.assignee}</span>
+            </div>
+          ) : item.detail ? (
+            <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">{item.detail}</p>
+          ) : null}
+          {(item.xpPoints || item.xpPenaltyWarning) && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              {item.xpPoints ? (
+                <span className="inline-flex items-center gap-1 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
+                  <Zap className="h-2.5 w-2.5 fill-violet-500" />
+                  +{item.xpPoints} XP
+                </span>
+              ) : null}
+              {item.xpPenaltyWarning ? (
+                <span className="inline-flex items-center gap-1 rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold text-rose-700 dark:bg-rose-950/50 dark:text-rose-300">
+                  <AlertTriangle className="h-2.5 w-2.5 text-rose-500" />
+                  {item.xpPenaltyWarning}
+                </span>
+              ) : null}
+            </div>
+          )}
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          {item.dueDateLabel ? (
+            <span className="inline-flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400">
+              <Clock className="h-3 w-3" />
+              Due {item.dueDateLabel}
+            </span>
+          ) : null}
+          {status ? <StatusPill label={status} /> : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatusPill({ label }: { label: string }) {
+  const overdue = label === 'Overdue';
+  const today = label === 'Due today';
+  return (
+    <span
+      className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold ${
+        overdue
+          ? 'bg-rose-500 text-white'
+          : today
+            ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300'
+            : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+      }`}
+    >
+      {label}
+    </span>
   );
 }

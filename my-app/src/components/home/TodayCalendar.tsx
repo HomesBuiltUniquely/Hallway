@@ -8,8 +8,12 @@ import { getPersonalizedSchedule } from '../../lib/hallwayPersonalization';
 import {
   defaultHomeViewMode,
   homeViewModes,
+  showsPersonalHomeToggle,
+  showsScopeToggleStrip,
+  todayCardUi,
   type HallwayHomeViewMode,
 } from '../../lib/hallwayHomePermissions';
+import { isPresalesRole } from '../../lib/hallwayRoleMatrix';
 import { formatExactDateIst, formatIsoDateIst, formatPersonName } from '../../lib/hallwayDisplay';
 import { CorridorBanner, CorridorSkeleton } from '../hallway/CorridorGate';
 import type { HallwayTodayEvent } from '../../types/hallway';
@@ -19,16 +23,26 @@ export default function TodayCalendar() {
   const modes = homeViewModes(currentUser);
   const showTeam = modes.includes('team');
   const showAll = modes.includes('all');
+  const showPersonal = showsPersonalHomeToggle(currentUser);
+  const showToggles = showsScopeToggleStrip(currentUser);
+  const minimalToday = todayCardUi(currentUser) === 'minimal';
+  const presalesToday = isPresalesRole(currentUser);
+  const defaultMode = defaultHomeViewMode(currentUser);
+  const adminAllOnly = showAll && !showToggles;
+  const teamOnly = showTeam && !showAll && !showToggles;
+  const personalOnly = showPersonal && !showTeam && !showAll && !showToggles;
   const [showModal, setShowModal] = useState(false);
-  const [viewMode, setViewMode] = useState<HallwayHomeViewMode>(defaultHomeViewMode(currentUser));
+  const [viewMode, setViewMode] = useState<HallwayHomeViewMode>(defaultMode);
   const { data, loading, error } = useTodayEvents(viewMode);
 
   const rawEvents = data?.events || [];
-  // BFF already scopes by viewer identity when scoped=true — don't drop rows again.
   const events = data?.scoped
     ? rawEvents
     : getPersonalizedSchedule(rawEvents, currentUser, viewMode);
-  const hubCount = rawEvents.length;
+  // Badge for current scope must match the list — never company-wide while empty team.
+  const scopeCount = events.length;
+  const companyCount = data?.companyTotal ?? data?.hubTotal ?? rawEvents.length;
+  const hubCount = viewMode === 'all' || adminAllOnly ? companyCount : scopeCount;
 
   return (
     <>
@@ -41,51 +55,67 @@ export default function TodayCalendar() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <div className="flex items-center rounded-lg bg-slate-100/80 dark:bg-surface-muted p-0.5 text-[10px] font-semibold">
-              <button
-                type="button"
-                onClick={() => setViewMode('my')}
-                className={`px-2.5 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1 ${
-                  viewMode === 'my'
-                    ? 'bg-brand-soft text-brand shadow-xs'
-                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                }`}
-                title="Show meetings related to me"
-              >
-                <User className={`w-3 h-3 ${viewMode === 'my' ? 'text-brand' : 'text-slate-400'}`} />
-                <span>My Schedule</span>
-              </button>
-              {showTeam && (
-                <button
-                  type="button"
-                  onClick={() => setViewMode('team')}
-                  className={`px-2.5 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1 ${
-                    viewMode === 'team'
-                      ? 'bg-brand-soft text-brand shadow-xs'
-                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                  }`}
-                  title="Meetings in your team scope"
-                >
-                  <Users className={`w-3 h-3 ${viewMode === 'team' ? 'text-brand' : 'text-slate-400'}`} />
-                  <span>My team</span>
-                </button>
-              )}
-              {showAll && (
-                <button
-                  type="button"
-                  onClick={() => setViewMode('all')}
-                  className={`px-2.5 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1 ${
-                    viewMode === 'all'
-                      ? 'bg-brand-soft text-brand shadow-xs'
-                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                  }`}
-                  title="Show company-wide meetings across all hubs"
-                >
-                  <Users className={`w-3 h-3 ${viewMode === 'all' ? 'text-brand' : 'text-slate-400'}`} />
-                  <span>All Hubs ({hubCount})</span>
-                </button>
-              )}
-            </div>
+            {adminAllOnly ? (
+              <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-300 px-2 py-1">
+                All Hubs ({hubCount})
+              </span>
+            ) : teamOnly ? (
+              <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-300 px-2 py-1">
+                {presalesToday ? 'Team callbacks' : 'Team schedule'} ({hubCount})
+              </span>
+            ) : personalOnly ? (
+              <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-300 px-2 py-1">
+                {presalesToday ? 'My callbacks' : 'My Schedule'} ({hubCount})
+              </span>
+            ) : showToggles ? (
+              <div className="flex items-center rounded-lg bg-slate-100/80 dark:bg-surface-muted p-0.5 text-[10px] font-semibold">
+                {showPersonal && (
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('my')}
+                    className={`px-2.5 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1 ${
+                      viewMode === 'my'
+                        ? 'bg-brand-soft text-brand shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                    title="Show meetings related to me"
+                  >
+                    <User className={`w-3 h-3 ${viewMode === 'my' ? 'text-brand' : 'text-slate-400'}`} />
+                    <span>{presalesToday ? 'My callbacks' : 'My Schedule'}</span>
+                  </button>
+                )}
+                {showTeam && (
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('team')}
+                    className={`px-2.5 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1 ${
+                      viewMode === 'team'
+                        ? 'bg-brand-soft text-brand shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                    title="Meetings in your team scope"
+                  >
+                    <Users className={`w-3 h-3 ${viewMode === 'team' ? 'text-brand' : 'text-slate-400'}`} />
+                    <span>{presalesToday ? 'Team callbacks' : 'Team schedule'}</span>
+                  </button>
+                )}
+                {showAll && (
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('all')}
+                    className={`px-2.5 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1 ${
+                      viewMode === 'all'
+                        ? 'bg-brand-soft text-brand shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                    title="Show company-wide meetings across all hubs"
+                  >
+                    <Users className={`w-3 h-3 ${viewMode === 'all' ? 'text-brand' : 'text-slate-400'}`} />
+                    <span>All Hubs ({hubCount})</span>
+                  </button>
+                )}
+              </div>
+            ) : null}
 
             <button
               type="button"
@@ -104,22 +134,30 @@ export default function TodayCalendar() {
         ) : (
           <>
             <CorridorBanner error={error} />
-            {events.length === 0 ? (
+            {minimalToday && events.length === 0 && !presalesToday ? (
+              <div className="text-center py-3">
+                <p className="text-xs font-medium text-slate-400">Client meetings are on your team&apos;s calendars.</p>
+              </div>
+            ) : events.length === 0 ? (
               <div className="text-center py-5">
                 <p className="text-xs font-medium text-slate-400">
-                  {viewMode === 'my'
-                    ? 'No meetings scheduled for you today.'
-                    : viewMode === 'team'
-                      ? 'No team meetings on the calendar today.'
-                      : 'No events scheduled across hubs today.'}
+                  {presalesToday
+                    ? viewMode === 'my'
+                      ? 'No presales callbacks due today.'
+                      : 'No team callbacks due today.'
+                    : viewMode === 'my'
+                      ? 'No meetings scheduled for you today.'
+                      : viewMode === 'team'
+                        ? 'No team meetings on the calendar today.'
+                        : 'No events scheduled across hubs today.'}
                 </p>
-                {showAll && viewMode === 'my' && rawEvents.length > 0 && (
+                {showAll && showPersonal && viewMode === 'my' && companyCount > 0 && (
                   <button
                     type="button"
                     onClick={() => setViewMode('all')}
                     className="text-[11px] text-brand hover:underline mt-1.5 font-semibold cursor-pointer"
                   >
-                    View {rawEvents.length} company-wide meetings →
+                    View {companyCount} company-wide meetings →
                   </button>
                 )}
               </div>
@@ -131,6 +169,7 @@ export default function TodayCalendar() {
                     ev={ev}
                     isLast={index === list.length - 1}
                     onOpenCalendar={() => setShowModal(true)}
+                    presales={presalesToday}
                   />
                 ))}
               </div>
@@ -149,11 +188,15 @@ export default function TodayCalendar() {
                 </div>
                 <div>
                   <h3 className="font-bold text-slate-900 dark:text-white text-sm">
-                    {viewMode === 'my'
-                      ? "Today's Scheduled Meetings"
-                      : viewMode === 'team'
-                        ? "My team's meetings today"
-                        : 'All Hubs Scheduled Meetings'}
+                    {presalesToday
+                      ? viewMode === 'my'
+                        ? 'My callbacks due today'
+                        : 'Team callbacks due today'
+                      : viewMode === 'my'
+                        ? "Today's Scheduled Meetings"
+                        : viewMode === 'team'
+                          ? "My team's meetings today"
+                          : 'All Hubs Scheduled Meetings'}
                   </h3>
                   <p className="text-[11px] text-slate-400">
                     {formatExactDateIst()} · {formatIsoDateIst()}
@@ -169,19 +212,21 @@ export default function TodayCalendar() {
               </button>
             </div>
 
-            {(showTeam || showAll) && (
+            {showToggles ? (
               <div className="flex items-center p-1 bg-slate-100 dark:bg-surface-muted rounded-xl mb-4 text-xs font-bold">
-                <button
-                  type="button"
-                  onClick={() => setViewMode('my')}
-                  className={`flex-1 py-1.5 rounded-lg text-center transition-all cursor-pointer ${
-                    viewMode === 'my'
-                      ? 'bg-brand-soft text-brand shadow-xs'
-                      : 'text-slate-500'
-                  }`}
-                >
-                  My Schedule
-                </button>
+                {showPersonal && (
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('my')}
+                    className={`flex-1 py-1.5 rounded-lg text-center transition-all cursor-pointer ${
+                      viewMode === 'my'
+                        ? 'bg-brand-soft text-brand shadow-xs'
+                        : 'text-slate-500'
+                    }`}
+                  >
+                    {presalesToday ? 'My callbacks' : 'My Schedule'}
+                  </button>
+                )}
                 {showTeam && (
                   <button
                     type="button"
@@ -192,7 +237,7 @@ export default function TodayCalendar() {
                         : 'text-slate-500'
                     }`}
                   >
-                    My team
+                    {presalesToday ? 'Team callbacks' : 'My team'}
                   </button>
                 )}
                 {showAll && (
@@ -209,14 +254,16 @@ export default function TodayCalendar() {
                   </button>
                 )}
               </div>
-            )}
+            ) : null}
 
             {events.length === 0 ? (
-              <p className="text-xs text-slate-400 text-center py-8">No scheduled meetings for today.</p>
+              <p className="text-xs text-slate-400 text-center py-8">
+                {presalesToday ? 'No presales callbacks due today.' : 'No scheduled meetings for today.'}
+              </p>
             ) : (
               <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
                 {events.map((ev) => {
-                  const view = meetingDisplay(ev);
+                  const view = eventDisplay(ev, presalesToday);
                   return (
                     <div
                       key={ev.id}
@@ -227,7 +274,7 @@ export default function TodayCalendar() {
                           <Clock className="w-3.5 h-3.5 text-brand" />
                           {ev.time}
                         </span>
-                        <MeetingTypeBadge type={view.meetingType} />
+                        <MeetingTypeBadge type={view.meetingType} presales={presalesToday} />
                       </div>
                       <p className="font-semibold text-slate-800 dark:text-slate-200 text-sm">
                         {view.clientName}
@@ -235,7 +282,7 @@ export default function TodayCalendar() {
                       {view.peopleLine ? (
                         <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">{view.peopleLine}</p>
                       ) : null}
-                      {ev.linkUrl ? (
+                      {!presalesToday && ev.linkUrl ? (
                         <a
                           href={ev.linkUrl}
                           target="_blank"
@@ -253,7 +300,11 @@ export default function TodayCalendar() {
             )}
 
             <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center text-xs">
-              <span className="text-[11px] text-slate-400">Total {events.length} meetings scheduled</span>
+              <span className="text-[11px] text-slate-400">
+                {presalesToday
+                  ? `Total ${events.length} callbacks due today`
+                  : `Total ${events.length} meetings scheduled`}
+              </span>
               <button
                 type="button"
                 onClick={() => setShowModal(false)}
@@ -273,13 +324,15 @@ function CompactMeetingRow({
   ev,
   isLast,
   onOpenCalendar,
+  presales,
 }: {
   ev: HallwayTodayEvent;
   isLast: boolean;
   onOpenCalendar: () => void;
+  presales?: boolean;
 }) {
   const startTime = ev.time ? ev.time.split('–')[0].split('-')[0].trim() : '—';
-  const view = meetingDisplay(ev);
+  const view = eventDisplay(ev, Boolean(presales));
 
   return (
     <div className="relative flex items-start gap-3 pb-4 last:pb-0">
@@ -304,8 +357,8 @@ function CompactMeetingRow({
           </p>
         ) : null}
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-          <MeetingTypeBadge type={view.meetingType} />
-          {ev.linkUrl ? (
+          <MeetingTypeBadge type={view.meetingType} presales={presales} />
+          {!presales && ev.linkUrl ? (
             <a
               href={ev.linkUrl}
               target="_blank"
@@ -323,7 +376,14 @@ function CompactMeetingRow({
   );
 }
 
-function MeetingTypeBadge({ type }: { type: string }) {
+function MeetingTypeBadge({ type, presales }: { type: string; presales?: boolean }) {
+  if (presales) {
+    return (
+      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold bg-sky-50 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300">
+        {type}
+      </span>
+    );
+  }
   const virtual = /virtual|online|meet/i.test(type);
   return (
     <span
@@ -343,13 +403,26 @@ function isSystemSalesLabel(name: string): boolean {
   return n === 'admin' || n === 'superadmin' || n === 'user';
 }
 
-function meetingDisplay(ev: HallwayTodayEvent) {
+/** Presales = verification callbacks (owner only). Sales CRM = appointments (Sales + Designer). */
+function eventDisplay(ev: HallwayTodayEvent, presales: boolean) {
+  const isCallback = presales || ev.category === 'callback';
   const parsed = parseClientAndLead(ev.clientName || ev.title || '', ev.leadId);
+
+  if (isCallback) {
+    const ownerRaw = (ev.crmPersonName || '').trim();
+    const owner = ownerRaw ? formatPersonName(ownerRaw) || ownerRaw : '';
+    const stage = String(ev.meetingType || 'Fresh Data').trim() || 'Fresh Data';
+    return {
+      clientName: parsed.clientName,
+      peopleLine: owner ? `Presales: ${owner}` : undefined,
+      meetingType: stage,
+    };
+  }
+
   const salesRaw = (ev.crmPersonName || '').trim();
   const designerRaw = (ev.designerName || '').trim();
   const sales = salesRaw ? formatPersonName(salesRaw) : '';
   const designer = designerRaw ? formatPersonName(designerRaw) : '';
-  // Always surface both roles when present (CRM Meeting Management parity).
   const people: string[] = [];
   if (sales && !isSystemSalesLabel(sales) && !isLeadTypeLabel(sales)) {
     people.push(`Sales: ${sales}`);

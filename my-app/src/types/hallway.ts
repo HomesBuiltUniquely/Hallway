@@ -198,6 +198,13 @@ export interface HallwayTodayEventsResponse {
   date?: string;
   /** When true, server already applied My / team / all scope — skip client re-filter. */
   scoped?: boolean;
+  /**
+   * Count of events in the current scope (my / team / all).
+   * Must match `events.length` — never a wider company total while the list is scoped.
+   */
+  hubTotal?: number;
+  /** Unscoped company-wide meeting count (for All Hubs badge when toggles exist). */
+  companyTotal?: number;
   events: HallwayTodayEvent[];
 }
 
@@ -208,7 +215,14 @@ export interface HallwayActionItem {
   done: boolean;
   xpPoints?: number;
   xpPenaltyWarning?: string;
+  /** Clock time for personal queues (executives). Prefer dueDateLabel for oversight. */
   dueTime?: string;
+  /** Calendar due label for managers/admins, e.g. "05 Nov" / "Today". */
+  dueDateLabel?: string;
+  /** Assigned sales / presales owner — required for oversight lists. */
+  assignee?: string;
+  /** Overdue / Due today / No due date — drives the status pill. */
+  statusLabel?: 'Overdue' | 'Due today' | 'No due date';
 }
 
 export interface HallwayActionGroup {
@@ -223,6 +237,7 @@ export interface HallwayActionGroup {
 
 export interface HallwayActionsResponse {
   dayBasis?: string;
+  scoped?: boolean;
   actions: HallwayActionGroup[];
 }
 

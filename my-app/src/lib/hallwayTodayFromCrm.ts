@@ -5,6 +5,10 @@ import {
   mergeTodayEventsWithAppointments,
 } from './hallwayTodayMerge';
 import type { HallwayTodayEvent, HallwayTodayEventsResponse } from '../types/hallway';
+import { istTodayYmd } from './hallwayIstDates';
+import { identityTokens, matchesViewer } from './hallwayIdentity';
+import { resolveHallwayScope } from './resolveHallwayScope';
+import type { HallwayHomeViewMode } from './hallwayRoleMatrix';
 
 function istTodayBounds(): { dateYmd: string; start: Date; end: Date } {
   const dateYmd = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
@@ -35,56 +39,6 @@ function humanMeetingType(raw?: string | null): string {
   if (key.includes('SITE')) return 'Site visit';
   const spaced = String(raw).trim().replace(/_/g, ' ');
   return spaced.charAt(0).toUpperCase() + spaced.slice(1).toLowerCase();
-}
-
-function identityTokens(...parts: Array<string | null | undefined>): Set<string> {
-  const out = new Set<string>();
-  for (const part of parts) {
-    const raw = String(part || '')
-      .trim()
-      .toLowerCase();
-    if (!raw) continue;
-    const local = raw.includes('@') ? raw.split('@')[0] : raw;
-    const spaced = local.replace(/[_.\-]+/g, ' ').replace(/\s+/g, ' ').trim();
-    const compact = spaced.replace(/\s+/g, '');
-    if (spaced) out.add(spaced);
-    if (compact.length > 2) out.add(compact);
-    const first = spaced.split(' ')[0] || '';
-    if (first.length > 2) out.add(first);
-  }
-  return out;
-}
-
-function matchesViewer(
-  tokens: Set<string>,
-  ...fields: Array<string | null | undefined>
-): boolean {
-  if (tokens.size === 0) return true;
-  for (const field of fields) {
-    const text = String(field || '')
-      .toLowerCase()
-      .replace(/[_.\-]+/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    if (!text) continue;
-    const compact = text.replace(/\s+/g, '');
-    const numericField = /^\d+$/.test(compact);
-    for (const token of tokens) {
-      if (!token || token.length < 2) continue;
-      // User ids must match exactly — "176".includes("1") is a false positive.
-      if (numericField || /^\d+$/.test(token)) {
-        if (compact === token) return true;
-        continue;
-      }
-      if (text === token || compact === token) return true;
-      // Require 3+ chars for substring match (avoid short-fragment hits).
-      if (token.length >= 3 && text.length >= 3) {
-        if (text.includes(token) || compact.includes(token.replace(/\s+/g, ''))) return true;
-        if (token.includes(text) || token.replace(/\s+/g, '').includes(compact)) return true;
-      }
-    }
-  }
-  return false;
 }
 
 /** System / placeholder CRM accounts — never show these as the salesperson. */
@@ -145,7 +99,9 @@ export type TodayViewer = {
   email?: string | null;
   userId?: string | number | null;
   role?: string | null;
-  scope?: 'my' | 'team' | 'all' | null;
+  department?: string | null;
+  scope?: import('./hallwayRoleMatrix').HallwayHomeViewMode | null;
+  branchId?: string | null;
 };
 
 /**
@@ -243,17 +199,8 @@ export async function loadTodayMeetingsFromCrm(
     [start, end]
   );
 
-  const role = String(viewer?.role || '')
-    .toUpperCase()
-    .replace(/[\s-]+/g, '_');
-  const scope =
-    viewer?.scope ||
-    (role.includes('ADMIN') || role === 'SALES_ADMIN' || role === 'SUPER_ADMIN'
-      ? 'all'
-      : role.includes('MANAGER')
-        ? 'team'
-        : 'my');
-
+  const resolved = await resolveHallwayScope(viewer, viewer?.scope, viewer?.branchId);
+  const scope = resolved.mode;
   const tokens = identityTokens(
     viewer?.name,
     viewer?.username,
@@ -262,6 +209,7 @@ export async function loadTodayMeetingsFromCrm(
   );
 
   const events: HallwayTodayEvent[] = [];
+  let companyTotal = 0;
   for (const r of Array.isArray(rows) ? rows : []) {
     const startTime = r.start_time ? new Date(r.start_time) : null;
     if (!startTime || Number.isNaN(startTime.getTime())) continue;
@@ -270,7 +218,26 @@ export async function loadTodayMeetingsFromCrm(
     const designerName = r.designer_name ? formatPersonName(r.designer_name) : '';
     const assigneeRaw = String(r.lead_assignee || '').trim();
 
-    if (scope === 'my' && tokens.size > 0) {
+    const rawClientPre = String(r.resolved_customer_name || r.customer_name || '').trim();
+    const isOrphanPre = !r.lead_id && (!rawClientPre || isPlaceholderClient(rawClientPre));
+    // Company-wide tally (before my/team filter) — never show this as "Team schedule (N)".
+    if (!isOrphanPre) companyTotal += 1;
+
+    if (resolved.portal === 'design') {
+      if (scope === 'my') {
+        const mine = matchesViewer(tokens, designerName, r.designer_name);
+        if (!mine) continue;
+      } else if (scope === 'team' && resolved.design) {
+        const dname = String(r.designer_name || designerName || '')
+          .trim()
+          .toLowerCase();
+        const inTeam =
+          dname &&
+          (resolved.design.designerNames.has(dname) ||
+            [...resolved.design.designerNames].some((n) => dname.includes(n) || n.includes(dname)));
+        if (!inTeam) continue;
+      }
+    } else if (scope === 'my' && tokens.size > 0) {
       const mine = matchesViewer(
         tokens,
         salesName,
@@ -283,9 +250,16 @@ export async function loadTodayMeetingsFromCrm(
         r.sales_user_id != null ? String(r.sales_user_id) : null
       );
       if (!mine) continue;
+    } else if (scope === 'team' && resolved.crm) {
+      const salesUid = r.sales_user_id != null ? Number(r.sales_user_id) : NaN;
+      const idMatch = Number.isFinite(salesUid) && resolved.crm.salesUserIds.has(salesUid);
+      const labelMatch = [...resolved.crm.assigneeLabels].some((lbl) => {
+        const blob = `${assigneeRaw} ${salesName}`;
+        return blob.toLowerCase().includes(lbl.toLowerCase());
+      });
+      if (!idMatch && !labelMatch) continue;
     }
 
-    // Skip orphan calendar rows (no lead + no real client) — formatPersonName('') becomes "User".
     const rawClient = String(r.resolved_customer_name || r.customer_name || '').trim();
     if (!r.lead_id && (!rawClient || isPlaceholderClient(rawClient))) {
       continue;
@@ -301,7 +275,7 @@ export async function loadTodayMeetingsFromCrm(
     const typeLabel = humanMeetingType(r.meeting_type);
     const timeStr =
       endTime && !Number.isNaN(endTime.getTime())
-        ? `${formatIstTime(startTime)} – ${formatIstTime(endTime)}`
+        ? `${formatIstTime(startTime)} - ${formatIstTime(endTime)}`
         : formatIstTime(startTime);
 
     events.push({
@@ -326,6 +300,9 @@ export async function loadTodayMeetingsFromCrm(
     dayBasis: 'Asia/Kolkata — CRM appointment table (Hallway BFF)',
     date: dateYmd,
     scoped: true,
+    // Scoped count must match the list (fixes Team schedule (6) with empty body).
+    hubTotal: events.length,
+    companyTotal,
     events,
   };
 }

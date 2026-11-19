@@ -74,7 +74,7 @@ function isLegacyCrmAnnouncement(post: { id?: string; title?: string; content?: 
     content.includes('hub crosses')
   );
 }
-import { isSuperAdmin } from '../lib/permissions';
+import { isDesignRole, isSuperAdmin } from '../lib/permissions';
 import { getPersonalizedActions } from '../lib/hallwayPersonalization';
 
 function reactionViewerKey(user?: { email?: string; id?: string | number; name?: string } | null) {
@@ -311,7 +311,11 @@ function userFromSession(
     .map((part) => part[0]?.toUpperCase() ?? '')
     .join('');
 
-  if (department === 'Design' || email?.toLowerCase().includes('maya')) {
+  const looksDesigner =
+    department === 'Design' ||
+    isDesignRole(role) ||
+    email?.toLowerCase().includes('maya');
+  if (looksDesigner) {
     return {
       ...designerUserMock,
       id: 'u-design-session',

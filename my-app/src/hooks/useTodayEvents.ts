@@ -20,9 +20,18 @@ export function useTodayEvents(scope: HallwayHomeViewMode = 'my') {
         username,
         email: currentUser?.email,
         role: currentUser?.role,
+        department: currentUser?.department,
         userId: currentUser?.id,
       }),
-    [scope, currentUser?.name, username, currentUser?.email, currentUser?.role, currentUser?.id]
+    [
+      scope,
+      currentUser?.name,
+      username,
+      currentUser?.email,
+      currentUser?.role,
+      currentUser?.department,
+      currentUser?.id,
+    ]
   );
 
   return { data, loading, error, refetch };
