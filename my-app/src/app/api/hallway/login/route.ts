@@ -15,7 +15,9 @@ const DESIGN_MODULE_BASE_URLS = Array.from(
     [
       process.env.DESIGN_MODULE_BASE_URL,
       process.env.DESIGN_API_URL,
+      process.env.DESIGN_MODULE_FRONTEND_URL,
       'https://api.hubinterior.com',
+      'https://design.hubinterior.com',
     ]
       .filter(Boolean)
       .map((u) => stripSlash(String(u)))
@@ -31,7 +33,7 @@ const CRM_BASE = stripSlash(
 /** Vercel → Design can be slower than local; 4.5s was aborting healthy Design API. */
 const DESIGN_AUTH_TIMEOUT_MS = 12000;
 const CRM_AUTH_TIMEOUT_MS = 8000;
-const IDENTITY_TIMEOUT_MS = 3000;
+const IDENTITY_TIMEOUT_MS = 8000;
 
 type AuthAttempt = {
   ok: boolean;
@@ -78,10 +80,12 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Pro
 
 async function tryDesignLoginOnce(baseUrl: string, email: string, password: string): Promise<AuthAttempt> {
   try {
+    const local = email.includes('@') ? email.split('@')[0] : email;
+    const emailValue = email.includes('@') ? email : `${email}@hubinterior.com`;
     const res = await fetch(`${baseUrl}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email: emailValue, username: local, password }),
       signal: AbortSignal.timeout(DESIGN_AUTH_TIMEOUT_MS),
       cache: 'no-store',
     });
@@ -90,8 +94,8 @@ async function tryDesignLoginOnce(baseUrl: string, email: string, password: stri
       return {
         ok: false,
         status: res.status,
-        outage: res.status >= 500,
-        authFailed: res.status === 401 || res.status === 400,
+        outage: res.status >= 500 || res.status === 404,
+        authFailed: res.status === 401,
         baseUrl,
         message:
           typeof data?.message === 'string'
@@ -161,12 +165,16 @@ async function tryDesignLogin(email: string, password: string): Promise<AuthAtte
   return last;
 }
 
-async function tryCrmLogin(identifier: string, password: string): Promise<AuthAttempt> {
+async function tryCrmLoginOnce(username: string, password: string, email?: string): Promise<AuthAttempt> {
   try {
     const res = await fetch(`${CRM_BASE}/api/auth/login`, {
       method: 'POST',
       headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: identifier, password }),
+      body: JSON.stringify({
+        username,
+        password,
+        ...(email ? { email } : {}),
+      }),
       signal: AbortSignal.timeout(CRM_AUTH_TIMEOUT_MS),
       cache: 'no-store',
     });
@@ -220,7 +228,7 @@ async function tryCrmLogin(identifier: string, password: string): Promise<AuthAt
               undefined,
             id: (userRaw.id as number | string | undefined) ?? undefined,
           }
-        : { username: identifier },
+        : { username },
     };
   } catch (err) {
     console.warn('[hallway/login] CRM auth unreachable', {
@@ -235,6 +243,19 @@ async function tryCrmLogin(identifier: string, password: string): Promise<AuthAt
       message: 'CRM is temporarily unavailable.',
     };
   }
+}
+
+async function tryCrmLogin(identifier: string, password: string): Promise<AuthAttempt> {
+  const email = identifier.includes('@') ? identifier : '';
+  const local = identifier.includes('@') ? identifier.split('@')[0] : identifier;
+  const first = await tryCrmLoginOnce(identifier, password, email || undefined);
+  if (first.ok || first.outage) return first;
+  if (local && local !== identifier) {
+    const second = await tryCrmLoginOnce(local, password, email || undefined);
+    if (second.ok || second.outage) return second;
+    if (second.authFailed) return second;
+  }
+  return first;
 }
 
 /**
@@ -283,22 +304,26 @@ export async function POST(request: Request) {
       authFailed: false,
     };
 
+    const designEmail = identifier.includes('@') ? identifier : emailGuess || identifier;
+
     if (preferCrm) {
       // Sales / Presales — CRM only. Never call Design (avoids false Design 503).
       crm = await tryCrmLogin(identifier, password);
     } else if (preferDesign) {
-      const designEmail = identifier.includes('@') ? identifier : emailGuess || identifier;
-      design = await tryDesignLogin(designEmail, password);
-      if (!design.ok) {
-        crm = await tryCrmLogin(identifier, password);
-      }
+      // Design + Hub in parallel so a Design outage does not block Hallway if Hub still auth's.
+      const [designResult, crmResult] = await Promise.all([
+        tryDesignLogin(designEmail, password),
+        tryCrmLogin(identifier, password),
+      ]);
+      design = designResult;
+      crm = crmResult;
     } else {
-      // Unknown identity: CRM first (majority of Hallway users), then Design if needed.
-      crm = await tryCrmLogin(identifier, password);
-      if (!crm.ok) {
-        const designEmail = identifier.includes('@') ? identifier : emailGuess || identifier;
-        design = await tryDesignLogin(designEmail, password);
-      }
+      const [crmResult, designResult] = await Promise.all([
+        tryCrmLogin(identifier, password),
+        tryDesignLogin(designEmail, password),
+      ]);
+      crm = crmResult;
+      design = designResult;
     }
 
     const resolvedIdentity =
@@ -396,7 +421,7 @@ export async function POST(request: Request) {
           {
             ok: false,
             message:
-              'Design Studio could not be reached from Hallway. Try https://design.hubinterior.com/login or retry in a moment.',
+              'Design Studio is temporarily unavailable and we could not verify your Hallway access. Sign in at https://design.hubinterior.com/login, then retry Hallway — or try again shortly.',
             designBaseTried: DESIGN_MODULE_BASE_URLS,
           },
           { status: 503 }

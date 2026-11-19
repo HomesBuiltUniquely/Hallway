@@ -67,7 +67,7 @@ export default function LoginPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ identifier: id, password }),
         // Cap client wait — designers were stuck on "Signing in..." when Design was down.
-        signal: AbortSignal.timeout(16000),
+        signal: AbortSignal.timeout(28000),
       });
       const data = await res.json().catch(() => null);
 
