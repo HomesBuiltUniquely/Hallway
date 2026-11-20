@@ -1,5 +1,6 @@
 import { getCrmSessionSnapshot, getStoredCrmRole, landingPathByRole } from './crmApi';
 import { isSuperAdmin, isRestrictedFromDesign } from './permissions';
+import { LOGIN_CRM_UNAVAILABLE, LOGIN_DESIGN_UNAVAILABLE } from './hallwayAuthMessages';
 
 const DESIGN_HANDOFF_KEY = 'hallway-design-handoff';
 const CRM_API_HOSTS = new Set(['hows.hubinterior.com']);
@@ -156,17 +157,12 @@ export async function probeModuleHealth(
       ok: false,
       message:
         data?.message ||
-        (target === 'crm'
-          ? 'CRM is temporarily unavailable.'
-          : 'Design Studio is temporarily unavailable.'),
+        (target === 'crm' ? LOGIN_CRM_UNAVAILABLE : LOGIN_DESIGN_UNAVAILABLE),
     };
   } catch {
     return {
       ok: false,
-      message:
-        target === 'crm'
-          ? 'CRM is temporarily unavailable.'
-          : 'Design Studio is temporarily unavailable.',
+      message: target === 'crm' ? LOGIN_CRM_UNAVAILABLE : LOGIN_DESIGN_UNAVAILABLE,
     };
   }
 }

@@ -5,6 +5,10 @@ import { Briefcase, Palette, ArrowUpRight } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { openCrmDashboard, openDesignDashboard, probeModuleHealth } from '../../lib/modulePortals';
 import { isSuperAdmin, isRestrictedFromDesign, isDesignPortalUser } from '../../lib/permissions';
+import {
+  LOGIN_CRM_UNAVAILABLE,
+  LOGIN_DESIGN_UNAVAILABLE,
+} from '../../lib/hallwayAuthMessages';
 
 async function openWithHealth(
   target: 'crm' | 'design',
@@ -12,7 +16,10 @@ async function openWithHealth(
 ) {
   const health = await probeModuleHealth(target);
   if (!health.ok) {
-    alert(health.message || `${target === 'crm' ? 'CRM' : 'Design Studio'} is temporarily unavailable.`);
+    alert(
+      health.message ||
+        (target === 'crm' ? LOGIN_CRM_UNAVAILABLE : LOGIN_DESIGN_UNAVAILABLE)
+    );
     return;
   }
   await open();

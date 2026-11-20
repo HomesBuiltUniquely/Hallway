@@ -19,6 +19,10 @@ import {
   saveDesignHandoff,
   probeModuleHealth,
 } from '../../lib/modulePortals';
+import {
+  LOGIN_CRM_UNAVAILABLE,
+  LOGIN_DESIGN_UNAVAILABLE,
+} from '../../lib/hallwayAuthMessages';
 
 /** 4-tile launcher icon as in HOWS / CrmInceneration */
 function HowsHubLauncherIcon({ className }: { className?: string }) {
@@ -100,7 +104,7 @@ export default function ModuleLauncher() {
     }
     const health = await probeModuleHealth('crm');
     if (!health.ok) {
-      alert(health.message || 'CRM is temporarily unavailable. Please try again shortly.');
+      alert(health.message || LOGIN_CRM_UNAVAILABLE);
       return;
     }
     if (isSuper) {
@@ -127,7 +131,7 @@ export default function ModuleLauncher() {
     }
     const health = await probeModuleHealth('design');
     if (!health.ok) {
-      alert(health.message || 'Design Studio is temporarily unavailable. Please try again shortly.');
+      alert(health.message || LOGIN_DESIGN_UNAVAILABLE);
       return;
     }
     if (isSuper) {

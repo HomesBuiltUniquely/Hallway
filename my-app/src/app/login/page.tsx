@@ -16,6 +16,13 @@ import {
 import { useApp } from '../../context/AppContext';
 import { clearCrmSession, setCrmSession } from '../../lib/crmApi';
 import { saveDesignHandoff, clearDesignHandoff } from '../../lib/modulePortals';
+import {
+  LOGIN_GENERIC,
+  LOGIN_INVALID_CREDENTIALS,
+  LOGIN_REQUIRED_FIELDS,
+  LOGIN_TIMEOUT,
+  sanitizeLoginErrorMessage,
+} from '../../lib/hallwayAuthMessages';
 import { LivingRoomScene } from '../../components/login/LivingRoomScene';
 
 export default function LoginPage() {
@@ -56,7 +63,7 @@ export default function LoginPage() {
     const id = identifier.trim();
 
     if (!id || !password) {
-      setErrorMessage('Email and password are required');
+      setErrorMessage(LOGIN_REQUIRED_FIELDS);
       return;
     }
 
@@ -73,8 +80,9 @@ export default function LoginPage() {
 
       if (!res.ok || !data?.ok) {
         setErrorMessage(
-          (data && typeof data.message === 'string' && data.message) ||
-            'Invalid email or password'
+          sanitizeLoginErrorMessage(
+            (data && typeof data.message === 'string' && data.message) || LOGIN_INVALID_CREDENTIALS
+          )
         );
         return;
       }
@@ -112,11 +120,7 @@ export default function LoginPage() {
     } catch (err) {
       const timedOut =
         err instanceof DOMException && (err.name === 'TimeoutError' || err.name === 'AbortError');
-      setErrorMessage(
-        timedOut
-          ? 'Sign-in is taking too long. Design Studio may be down — please try again in a moment.'
-          : 'Login failed. Please try again.'
-      );
+      setErrorMessage(timedOut ? LOGIN_TIMEOUT : LOGIN_GENERIC);
     } finally {
       setIsLoading(false);
     }

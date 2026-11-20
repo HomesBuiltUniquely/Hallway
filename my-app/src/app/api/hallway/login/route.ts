@@ -1,6 +1,15 @@
 import { NextResponse } from 'next/server';
 import { resolveHallwayIdentity } from '../../../../lib/hallwayPortalResolve';
 import { isDesignRole } from '../../../../lib/permissions';
+import {
+  LOGIN_BOTH_UNAVAILABLE,
+  LOGIN_CRM_UNAVAILABLE,
+  LOGIN_DESIGN_LIMITED_NOTICE,
+  LOGIN_DESIGN_UNAVAILABLE,
+  LOGIN_GENERIC,
+  LOGIN_INVALID_CREDENTIALS,
+  LOGIN_REQUIRED_FIELDS,
+} from '../../../../lib/hallwayAuthMessages';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -97,27 +106,27 @@ async function tryDesignLoginOnce(baseUrl: string, email: string, password: stri
         outage: res.status >= 500 || res.status === 404,
         authFailed: res.status === 401,
         baseUrl,
-        message:
-          typeof data?.message === 'string'
-            ? data.message
-            : res.status >= 500
-              ? 'Design Studio is temporarily unavailable.'
-              : 'Invalid email or password',
+        message: res.status >= 500 ? LOGIN_DESIGN_UNAVAILABLE : LOGIN_INVALID_CREDENTIALS,
       };
     }
     const user = asRecord(data?.user) || data;
     const sessionId =
       (typeof data?.sessionId === 'string' && data.sessionId) ||
       (typeof data?.session_id === 'string' && data.session_id) ||
+      (typeof data?.token === 'string' && data.token) ||
       null;
     if (!user || !sessionId) {
+      console.warn('[hallway/login] Design auth incomplete response', {
+        baseUrl,
+        keys: data ? Object.keys(data) : [],
+      });
       return {
         ok: false,
         status: 502,
         outage: true,
         authFailed: false,
         baseUrl,
-        message: 'Design Studio returned an incomplete login response.',
+        message: LOGIN_DESIGN_UNAVAILABLE,
       };
     }
     return {
@@ -145,7 +154,7 @@ async function tryDesignLoginOnce(baseUrl: string, email: string, password: stri
       outage: true,
       authFailed: false,
       baseUrl,
-      message: 'Design Studio is temporarily unavailable.',
+      message: LOGIN_DESIGN_UNAVAILABLE,
     };
   }
 }
@@ -156,7 +165,7 @@ async function tryDesignLogin(email: string, password: string): Promise<AuthAtte
     status: 503,
     outage: true,
     authFailed: false,
-    message: 'Design Studio is temporarily unavailable.',
+    message: LOGIN_DESIGN_UNAVAILABLE,
   };
   for (const base of DESIGN_MODULE_BASE_URLS) {
     last = await tryDesignLoginOnce(base, email, password);
@@ -185,12 +194,7 @@ async function tryCrmLoginOnce(username: string, password: string, email?: strin
         status: res.status,
         outage: res.status >= 500,
         authFailed: res.status === 401 || res.status === 400,
-        message:
-          typeof data?.message === 'string'
-            ? data.message
-            : res.status >= 500
-              ? 'CRM is temporarily unavailable.'
-              : 'Invalid username or password',
+        message: res.status >= 500 ? LOGIN_CRM_UNAVAILABLE : LOGIN_INVALID_CREDENTIALS,
       };
     }
     const token =
@@ -199,12 +203,13 @@ async function tryCrmLoginOnce(username: string, password: string, email?: strin
       null;
     const userRaw = asRecord(data?.user) || asRecord(asRecord(data?.data)?.user);
     if (!token) {
+      console.warn('[hallway/login] CRM auth incomplete response');
       return {
         ok: false,
         status: 502,
         outage: true,
         authFailed: false,
-        message: 'CRM returned an incomplete login response.',
+        message: LOGIN_CRM_UNAVAILABLE,
       };
     }
     return {
@@ -240,7 +245,7 @@ async function tryCrmLoginOnce(username: string, password: string, email?: strin
       status: 503,
       outage: true,
       authFailed: false,
-      message: 'CRM is temporarily unavailable.',
+      message: LOGIN_CRM_UNAVAILABLE,
     };
   }
 }
@@ -268,7 +273,7 @@ export async function POST(request: Request) {
     const identifier = String(body?.email || body?.username || body?.identifier || '').trim();
     const password = String(body?.password || '');
     if (!identifier || !password) {
-      return NextResponse.json({ message: 'Email and password are required' }, { status: 400 });
+      return NextResponse.json({ ok: false, message: LOGIN_REQUIRED_FIELDS }, { status: 400 });
     }
 
     const emailGuess = identifier.includes('@') ? identifier : '';
@@ -378,9 +383,7 @@ export async function POST(request: Request) {
           },
           designSession: null,
           crmSession: null,
-          notice: design.outage
-            ? 'Design Studio is temporarily unreachable from Hallway. You are signed into Hallway; open Design Studio directly if needed.'
-            : undefined,
+          notice: design.outage ? LOGIN_DESIGN_LIMITED_NOTICE : undefined,
         });
       }
 
@@ -404,56 +407,56 @@ export async function POST(request: Request) {
       });
     }
 
-    // Failures
+    // Failures — credentials first, then outage (never mask wrong password with 503)
     if (preferCrm || isSalesFamilyRole(resolvedIdentity?.role)) {
-      if (crm.outage) {
-        return NextResponse.json(
-          { ok: false, message: 'CRM is temporarily unavailable. Please try again shortly.' },
-          { status: 503 }
-        );
+      if (crm.authFailed) {
+        return NextResponse.json({ ok: false, message: LOGIN_INVALID_CREDENTIALS }, { status: 401 });
       }
-      return NextResponse.json({ ok: false, message: 'Invalid username or password' }, { status: 401 });
+      if (crm.outage) {
+        return NextResponse.json({ ok: false, message: LOGIN_CRM_UNAVAILABLE }, { status: 503 });
+      }
+      return NextResponse.json({ ok: false, message: LOGIN_INVALID_CREDENTIALS }, { status: 401 });
     }
 
     if (isDesigner || preferDesign) {
-      if (design.outage && !crm.ok) {
-        return NextResponse.json(
-          {
-            ok: false,
-            message:
-              'Design Studio is temporarily unavailable and we could not verify your Hallway access. Sign in at https://design.hubinterior.com/login, then retry Hallway — or try again shortly.',
-            designBaseTried: DESIGN_MODULE_BASE_URLS,
-          },
-          { status: 503 }
-        );
-      }
       if (design.authFailed || crm.authFailed) {
-        return NextResponse.json({ ok: false, message: 'Invalid email or password' }, { status: 401 });
+        return NextResponse.json({ ok: false, message: LOGIN_INVALID_CREDENTIALS }, { status: 401 });
+      }
+      if (design.outage && crm.outage) {
+        console.warn('[hallway/login] Design + CRM outage', {
+          designBases: DESIGN_MODULE_BASE_URLS,
+          crmBase: CRM_BASE,
+        });
+        return NextResponse.json({ ok: false, message: LOGIN_BOTH_UNAVAILABLE }, { status: 503 });
+      }
+      if (design.outage && !crm.ok) {
+        console.warn('[hallway/login] Design outage; CRM did not admit', {
+          designBases: DESIGN_MODULE_BASE_URLS,
+          crmStatus: crm.status,
+        });
+        return NextResponse.json({ ok: false, message: LOGIN_DESIGN_UNAVAILABLE }, { status: 503 });
       }
     }
 
     if (design.outage && crm.outage) {
-      return NextResponse.json(
-        { ok: false, message: 'HUB services are temporarily unavailable. Please try again shortly.' },
-        { status: 503 }
-      );
+      return NextResponse.json({ ok: false, message: LOGIN_BOTH_UNAVAILABLE }, { status: 503 });
     }
     if (crm.outage) {
-      return NextResponse.json(
-        { ok: false, message: 'CRM is temporarily unavailable. Please try again shortly.' },
-        { status: 503 }
-      );
+      return NextResponse.json({ ok: false, message: LOGIN_CRM_UNAVAILABLE }, { status: 503 });
+    }
+    if (design.outage) {
+      return NextResponse.json({ ok: false, message: LOGIN_DESIGN_UNAVAILABLE }, { status: 503 });
     }
     if (design.authFailed || crm.authFailed) {
-      return NextResponse.json({ ok: false, message: 'Invalid email or password' }, { status: 401 });
+      return NextResponse.json({ ok: false, message: LOGIN_INVALID_CREDENTIALS }, { status: 401 });
     }
 
     return NextResponse.json(
-      { ok: false, message: design.message || crm.message || 'Login failed. Please try again.' },
+      { ok: false, message: design.message || crm.message || LOGIN_GENERIC },
       { status: 401 }
     );
   } catch (err) {
     console.error('[hallway/login]', err);
-    return NextResponse.json({ ok: false, message: 'Login failed. Please try again.' }, { status: 500 });
+    return NextResponse.json({ ok: false, message: LOGIN_GENERIC }, { status: 500 });
   }
 }

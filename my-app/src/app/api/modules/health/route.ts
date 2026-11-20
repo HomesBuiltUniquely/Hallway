@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import {
+  LOGIN_CRM_UNAVAILABLE,
+  LOGIN_DESIGN_UNAVAILABLE,
+} from '../../../../lib/hallwayAuthMessages';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -60,7 +64,7 @@ export async function GET(request: NextRequest) {
       {
         ok,
         target,
-        message: ok ? undefined : 'CRM is temporarily unavailable. Please try again shortly.',
+        message: ok ? undefined : LOGIN_CRM_UNAVAILABLE,
       },
       { status: ok ? 200 : 503 }
     );
@@ -72,7 +76,7 @@ export async function GET(request: NextRequest) {
     {
       ok,
       target,
-      message: ok ? undefined : 'Design Studio is temporarily unavailable. Please try again shortly.',
+      message: ok ? undefined : LOGIN_DESIGN_UNAVAILABLE,
     },
     { status: ok ? 200 : 503 }
   );
