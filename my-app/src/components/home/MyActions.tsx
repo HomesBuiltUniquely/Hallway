@@ -44,6 +44,9 @@ export default function MyActions() {
     .filter((g) => !g.uncounted && !g.isWatchlist)
     .reduce((acc, g) => acc + g.count, 0);
 
+  const isInitialLoading = loading && !data;
+  const countBadge = (cnt: number) => (isInitialLoading ? '—' : cnt);
+
   return (
     <>
       <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800/90 rounded-2xl p-5 shadow-xs">
@@ -66,7 +69,7 @@ export default function MyActions() {
           <div className="flex items-center gap-2">
             {!showToggles && showAll && !showTeam && !showPersonal ? (
               <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-300 px-2 py-1">
-                All ({allTotalCount})
+                All ({countBadge(allTotalCount)})
               </span>
             ) : !showToggles && showTeam && !showAll && !showPersonal ? (
               <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-300 px-2 py-1">
@@ -74,7 +77,7 @@ export default function MyActions() {
               </span>
             ) : !showToggles && showPersonal && !showTeam && !showAll ? (
               <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-300 px-2 py-1">
-                My ({myTotalCount})
+                My ({countBadge(myTotalCount)})
               </span>
             ) : showToggles && (showPersonal || showTeam || showAll) ? (
               <div className="flex items-center p-0.5 bg-slate-100 dark:bg-slate-800/80 rounded-lg text-[10px] font-bold">
@@ -90,7 +93,7 @@ export default function MyActions() {
                     title="Show personal action items"
                   >
                     <ShieldCheck className="w-3 h-3" />
-                    <span>My ({myTotalCount})</span>
+                    <span>My ({countBadge(myTotalCount)})</span>
                   </button>
                 )}
                 {showTeam && (
@@ -120,7 +123,7 @@ export default function MyActions() {
                     title="All follow-ups in your admin scope"
                   >
                     <ListOrdered className="w-3 h-3" />
-                    <span>All ({allTotalCount})</span>
+                    <span>All ({countBadge(allTotalCount)})</span>
                   </button>
                 )}
               </div>

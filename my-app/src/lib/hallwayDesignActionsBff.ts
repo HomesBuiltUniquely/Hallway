@@ -352,7 +352,7 @@ async function queryDesignActionsFromDb(
          JOIN ${designDb}.leads l ON l.id = m.lead_id
          WHERE m.meeting_status <> 'cancelled'
            AND m.progress <> 'completed'
-           AND DATE(m.meeting_date) <= CURDATE()
+           AND m.meeting_date <= CONCAT(CURDATE(), ' 23:59:59')
            AND (m.designer_id = ? OR l.assigned_designer_id = ?)
          ORDER BY m.meeting_date ASC
          LIMIT 30`,

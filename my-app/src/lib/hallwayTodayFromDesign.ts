@@ -377,6 +377,8 @@ async function fetchMeetingsFromDesignApi(
   }
 }
 
+const scopeCache = new Map<string, { expiresAt: number; value: { all: boolean; userIds: number[] } }>();
+
 /**
  * Mirror of meetingViewerScope from Design Module server:
  * Determines the set of allowed designer IDs for the logged-in user without ad-hoc string filtering.
@@ -388,6 +390,13 @@ export async function getDesignViewerScope(
   scopeMode: 'my' | 'team' | 'all' = 'team'
 ): Promise<{ all: boolean; userIds: number[] }> {
   const role = normRole(viewer?.role);
+  const cacheKey = `${role}:${viewer?.userId || ''}:${viewer?.email || ''}:${viewer?.name || ''}:${scopeMode}`;
+  const now = Date.now();
+  const cached = scopeCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    return cached.value;
+  }
+
   let uid = viewer?.userId != null ? Number(viewer.userId) : NaN;
 
   // Resolve user id from DB if not provided
@@ -405,22 +414,18 @@ export async function getDesignViewerScope(
     }
   }
 
+  let result: { all: boolean; userIds: number[] };
+
   if (scopeMode === 'my' || role === 'designer') {
-    return { all: false, userIds: Number.isFinite(uid) && uid > 0 ? [uid] : [] };
-  }
-
-  if (scopeMode === 'all' && (role === 'admin' || role === 'deputy_general_manager')) {
-    return { all: true, userIds: [] };
-  }
-
-  if (role === 'admin' || role === 'deputy_general_manager') {
+    result = { all: false, userIds: Number.isFinite(uid) && uid > 0 ? [uid] : [] };
+  } else if (scopeMode === 'all' && (role === 'admin' || role === 'deputy_general_manager')) {
+    result = { all: true, userIds: [] };
+  } else if (role === 'admin' || role === 'deputy_general_manager') {
     const [rows]: any = await pool.query(
       `SELECT id FROM ${designDb}.users WHERE role IN ('designer', 'design_manager')`
     );
-    return { all: false, userIds: (rows as any[]).map((r) => Number(r.id)).filter((id) => id > 0) };
-  }
-
-  if (role === 'territorial_design_manager') {
+    result = { all: false, userIds: (rows as any[]).map((r) => Number(r.id)).filter((id) => id > 0) };
+  } else if (role === 'territorial_design_manager') {
     const [rows]: any = await pool.query(
       `SELECT DISTINCT u.id
        FROM ${designDb}.users u
@@ -433,10 +438,8 @@ export async function getDesignViewerScope(
          )`,
       [uid, uid, uid]
     );
-    return { all: false, userIds: (rows as any[]).map((r) => Number(r.id)).filter((id) => id > 0) };
-  }
-
-  if (role === 'design_manager') {
+    result = { all: false, userIds: (rows as any[]).map((r) => Number(r.id)).filter((id) => id > 0) };
+  } else if (role === 'design_manager') {
     const [rows]: any = await pool.query(
       `SELECT DISTINCT u.id
        FROM ${designDb}.users u
@@ -444,10 +447,13 @@ export async function getDesignViewerScope(
          AND (u.id = ? OR (u.role = 'designer' AND u.design_manager_id = ?))`,
       [uid, uid]
     );
-    return { all: false, userIds: (rows as any[]).map((r) => Number(r.id)).filter((id) => id > 0) };
+    result = { all: false, userIds: (rows as any[]).map((r) => Number(r.id)).filter((id) => id > 0) };
+  } else {
+    result = { all: false, userIds: Number.isFinite(uid) && uid > 0 ? [uid] : [] };
   }
 
-  return { all: false, userIds: Number.isFinite(uid) && uid > 0 ? [uid] : [] };
+  scopeCache.set(cacheKey, { expiresAt: now + 60_000, value: result });
+  return result;
 }
 
 /**
@@ -469,10 +475,10 @@ async function queryMeetingsFromDesignDb(
     }
 
     const whereParts: string[] = [
-      'DATE(m.meeting_date) = ?',
+      'm.meeting_date >= ? AND m.meeting_date <= ?',
       "m.meeting_status <> 'cancelled'",
     ];
-    const queryParams: unknown[] = [dateYmd];
+    const queryParams: unknown[] = [`${dateYmd} 00:00:00`, `${dateYmd} 23:59:59`];
 
     if (!vis.all) {
       whereParts.push(

@@ -1882,6 +1882,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         window.sessionStorage.removeItem(HALLWAY_SESSION_KEY);
         window.localStorage.removeItem(HALLWAY_SESSION_KEY);
         window.localStorage.removeItem('hallway_session');
+        for (let i = window.sessionStorage.length - 1; i >= 0; i--) {
+          const k = window.sessionStorage.key(i);
+          if (k?.startsWith('hallway_swr_')) {
+            window.sessionStorage.removeItem(k);
+          }
+        }
       }
     } catch {
       // ignore

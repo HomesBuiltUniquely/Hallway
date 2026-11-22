@@ -24,6 +24,8 @@ let tokenInflight: Promise<string> | null = null;
 type UpstreamPayload = { status: number; contentType: string | null; body: ArrayBuffer };
 const getInflight = new Map<string, Promise<UpstreamPayload>>();
 const getCache = new Map<string, { expiresAt: number; payload: UpstreamPayload }>();
+const DESIGN_FEED_CACHE_TTL_MS = 30_000;
+const designFeedCache = new Map<string, { expiresAt: number; status: number; body: ArrayBuffer }>();
 
 const SEED_PEOPLE_JSON = JSON.stringify({
   statsWindow: '1y',
@@ -1833,6 +1835,62 @@ export async function proxyToCrm(request: Request, pathParts: string[]): Promise
     return toResponse(built.status, built.contentType, built.body);
   }
 
+  if (path.includes('hallway/home-summary')) {
+    const designSession =
+      incoming.searchParams.get('designSession') ||
+      request.headers.get('x-design-session') ||
+      '';
+
+    const viewer = {
+      name: incoming.searchParams.get('viewerName'),
+      username: incoming.searchParams.get('viewerUsername'),
+      email: incoming.searchParams.get('viewerEmail'),
+      userId: incoming.searchParams.get('viewerId'),
+      role: incoming.searchParams.get('viewerRole'),
+      department: incoming.searchParams.get('viewerDepartment'),
+      scope: (incoming.searchParams.get('scope') as 'my' | 'team' | 'all' | null) || undefined,
+      branchId: incoming.searchParams.get('branchId'),
+    };
+
+    try {
+      const { resolvePortalKind } = await import('./hallwayRoleMatrix');
+      const role = viewer.role || '';
+      const portalParam = incoming.searchParams.get('portal')?.toLowerCase();
+      const dept = (viewer.department || (portalParam === 'design' || designSession ? 'Design' : 'Sales')) as 'Sales' | 'Design';
+      const portal = (portalParam === 'design' || Boolean(designSession) || dept === 'Design')
+        ? 'design'
+        : resolvePortalKind({ role, department: dept });
+
+      if (portal === 'design') {
+        const istDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+        const cacheKey = `summary:${viewer.userId || viewer.email || viewer.name}:${viewer.role}:${viewer.scope || 'my'}:${istDate}`;
+        const cached = designFeedCache.get(cacheKey);
+        if (cached && cached.expiresAt > Date.now()) {
+          return toResponse(cached.status, 'application/json', cached.body);
+        }
+
+        const [{ loadTodayMeetingsFromDesign }, { loadDesignActions }] = await Promise.all([
+          import('./hallwayTodayFromDesign'),
+          import('./hallwayDesignActionsBff'),
+        ]);
+
+        const [today, actions] = await Promise.all([
+          loadTodayMeetingsFromDesign(viewer, designSession || null),
+          loadDesignActions(viewer, designSession || null),
+        ]);
+
+        const payload = { today, actions };
+        const buf = Buffer.from(JSON.stringify(payload), 'utf-8');
+        const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+        designFeedCache.set(cacheKey, { expiresAt: Date.now() + DESIGN_FEED_CACHE_TTL_MS, status: 200, body: ab });
+        return toResponse(200, 'application/json', ab);
+      }
+      return Response.json({ error: 'home-summary supported for design portal' }, { status: 400 });
+    } catch {
+      return Response.json({ error: 'Failed to build home summary' }, { status: 500 });
+    }
+  }
+
   if (path.includes('hallway/today-events')) {
     // Dynamic: Design portal → Design calendar API; CRM → Hub + CRM appointments BFF.
     const preferToken = clientBearer(request);
@@ -1873,12 +1931,22 @@ export async function proxyToCrm(request: Request, pathParts: string[]): Promise
       }
 
       if (portal === 'design') {
+        const istDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+        const cacheKey = `today:${viewer.userId || viewer.email || viewer.name}:${viewer.role}:${viewer.scope || 'my'}:${istDate}`;
+        const cached = designFeedCache.get(cacheKey);
+        if (cached && cached.expiresAt > Date.now()) {
+          return toResponse(cached.status, 'application/json', cached.body);
+        }
+
         const { loadTodayMeetingsFromDesign } = await import('./hallwayTodayFromDesign');
         const fromDesign = await loadTodayMeetingsFromDesign(viewer, designSession || null);
         if (fromDesign) {
           const status = fromDesign.feedError ? 503 : 200;
           const buf = Buffer.from(JSON.stringify(fromDesign), 'utf-8');
           const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+          if (!fromDesign.feedError) {
+            designFeedCache.set(cacheKey, { expiresAt: Date.now() + DESIGN_FEED_CACHE_TTL_MS, status, body: ab });
+          }
           return toResponse(status, 'application/json', ab);
         }
         const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(
@@ -1959,11 +2027,21 @@ export async function proxyToCrm(request: Request, pathParts: string[]): Promise
 
       let payload;
       if (portal === 'design') {
+        const istDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+        const cacheKey = `actions:${viewer.userId || viewer.email || viewer.name}:${viewer.role}:${viewer.scope || 'my'}:${istDate}`;
+        const cached = designFeedCache.get(cacheKey);
+        if (cached && cached.expiresAt > Date.now()) {
+          return toResponse(cached.status, 'application/json', cached.body);
+        }
+
         const { loadDesignActions } = await import('./hallwayDesignActionsBff');
         const designPayload = await loadDesignActions(viewer, designSession || null);
         const actStatus = designPayload.feedError ? 503 : 200;
         const buf = Buffer.from(JSON.stringify(designPayload), 'utf-8');
         const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+        if (!designPayload.feedError) {
+          designFeedCache.set(cacheKey, { expiresAt: Date.now() + DESIGN_FEED_CACHE_TTL_MS, status: actStatus, body: ab });
+        }
         return toResponse(actStatus, 'application/json', ab);
       } else {
         const { loadCrmFreshActions } = await import('./hallwayCrmFreshActions');

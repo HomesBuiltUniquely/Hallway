@@ -269,30 +269,53 @@ export async function loadDesignerTrackerActions(
 
   if (!Array.isArray(leads) || leads.length === 0) return [];
 
-  const items: TaskTrackerActionItem[] = [];
-
+  // Filter qualifying active leads
+  const activeLeads: any[] = [];
   for (const l of leads) {
-    // Edge case 1: Cancelled project
     if (String(l.projectStage || '').trim().toLowerCase() === 'cancelled') continue;
-
-    // Check auto-resume if resume_at reached
     let isOnHold = Boolean(l.isOnHold);
     const resumeDate = l.resumeAt ? new Date(l.resumeAt) : null;
     if (isOnHold && resumeDate && resumeDate <= now) {
       isOnHold = false;
     }
-
-    // Rule B: Project on hold -> show NOTHING
     if (isOnHold) continue;
+    activeLeads.push(l);
+  }
 
-    const [compRows]: any = await pool.query(
-      `SELECT milestone_index AS milestoneIndex, task_name AS taskName, completed_at AS completedAt
-       FROM ${designDb}.lead_task_completions
-       WHERE lead_id = ?`,
-      [l.id]
-    );
+  if (activeLeads.length === 0) return [];
+
+  const leadIds = activeLeads.map((l) => l.id);
+
+  // Batch query completions and hold periods in 2 queries instead of 2*N queries
+  const [allComps]: any = await pool.query(
+    `SELECT lead_id AS leadId, milestone_index AS milestoneIndex, task_name AS taskName, completed_at AS completedAt
+     FROM ${designDb}.lead_task_completions
+     WHERE lead_id IN (${leadIds.join(',')})`
+  );
+  const compsByLead = new Map<number, Array<{ milestoneIndex: number; taskName: string; completedAt?: string }>>();
+  for (const c of Array.isArray(allComps) ? allComps : []) {
+    const arr = compsByLead.get(c.leadId) ?? [];
+    arr.push(c);
+    compsByLead.set(c.leadId, arr);
+  }
+
+  const [allHolds]: any = await pool.query(
+    `SELECT lead_id AS leadId, started_at AS startedAt, ended_at AS endedAt
+     FROM ${designDb}.lead_hold_periods
+     WHERE lead_id IN (${leadIds.join(',')})`
+  );
+  const holdsByLead = new Map<number, HoldPeriod[]>();
+  for (const h of Array.isArray(allHolds) ? allHolds : []) {
+    const arr = holdsByLead.get(h.leadId) ?? [];
+    arr.push(h);
+    holdsByLead.set(h.leadId, arr);
+  }
+
+  const items: TaskTrackerActionItem[] = [];
+
+  for (const l of activeLeads) {
     const completions: Array<{ milestoneIndex: number; taskName: string; completedAt?: string }> =
-      Array.isArray(compRows) ? compRows : [];
+      compsByLead.get(l.id) || [];
 
     // Edge case 1: Fully completed project
     if (isProjectFullyCompleted(completions)) continue;
@@ -300,15 +323,7 @@ export async function loadDesignerTrackerActions(
     const activeMilestone = getCurrentMilestoneIndex(completions);
     const tasks = MILESTONE_TASKS[activeMilestone] || [];
     const completedSet = new Set(completions.map((c) => `${c.milestoneIndex}::${c.taskName}`));
-
-    // Fetch hold periods for accurate timeline calculation
-    const [holdRows]: any = await pool.query(
-      `SELECT started_at AS startedAt, ended_at AS endedAt
-       FROM ${designDb}.lead_hold_periods
-       WHERE lead_id = ?`,
-      [l.id]
-    );
-    const holdPeriods: HoldPeriod[] = Array.isArray(holdRows) ? holdRows : [];
+    const holdPeriods: HoldPeriod[] = holdsByLead.get(l.id) || [];
 
     // Anchor time for active milestone
     let anchorDate = l.createAt ? new Date(l.createAt) : now;
@@ -558,19 +573,7 @@ export async function loadExceptionScopes(
                 l.resume_at AS resumeAt, l.hold_note AS holdNote,
                 COALESCE(p.started_at, l.update_at) AS heldSince,
                 DATEDIFF(CURDATE(), DATE(COALESCE(p.started_at, l.update_at))) AS elapsedDays,
-                DATEDIFF(l.resume_at, DATE(COALESCE(p.started_at, l.update_at))) AS scheduledDays,
-                (
-                  SELECT JSON_UNQUOTE(JSON_EXTRACT(h.event, '$.user.name'))
-                  FROM ${designDb}.lead_history h
-                  WHERE h.lead_id = l.id
-                    AND (
-                      JSON_UNQUOTE(JSON_EXTRACT(h.event, '$.taskName')) = 'Project on hold'
-                      OR h.event LIKE '%"Project on hold"%'
-                      OR h.event LIKE '%hold%'
-                    )
-                  ORDER BY h.id DESC
-                  LIMIT 1
-                ) AS heldBy
+                DATEDIFF(l.resume_at, DATE(COALESCE(p.started_at, l.update_at))) AS scheduledDays
          FROM ${designDb}.leads l
          JOIN ${designDb}.users u ON u.id = l.assigned_designer_id
          LEFT JOIN ${designDb}.users dm ON dm.id = u.design_manager_id
@@ -585,6 +588,27 @@ export async function loadExceptionScopes(
          LIMIT 40`
       );
       if (Array.isArray(longHolds) && longHolds.length > 0) {
+        const holdLeadIds = longHolds.map((r: any) => r.id);
+        const heldByMap = new Map<number, string>();
+        try {
+          const [histRows]: any = await pool.query(
+            `SELECT h.lead_id AS leadId, JSON_UNQUOTE(JSON_EXTRACT(h.event, '$.user.name')) AS heldBy
+             FROM ${designDb}.lead_history h
+             WHERE h.lead_id IN (${holdLeadIds.join(',')})
+               AND (
+                 JSON_UNQUOTE(JSON_EXTRACT(h.event, '$.taskName')) = 'Project on hold'
+                 OR h.event LIKE '%"Project on hold"%'
+                 OR h.event LIKE '%hold%'
+               )
+             ORDER BY h.id ASC`
+          );
+          for (const hr of Array.isArray(histRows) ? histRows : []) {
+            if (hr.heldBy) heldByMap.set(hr.leadId, hr.heldBy);
+          }
+        } catch {
+          // Non-critical metadata fallback
+        }
+
         const oldestDays = Math.max(...longHolds.map((r: any) => Number(r.elapsedDays || 0)));
         const formatHoldDate = (d: any) => {
           if (!d) return 'Not recorded';
@@ -596,7 +620,7 @@ export async function loadExceptionScopes(
         const holdItems = longHolds.map((r: any) => {
           const daysOnHold = r.elapsedDays != null ? Number(r.elapsedDays) : 0;
           const holdReason = String(r.holdNote || '').trim() || 'Not recorded';
-          const heldBy = String(r.heldBy || '').trim() || 'Not recorded';
+          const heldBy = String(heldByMap.get(r.id) || '').trim() || 'Not recorded';
           const heldSinceFormatted = formatHoldDate(r.heldSince);
           const resumeFormatted = r.resumeAt ? formatHoldDate(r.resumeAt) : 'Indefinite (No date set)';
 

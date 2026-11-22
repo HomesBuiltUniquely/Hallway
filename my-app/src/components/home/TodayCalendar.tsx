@@ -59,6 +59,9 @@ export default function TodayCalendar() {
   const companyCount = data?.companyTotal ?? data?.hubTotal ?? rawEvents.length;
   const hubCount = isDesign ? events.length : (viewMode === 'all' || adminAllOnly ? companyCount : scopeCount);
 
+  const isInitialLoading = loading && !data;
+  const countBadge = (cnt: number) => (isInitialLoading ? '—' : cnt);
+
   return (
     <>
       <div className="bg-white dark:bg-panel border border-slate-200/90 dark:border-surface-warm/50 rounded-2xl p-5 shadow-sm">
@@ -72,15 +75,15 @@ export default function TodayCalendar() {
           <div className="flex items-center gap-2 shrink-0">
             {adminAllOnly ? (
               <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-300 px-2 py-1">
-                All Hubs ({hubCount})
+                All Hubs ({countBadge(hubCount)})
               </span>
             ) : teamOnly ? (
               <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-300 px-2 py-1">
-                {presalesToday ? 'Team callbacks' : 'Team schedule'} ({hubCount})
+                {presalesToday ? 'Team callbacks' : 'Team schedule'} ({countBadge(hubCount)})
               </span>
             ) : personalOnly ? (
               <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-300 px-2 py-1">
-                {presalesToday ? 'My callbacks' : 'My Schedule'} ({hubCount})
+                {presalesToday ? 'My callbacks' : 'My Schedule'} ({countBadge(hubCount)})
               </span>
             ) : showToggles ? (
               <div className="flex items-center rounded-lg bg-slate-100/80 dark:bg-surface-muted p-0.5 text-[10px] font-semibold">
@@ -123,7 +126,7 @@ export default function TodayCalendar() {
                     title="Show company-wide meetings across all hubs"
                   >
                     <Users className={`w-3 h-3 ${viewMode === 'all' ? 'text-brand' : 'text-slate-400'}`} />
-                    <span>All Hubs ({hubCount})</span>
+                    <span>All Hubs ({countBadge(hubCount)})</span>
                   </button>
                 )}
               </div>
