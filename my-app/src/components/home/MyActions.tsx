@@ -482,7 +482,9 @@ function ActionLeadRow({ item }: { item: HallwayActionItem }) {
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1 text-[11px] font-medium text-indigo-500 dark:text-indigo-400 hover:underline"
             >
-              <span>Open in Design Module</span>
+              <span>
+                {item.linkUrl?.includes('meetingId=') ? 'Record outcome' : 'Open in Design Module'}
+              </span>
               <ExternalLink className="w-3 h-3" />
             </a>
           </div>
@@ -516,7 +518,9 @@ function ActionLeadRow({ item }: { item: HallwayActionItem }) {
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1 mt-1 text-[11px] font-medium text-indigo-500 dark:text-indigo-400 hover:underline"
             >
-              <span>Open in Design Module</span>
+              <span>
+                {item.linkUrl?.includes('meetingId=') ? 'Record outcome' : 'Open in Design Module'}
+              </span>
               <ExternalLink className="w-2.5 h-2.5" />
             </a>
           )}

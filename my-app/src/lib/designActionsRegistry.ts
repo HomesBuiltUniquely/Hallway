@@ -46,7 +46,8 @@ export const ACTION_QUEUES: Record<string, ActionQueueDefinition> = {
     isCounted: true,
     category: 'action',
     priority: 1,
-    description: 'Completed or past meetings needing notes and outcome verdict from designer.',
+    description:
+      'Own meetings that ended within the recency window with progress still open (completed / never happened closes the item).',
   },
   'team-overdue-exceptions': {
     id: 'team-overdue-exceptions',

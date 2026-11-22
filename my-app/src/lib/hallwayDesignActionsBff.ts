@@ -8,6 +8,11 @@ import type { HallwayActionGroup, HallwayActionsResponse, HallwayActionItem } fr
 import { resolvePortalKind } from './hallwayRoleMatrix';
 import { getPool } from './db';
 import { loadDesignerTrackerActions, loadExceptionScopes } from './designProjectTrackerActions';
+import {
+  buildDesignerMeetingOutcomeGroups,
+  buildManagerMeetingOutcomeRollup,
+  resolveTeamDesignerIds,
+} from './meetingOutcomeActions';
 
 const DESIGN_API = (
   process.env.DESIGN_MODULE_BASE_URL || 'https://api.hubinterior.com'
@@ -345,20 +350,15 @@ async function queryDesignActionsFromDb(
     }
 
     if (isRoleAllowedForQueue(role, 'meeting-outcomes') && userId) {
-      const [pendingMeetings]: any = await pool.query(
-        `SELECT m.id, m.lead_id AS leadId, l.project_name AS projectName,
-                CONCAT('Meeting outcome pending · ', DATE_FORMAT(m.meeting_date, '%d %b')) AS detail
-         FROM ${designDb}.lead_meetings m
-         JOIN ${designDb}.leads l ON l.id = m.lead_id
-         WHERE m.meeting_status <> 'cancelled'
-           AND m.progress <> 'completed'
-           AND m.meeting_date <= CONCAT(CURDATE(), ' 23:59:59')
-           AND (m.designer_id = ? OR l.assigned_designer_id = ?)
-         ORDER BY m.meeting_date ASC
-         LIMIT 30`,
-        [userId, userId]
+      const outcomeGroups = await buildDesignerMeetingOutcomeGroups(
+        pool,
+        designDb,
+        userId,
+        now
       );
-      pushGroup('meeting-outcomes', 'Meeting Outcome Needed', pendingMeetings || [], true);
+      for (const og of outcomeGroups) {
+        groups.push(og);
+      }
     }
 
     // 2. Manager (TDM / DM) and Admin Scopes: Exception-only & Holds Watchlist
@@ -368,6 +368,25 @@ async function queryDesignActionsFromDb(
       role === 'ADMIN' ||
       role === 'DEPUTY_GENERAL_MANAGER'
     ) {
+      if (userId) {
+        const teamIds = await resolveTeamDesignerIds(
+          pool,
+          designDb,
+          normalizeRole(role).toLowerCase(),
+          userId
+        );
+        const rollup =
+          role === 'ADMIN' || role === 'DEPUTY_GENERAL_MANAGER'
+            ? await buildManagerMeetingOutcomeRollup(pool, designDb, teamIds, {
+                groupId: 'meeting-outcomes-hub-watchlist',
+                titlePrefix: 'Hub meetings missing outcome',
+              }, now)
+            : await buildManagerMeetingOutcomeRollup(pool, designDb, teamIds, {
+                groupId: 'meeting-outcomes-team-watchlist',
+                titlePrefix: 'Team meetings missing outcome',
+              }, now);
+        if (rollup) groups.push(rollup);
+      }
       const exceptionGroups = await loadExceptionScopes(
         pool,
         designDb,
@@ -503,7 +522,7 @@ export async function loadDesignActions(
   if (designSessionId) {
     try {
       const apiResult = await loadActionsFromHallwayApi(viewer, designSessionId);
-      if (!apiResult.feedError && apiResult.actions && apiResult.actions.length > 0) {
+      if (!apiResult.feedError) {
         return apiResult;
       }
     } catch {
