@@ -1855,8 +1855,11 @@ export async function proxyToCrm(request: Request, pathParts: string[]): Promise
     try {
       const { resolvePortalKind } = await import('./hallwayRoleMatrix');
       const role = viewer.role || '';
-      const dept = (viewer.department || 'Sales') as 'Sales' | 'Design';
-      const portal = resolvePortalKind({ role, department: dept });
+      const portalParam = incoming.searchParams.get('portal')?.toLowerCase();
+      const dept = (viewer.department || (portalParam === 'design' || designSession ? 'Design' : 'Sales')) as 'Sales' | 'Design';
+      const portal = (portalParam === 'design' || Boolean(designSession) || dept === 'Design')
+        ? 'design'
+        : resolvePortalKind({ role, department: dept });
 
       const { todayDataSource, isPresalesRole } = await import('./hallwayRoleMatrix');
       const source = todayDataSource({ role, department: dept });
@@ -1869,14 +1872,29 @@ export async function proxyToCrm(request: Request, pathParts: string[]): Promise
         return toResponse(200, 'application/json', ab);
       }
 
-      if (portal === 'design' && designSession) {
+      if (portal === 'design') {
         const { loadTodayMeetingsFromDesign } = await import('./hallwayTodayFromDesign');
-        const fromDesign = await loadTodayMeetingsFromDesign(viewer, designSession);
-        if (fromDesign && fromDesign.events.length > 0) {
+        const fromDesign = await loadTodayMeetingsFromDesign(viewer, designSession || null);
+        if (fromDesign) {
+          const status = fromDesign.feedError ? 503 : 200;
           const buf = Buffer.from(JSON.stringify(fromDesign), 'utf-8');
           const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-          return toResponse(200, 'application/json', ab);
+          return toResponse(status, 'application/json', ab);
         }
+        const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(
+          new Date()
+        );
+        const empty = {
+          dayBasis: 'Design portal — no schedule source',
+          date,
+          scoped: true,
+          hubTotal: 0,
+          companyTotal: 0,
+          events: [] as unknown[],
+        };
+        const buf = Buffer.from(JSON.stringify(empty), 'utf-8');
+        const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+        return toResponse(200, 'application/json', ab);
       }
 
       let hubPayload: any = null;
@@ -1933,13 +1951,20 @@ export async function proxyToCrm(request: Request, pathParts: string[]): Promise
     try {
       const { resolvePortalKind } = await import('./hallwayRoleMatrix');
       const roleAct = viewer.role || '';
-      const deptAct = (viewer.department || 'Sales') as 'Sales' | 'Design';
-      const portal = resolvePortalKind({ role: roleAct, department: deptAct });
+      const portalParamAct = incoming.searchParams.get('portal')?.toLowerCase();
+      const deptAct = (viewer.department || (portalParamAct === 'design' || designSession ? 'Design' : 'Sales')) as 'Sales' | 'Design';
+      const portal = (portalParamAct === 'design' || Boolean(designSession) || deptAct === 'Design')
+        ? 'design'
+        : resolvePortalKind({ role: roleAct, department: deptAct });
 
       let payload;
       if (portal === 'design') {
         const { loadDesignActions } = await import('./hallwayDesignActionsBff');
-        payload = await loadDesignActions(viewer, designSession || null);
+        const designPayload = await loadDesignActions(viewer, designSession || null);
+        const actStatus = designPayload.feedError ? 503 : 200;
+        const buf = Buffer.from(JSON.stringify(designPayload), 'utf-8');
+        const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+        return toResponse(actStatus, 'application/json', ab);
       } else {
         const { loadCrmFreshActions } = await import('./hallwayCrmFreshActions');
         const { loadCrmActionsFromDb } = await import('./hallwayCrmActionsFromDb');

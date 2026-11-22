@@ -58,9 +58,6 @@ export async function resolveHallwayIdentity(input: {
   if (hint && isSalesFamilyRole(hint)) {
     return { portal: 'crm', department: 'Sales', role: hint, source: 'hint' };
   }
-  if (hint && isSuperAdmin({ role: hint, email, name })) {
-    return { portal: 'crm', department: 'Sales', role: hint, source: 'hint' };
-  }
   if (hint && isDesignRole(hint) && !isSalesFamilyRole(hint)) {
     return { portal: 'design', department: 'Design', role: hint, source: 'hint' };
   }
@@ -89,11 +86,11 @@ export async function resolveHallwayIdentity(input: {
       if (isSalesFamilyRole(role)) {
         return { portal: 'crm', department: 'Sales', role, source: 'crm_users' };
       }
-      if (isSuperAdmin({ role, email: u.email, name: u.full_name })) {
-        return { portal: 'crm', department: 'Sales', role: role || 'ADMIN', source: 'crm_users' };
-      }
       if (isDesignRole(role)) {
         return { portal: 'design', department: 'Design', role: role || 'DESIGNER', source: 'crm_users' };
+      }
+      if (isSuperAdmin({ role, email: u.email, name: u.full_name })) {
+        return { portal: 'crm', department: 'Sales', role: role || 'ADMIN', source: 'crm_users' };
       }
     }
 

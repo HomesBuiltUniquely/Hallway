@@ -51,7 +51,7 @@ export async function loadDesignScopeBundle(input: {
 
   if (mode === 'all' || role === 'ADMIN' || role === 'TERRITORIAL_DESIGN_MANAGER') {
     const [rows]: any = await pool.query(
-      `SELECT id, name, email, username FROM ${designDb}.users WHERE LOWER(TRIM(role)) = 'designer'`
+      `SELECT id, name, email FROM ${designDb}.users WHERE LOWER(TRIM(role)) = 'designer'`
     );
     for (const r of Array.isArray(rows) ? rows : []) addRow(r);
     const bundle: DesignScopeBundle = { mode: 'all', designUserIds, designerNames };
@@ -61,7 +61,7 @@ export async function loadDesignScopeBundle(input: {
 
   if (Number.isFinite(uid)) {
     const [selfRows]: any = await pool.query(
-      `SELECT id, name, email, username, role FROM ${designDb}.users WHERE id = ? LIMIT 1`,
+      `SELECT id, name, email, role FROM ${designDb}.users WHERE id = ? LIMIT 1`,
       [uid]
     );
     const self = Array.isArray(selfRows) && selfRows[0] ? selfRows[0] : null;
@@ -81,7 +81,7 @@ export async function loadDesignScopeBundle(input: {
   if (Number.isFinite(uid)) {
     if (role === 'DESIGN_MANAGER') {
       const [rows]: any = await pool.query(
-        `SELECT id, name, email, username FROM ${designDb}.users WHERE design_manager_id = ?`,
+        `SELECT id, name, email FROM ${designDb}.users WHERE design_manager_id = ?`,
         [uid]
       );
       for (const r of Array.isArray(rows) ? rows : []) addRow(r);
@@ -94,7 +94,7 @@ export async function loadDesignScopeBundle(input: {
       if (dmIds.length) {
         const placeholders = dmIds.map(() => '?').join(',');
         const [rows]: any = await pool.query(
-          `SELECT id, name, email, username FROM ${designDb}.users
+          `SELECT id, name, email FROM ${designDb}.users
            WHERE design_manager_id IN (${placeholders}) OR id IN (${placeholders})`,
           [...dmIds, ...dmIds]
         );
@@ -102,7 +102,7 @@ export async function loadDesignScopeBundle(input: {
       }
     } else if (role === 'ADMIN') {
       const [rows]: any = await pool.query(
-        `SELECT id, name, email, username FROM ${designDb}.users WHERE LOWER(TRIM(role)) = 'designer' LIMIT 500`
+        `SELECT id, name, email FROM ${designDb}.users WHERE LOWER(TRIM(role)) = 'designer' LIMIT 500`
       );
       for (const r of Array.isArray(rows) ? rows : []) addRow(r);
     }

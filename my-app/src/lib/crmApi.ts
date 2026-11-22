@@ -648,6 +648,7 @@ export async function fetchTodayEvents(
         : undefined),
     viewerRole: viewer?.role || extractCrmRole(crmUser) || getStoredCrmRole() || undefined,
     viewerDepartment: viewer?.department,
+    portal: viewer?.department?.toLowerCase() === 'design' || Boolean(designSession) ? 'design' : undefined,
     scope: viewer?.scope || 'my',
     designSession,
     _ts: String(Date.now()), // bust intermediary caches
@@ -690,6 +691,7 @@ export async function fetchActions(
         : undefined),
     viewerRole: viewer?.role || extractCrmRole(crmUser) || getStoredCrmRole() || undefined,
     viewerDepartment: viewer?.department,
+    portal: viewer?.department?.toLowerCase() === 'design' || Boolean(designSession) ? 'design' : undefined,
     scope: viewer?.scope || 'my',
     designSession,
     _ts: String(Date.now()),

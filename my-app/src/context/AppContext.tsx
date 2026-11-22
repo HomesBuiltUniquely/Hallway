@@ -30,7 +30,7 @@ import {
   fetchActions
 } from '../lib/crmApi';
 import { generateCrmAnnouncements, formatInrToLakhsOrCrores, createDynamicCrmAnnouncement } from '../lib/crmAnnouncementsGenerator';
-import { clearDesignHandoff } from '../lib/modulePortals';
+import { clearDesignHandoff, readDesignUserIdFromHandoff } from '../lib/modulePortals';
 import {
   isTodayOrYesterday,
   cleanPostContent,
@@ -207,7 +207,13 @@ interface AppContextType {
   deleteCrmLead: (id: string) => void;
   designProjects: DesignProject[];
   addDesignProject: (project: Omit<DesignProject, 'id'>) => void;
-  login: (email?: string, name?: string, role?: string, department?: User['department']) => void;
+  login: (
+    email?: string,
+    name?: string,
+    role?: string,
+    department?: User['department'],
+    userId?: string | number
+  ) => void;
   logout: () => void;
   switchUser: (targetRole?: 'admin' | 'crm' | 'design') => void;
   notifications: NotificationItem[];
@@ -244,7 +250,7 @@ const DESIGN_HANDOFF_API_BASES = new Set([
 async function readDesignUser(response: Response) {
   const data = await response.json().catch(() => null);
   if (!response.ok || !data?.email) return null;
-  return data as { email: string; name?: string; role?: string };
+  return data as { email: string; name?: string; role?: string; id?: number | string };
 }
 
 /** Confirm the Design session, then stay on the home feed instead of /login. */
@@ -301,7 +307,8 @@ function userFromSession(
   email?: string,
   name?: string,
   role?: string,
-  department: User['department'] = 'Sales'
+  department: User['department'] = 'Sales',
+  explicitUserId?: string | number
 ): User {
   const display = formatPersonName(name || email || 'User');
   const initials = display
@@ -316,9 +323,13 @@ function userFromSession(
     isDesignRole(role) ||
     email?.toLowerCase().includes('maya');
   if (looksDesigner) {
+    const designId =
+      explicitUserId != null && String(explicitUserId).trim()
+        ? String(explicitUserId).trim()
+        : readDesignUserIdFromHandoff() || 'u-design-session';
     return {
       ...designerUserMock,
-      id: 'u-design-session',
+      id: designId,
       name: display,
       role: role || 'DESIGNER',
       initials: initials || 'DS',
@@ -662,6 +673,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         name?: string;
         role?: string;
         department?: User['department'];
+        designUserId?: string | number;
         portal?: 'crm' | 'design';
         timestamp?: number;
       };
@@ -708,13 +720,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         /* keep saved session if resolver unavailable */
       }
 
-      const nextUser = userFromSession(saved.email, saved.name, role, department);
+      const nextUser = userFromSession(
+        saved.email,
+        saved.name,
+        role,
+        department,
+        saved.designUserId
+      );
       const nextRaw = JSON.stringify({
         email: nextUser.email,
         name: nextUser.name,
         role: nextUser.role,
         department: nextUser.department,
         portal,
+        designUserId: nextUser.id,
         timestamp: saved.timestamp || Date.now(),
       });
       setCurrentUser(nextUser);
@@ -747,13 +766,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (handoff?.sessionId) {
             const data = await verifyDesignHandoff(handoff.sessionId, handoff.apiBase);
             if (!cancelled && data?.email) {
-              const nextUser = userFromSession(data.email, data.name, data.role, 'Design');
+              const nextUser = userFromSession(
+                data.email,
+                data.name,
+                data.role,
+                'Design',
+                data.id
+              );
               const savedSession = JSON.stringify({
                 email: nextUser.email,
                 name: nextUser.name,
                 role: nextUser.role,
                 department: 'Design',
                 portal: 'design',
+                designUserId: nextUser.id,
                 timestamp: Date.now(),
               });
               setCurrentUser(nextUser);
@@ -1819,9 +1845,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     email?: string,
     name?: string,
     role?: string,
-    department: User['department'] = 'Sales'
+    department: User['department'] = 'Sales',
+    userId?: string | number
   ) => {
-    const nextUser = userFromSession(email, name, role, department);
+    const nextUser = userFromSession(email, name, role, department, userId);
     const portal: 'crm' | 'design' = department === 'Design' ? 'design' : 'crm';
     setCurrentUser(nextUser);
     setLoginPortal(portal);
@@ -1834,6 +1861,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           role: nextUser.role,
           department: nextUser.department,
           portal,
+          designUserId: portal === 'design' ? nextUser.id : undefined,
           timestamp: Date.now(),
         });
         window.sessionStorage.setItem(HALLWAY_SESSION_KEY, savedSession);

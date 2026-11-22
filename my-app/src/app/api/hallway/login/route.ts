@@ -314,6 +314,10 @@ export async function POST(request: Request) {
     if (preferCrm) {
       // Sales / Presales — CRM only. Never call Design (avoids false Design 503).
       crm = await tryCrmLogin(identifier, password);
+      // Fallback: If CRM rejects credentials for a non-sales role (e.g. cross-system accounts), try Design before giving up.
+      if (crm.authFailed && !isSalesFamilyRole(identity?.role)) {
+        design = await tryDesignLogin(designEmail, password);
+      }
     } else if (preferDesign) {
       // Design + Hub in parallel so a Design outage does not block Hallway if Hub still auth's.
       const [designResult, crmResult] = await Promise.all([

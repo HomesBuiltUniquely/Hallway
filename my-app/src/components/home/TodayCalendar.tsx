@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Calendar, ArrowRight, Clock, User, Users, ExternalLink } from 'lucide-react';
 import { useTodayEvents } from '../../hooks/useTodayEvents';
 import { useApp } from '../../context/AppContext';
@@ -8,6 +8,7 @@ import { getPersonalizedSchedule } from '../../lib/hallwayPersonalization';
 import {
   defaultHomeViewMode,
   homeViewModes,
+  isDesignContributor,
   showsPersonalHomeToggle,
   showsScopeToggleStrip,
   todayCardUi,
@@ -27,13 +28,27 @@ export default function TodayCalendar() {
   const showToggles = showsScopeToggleStrip(currentUser);
   const minimalToday = todayCardUi(currentUser) === 'minimal';
   const presalesToday = isPresalesRole(currentUser);
+  const isDesign = isDesignContributor(currentUser);
   const defaultMode = defaultHomeViewMode(currentUser);
   const adminAllOnly = showAll && !showToggles;
   const teamOnly = showTeam && !showAll && !showToggles;
   const personalOnly = showPersonal && !showTeam && !showAll && !showToggles;
   const [showModal, setShowModal] = useState(false);
   const [viewMode, setViewMode] = useState<HallwayHomeViewMode>(defaultMode);
-  const { data, loading, error } = useTodayEvents(viewMode);
+  const { data, loading, error, refetch } = useTodayEvents(viewMode);
+
+  // Auto-refresh when IST date rolls over while page is open
+  useEffect(() => {
+    let lastDate = formatIsoDateIst();
+    const interval = setInterval(() => {
+      const currentDate = formatIsoDateIst();
+      if (currentDate !== lastDate) {
+        lastDate = currentDate;
+        void refetch();
+      }
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, [refetch]);
 
   const rawEvents = data?.events || [];
   const events = data?.scoped
@@ -42,7 +57,7 @@ export default function TodayCalendar() {
   // Badge for current scope must match the list — never company-wide while empty team.
   const scopeCount = events.length;
   const companyCount = data?.companyTotal ?? data?.hubTotal ?? rawEvents.length;
-  const hubCount = viewMode === 'all' || adminAllOnly ? companyCount : scopeCount;
+  const hubCount = isDesign ? events.length : (viewMode === 'all' || adminAllOnly ? companyCount : scopeCount);
 
   return (
     <>
@@ -73,11 +88,10 @@ export default function TodayCalendar() {
                   <button
                     type="button"
                     onClick={() => setViewMode('my')}
-                    className={`px-2.5 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1 ${
-                      viewMode === 'my'
+                    className={`px-2.5 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1 ${viewMode === 'my'
                         ? 'bg-brand-soft text-brand shadow-xs'
                         : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                    }`}
+                      }`}
                     title="Show meetings related to me"
                   >
                     <User className={`w-3 h-3 ${viewMode === 'my' ? 'text-brand' : 'text-slate-400'}`} />
@@ -88,11 +102,10 @@ export default function TodayCalendar() {
                   <button
                     type="button"
                     onClick={() => setViewMode('team')}
-                    className={`px-2.5 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1 ${
-                      viewMode === 'team'
+                    className={`px-2.5 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1 ${viewMode === 'team'
                         ? 'bg-brand-soft text-brand shadow-xs'
                         : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                    }`}
+                      }`}
                     title="Meetings in your team scope"
                   >
                     <Users className={`w-3 h-3 ${viewMode === 'team' ? 'text-brand' : 'text-slate-400'}`} />
@@ -103,11 +116,10 @@ export default function TodayCalendar() {
                   <button
                     type="button"
                     onClick={() => setViewMode('all')}
-                    className={`px-2.5 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1 ${
-                      viewMode === 'all'
+                    className={`px-2.5 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1 ${viewMode === 'all'
                         ? 'bg-brand-soft text-brand shadow-xs'
                         : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                    }`}
+                      }`}
                     title="Show company-wide meetings across all hubs"
                   >
                     <Users className={`w-3 h-3 ${viewMode === 'all' ? 'text-brand' : 'text-slate-400'}`} />
@@ -131,10 +143,28 @@ export default function TodayCalendar() {
 
         {loading ? (
           <CorridorSkeleton rows={2} />
+        ) : (error || (isDesign && data?.feedError)) ? (
+          <div className="text-center py-4 space-y-2">
+            <p className="text-xs text-rose-500 font-medium">Couldn&apos;t load your schedule. Try again.</p>
+            {data?.referenceId ? (
+              <p className="text-[10px] text-slate-400 font-mono">Ref: {data.referenceId}</p>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => void refetch()}
+              className="inline-flex items-center px-3 py-1 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md transition-colors cursor-pointer"
+            >
+              Retry
+            </button>
+          </div>
         ) : (
           <>
             <CorridorBanner error={error} />
-            {minimalToday && events.length === 0 && !presalesToday ? (
+            {isDesign && events.length === 0 ? (
+              <div className="text-center py-5">
+                <p className="text-xs font-medium text-slate-400">No meetings scheduled today.</p>
+              </div>
+            ) : minimalToday && events.length === 0 && !presalesToday ? (
               <div className="text-center py-3">
                 <p className="text-xs font-medium text-slate-400">Client meetings are on your team&apos;s calendars.</p>
               </div>
@@ -170,8 +200,21 @@ export default function TodayCalendar() {
                     isLast={index === list.length - 1}
                     onOpenCalendar={() => setShowModal(true)}
                     presales={presalesToday}
+                    isDesign={isDesign}
                   />
                 ))}
+                {events.length > 3 ? (
+                  <div className="pt-2 text-right">
+                    <button
+                      type="button"
+                      onClick={() => setShowModal(true)}
+                      className="text-xs font-semibold text-brand hover:underline cursor-pointer inline-flex items-center gap-1"
+                    >
+                      <span>+{events.length - 3} more</span>
+                      <ArrowRight className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : null}
               </div>
             )}
           </>
@@ -218,11 +261,10 @@ export default function TodayCalendar() {
                   <button
                     type="button"
                     onClick={() => setViewMode('my')}
-                    className={`flex-1 py-1.5 rounded-lg text-center transition-all cursor-pointer ${
-                      viewMode === 'my'
+                    className={`flex-1 py-1.5 rounded-lg text-center transition-all cursor-pointer ${viewMode === 'my'
                         ? 'bg-brand-soft text-brand shadow-xs'
                         : 'text-slate-500'
-                    }`}
+                      }`}
                   >
                     {presalesToday ? 'My callbacks' : 'My Schedule'}
                   </button>
@@ -231,11 +273,10 @@ export default function TodayCalendar() {
                   <button
                     type="button"
                     onClick={() => setViewMode('team')}
-                    className={`flex-1 py-1.5 rounded-lg text-center transition-all cursor-pointer ${
-                      viewMode === 'team'
+                    className={`flex-1 py-1.5 rounded-lg text-center transition-all cursor-pointer ${viewMode === 'team'
                         ? 'bg-brand-soft text-brand shadow-xs'
                         : 'text-slate-500'
-                    }`}
+                      }`}
                   >
                     {presalesToday ? 'Team callbacks' : 'My team'}
                   </button>
@@ -244,11 +285,10 @@ export default function TodayCalendar() {
                   <button
                     type="button"
                     onClick={() => setViewMode('all')}
-                    className={`flex-1 py-1.5 rounded-lg text-center transition-all cursor-pointer ${
-                      viewMode === 'all'
+                    className={`flex-1 py-1.5 rounded-lg text-center transition-all cursor-pointer ${viewMode === 'all'
                         ? 'bg-brand-soft text-brand shadow-xs'
                         : 'text-slate-500'
-                    }`}
+                      }`}
                   >
                     All Hubs ({hubCount})
                   </button>
@@ -263,36 +303,74 @@ export default function TodayCalendar() {
             ) : (
               <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
                 {events.map((ev) => {
-                  const view = eventDisplay(ev, presalesToday);
+                  const view = eventDisplay(ev, presalesToday, isDesign);
+                  const isVirtual = /virtual|online|meet/i.test(view.meetingType);
+                  const canJoin = !presalesToday && isVirtual && Boolean(ev.linkUrl);
                   return (
                     <div
                       key={ev.id}
                       className="p-3 rounded-xl bg-slate-50 dark:bg-surface-muted border border-slate-100 dark:border-slate-800 text-xs"
                     >
-                      <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
                         <span className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                           <Clock className="w-3.5 h-3.5 text-brand" />
                           {ev.time}
                         </span>
-                        <MeetingTypeBadge type={view.meetingType} presales={presalesToday} />
+                        <div className="flex items-center gap-1 flex-wrap">
+                          <MeetingTypeBadge type={view.meetingType} presales={presalesToday} />
+                          {ev.stageTag ? (
+                            <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200/50 dark:border-rose-800/50">
+                              {ev.stageTag}
+                            </span>
+                          ) : null}
+                          {ev.status ? (
+                            <span
+                              className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium border ${
+                                ev.status === 'Meeting Successful'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200/50 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800/50'
+                                  : 'bg-amber-50 text-amber-700 border-amber-200/50 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800/50'
+                              }`}
+                            >
+                              {ev.status}
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
                       <p className="font-semibold text-slate-800 dark:text-slate-200 text-sm">
                         {view.clientName}
                       </p>
                       {view.peopleLine ? (
-                        <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">{view.peopleLine}</p>
-                      ) : null}
-                      {!presalesToday && ev.linkUrl ? (
-                        <a
-                          href={ev.linkUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1 mt-1.5 text-[11px] text-indigo-500 dark:text-indigo-400 font-medium hover:underline"
+                        <p
+                          className="mt-1 truncate text-[11px] leading-snug text-slate-500 dark:text-slate-400"
+                          title={view.peopleLine}
                         >
-                          <span>Open meeting link</span>
-                          <ExternalLink className="w-2.5 h-2.5" />
-                        </a>
+                          {view.peopleLine}
+                        </p>
                       ) : null}
+                      <div className="mt-1.5 flex items-center gap-3">
+                        {canJoin ? (
+                          <a
+                            href={ev.linkUrl!}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[11px] text-indigo-500 dark:text-indigo-400 font-medium hover:underline"
+                          >
+                            <span>Open meeting link</span>
+                            <ExternalLink className="w-2.5 h-2.5" />
+                          </a>
+                        ) : null}
+                        {ev.linkUrl && ev.id.startsWith('d-meet-') ? (
+                          <a
+                            href={ev.linkUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 font-medium hover:underline"
+                          >
+                            <span>Open lead detail</span>
+                            <ExternalLink className="w-2.5 h-2.5" />
+                          </a>
+                        ) : null}
+                      </div>
                     </div>
                   );
                 })}
@@ -325,44 +403,82 @@ function CompactMeetingRow({
   isLast,
   onOpenCalendar,
   presales,
+  isDesign,
 }: {
   ev: HallwayTodayEvent;
   isLast: boolean;
   onOpenCalendar: () => void;
   presales?: boolean;
+  isDesign?: boolean;
 }) {
-  const startTime = ev.time ? ev.time.split('–')[0].split('-')[0].trim() : '—';
-  const view = eventDisplay(ev, Boolean(presales));
+  const isTimeNotSet = !ev.time || ev.time === 'Time not set' || ev.time.toLowerCase().includes('not set');
+  const startTime = isTimeNotSet ? 'Time not set' : ev.time ? ev.time.split('–')[0].split('-')[0].trim() : '—';
+  const view = eventDisplay(ev, Boolean(presales), Boolean(isDesign));
+  const isVirtual = /virtual|online|meet/i.test(view.meetingType);
+  const canJoin = !presales && isVirtual && Boolean(ev.linkUrl);
 
   return (
     <div className="relative flex items-start gap-3 pb-4 last:pb-0">
       {!isLast ? (
-        <span className="pointer-events-none absolute left-[5.35rem] top-3 bottom-0 w-px bg-slate-200 dark:bg-slate-700" />
+        <span
+          className={`pointer-events-none absolute ${isTimeNotSet ? 'left-[6.1rem]' : 'left-[5.35rem]'
+            } top-3 bottom-0 w-px bg-slate-200 dark:bg-slate-700`}
+        />
       ) : null}
-      <span className="w-[4.25rem] shrink-0 pt-0.5 text-xs font-bold tabular-nums text-slate-800 dark:text-white">
+      <span
+        className={`shrink-0 pt-0.5 tabular-nums text-slate-800 dark:text-white ${isTimeNotSet
+            ? 'w-[5rem] text-[11px] font-semibold text-slate-500 dark:text-slate-400'
+            : 'w-[4.25rem] text-xs font-bold'
+          }`}
+      >
         {startTime}
       </span>
       <span className="relative z-[1] mt-1.5 h-2 w-2 shrink-0 rounded-full bg-brand ring-2 ring-brand/20" />
       <button
         type="button"
-        onClick={onOpenCalendar}
+        onClick={() => {
+          if (ev.linkUrl && ev.id.startsWith('d-meet-')) {
+            window.open(ev.linkUrl, '_blank', 'noopener,noreferrer');
+          } else {
+            onOpenCalendar();
+          }
+        }}
         className="block min-w-0 flex-1 cursor-pointer text-left"
       >
         <p className="truncate text-[13px] leading-snug text-slate-900 dark:text-slate-100">
           <span className="font-bold tracking-tight">{view.clientName}</span>
         </p>
         {view.peopleLine ? (
-          <p className="mt-0.5 truncate text-[11px] leading-snug text-slate-500 dark:text-slate-400">
+          <p
+            className="mt-0.5 truncate text-[11px] leading-snug text-slate-500 dark:text-slate-400"
+            title={view.peopleLine}
+          >
             {view.peopleLine}
           </p>
         ) : null}
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           <MeetingTypeBadge type={view.meetingType} presales={presales} />
-          {!presales && ev.linkUrl ? (
+          {ev.stageTag ? (
+            <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200/50 dark:border-rose-800/50">
+              {ev.stageTag}
+            </span>
+          ) : null}
+          {ev.status ? (
+            <span
+              className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium border ${
+                ev.status === 'Meeting Successful'
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200/50 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800/50'
+                  : 'bg-amber-50 text-amber-700 border-amber-200/50 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800/50'
+              }`}
+            >
+              {ev.status}
+            </span>
+          ) : null}
+          {canJoin ? (
             <a
-              href={ev.linkUrl}
+              href={ev.linkUrl!}
               target="_blank"
-              rel="noreferrer"
+              rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
               className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-indigo-500 hover:underline"
             >
@@ -387,11 +503,10 @@ function MeetingTypeBadge({ type, presales }: { type: string; presales?: boolean
   const virtual = /virtual|online|meet/i.test(type);
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-        virtual
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${virtual
           ? 'bg-teal-50 text-teal-700 dark:bg-teal-950/50 dark:text-teal-300'
           : 'bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300'
-      }`}
+        }`}
     >
       {type}
     </span>
@@ -403,8 +518,35 @@ function isSystemSalesLabel(name: string): boolean {
   return n === 'admin' || n === 'superadmin' || n === 'user';
 }
 
+function cleanPerson(val?: string | null): string {
+  if (!val) return '';
+  const s = String(val).trim();
+  if (
+    !s ||
+    /^null$/i.test(s) ||
+    /^undefined$/i.test(s) ||
+    /^unassigned$/i.test(s) ||
+    /^user$/i.test(s) ||
+    s === '—' ||
+    s === '-'
+  ) {
+    return '';
+  }
+  const formatted = formatPersonName(s);
+  if (
+    !formatted ||
+    /^user$/i.test(formatted) ||
+    /^null$/i.test(formatted) ||
+    /^undefined$/i.test(formatted) ||
+    /^unassigned$/i.test(formatted)
+  ) {
+    return '';
+  }
+  return formatted;
+}
+
 /** Presales = verification callbacks (owner only). Sales CRM = appointments (Sales + Designer). */
-function eventDisplay(ev: HallwayTodayEvent, presales: boolean) {
+export function eventDisplay(ev: HallwayTodayEvent, presales: boolean, isDesign = false) {
   const isCallback = presales || ev.category === 'callback';
   const parsed = parseClientAndLead(ev.clientName || ev.title || '', ev.leadId);
 
@@ -419,17 +561,40 @@ function eventDisplay(ev: HallwayTodayEvent, presales: boolean) {
     };
   }
 
-  const salesRaw = (ev.crmPersonName || '').trim();
+  const salesRaw = (ev.salesName || ev.crmPersonName || '').trim();
   const designerRaw = (ev.designerName || '').trim();
-  const sales = salesRaw ? formatPersonName(salesRaw) : '';
-  const designer = designerRaw ? formatPersonName(designerRaw) : '';
+  const sales = cleanPerson(salesRaw);
+  const designer = cleanPerson(designerRaw);
+  const isDesignEvent =
+    isDesign ||
+    ev.id.startsWith('d-meet-') ||
+    ev.id.startsWith('d-d1-') ||
+    ev.id.startsWith('d-d2-') ||
+    ev.id.startsWith('d-fin-') ||
+    ev.id.startsWith('d-dqc-');
+
+  if (isDesignEvent) {
+    const people: string[] = [];
+    if (sales && !isSystemSalesLabel(sales) && !isLeadTypeLabel(sales)) {
+      people.push(sales.startsWith('Sales:') ? sales : `Sales: ${sales}`);
+    }
+    if (designer && !isLeadTypeLabel(designer)) {
+      people.push(designer.startsWith('Designer:') ? designer : `Designer: ${designer}`);
+    }
+    return {
+      clientName: parsed.clientName,
+      peopleLine: people.length > 0 ? people.join(' · ') : undefined,
+      meetingType: humanMeetingType(ev.meetingType || 'Meeting'),
+    };
+  }
+
   const people: string[] = [];
   if (sales && !isSystemSalesLabel(sales) && !isLeadTypeLabel(sales)) {
     people.push(`Sales: ${sales}`);
   } else {
     people.push('Sales: —');
   }
-  if (designer && designer !== 'User' && !isLeadTypeLabel(designer)) {
+  if (designer && !isLeadTypeLabel(designer)) {
     people.push(`Designer: ${designer}`);
   } else if (!designer) {
     people.push('Designer: —');

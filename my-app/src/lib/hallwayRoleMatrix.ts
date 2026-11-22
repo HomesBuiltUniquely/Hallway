@@ -19,10 +19,12 @@ export type RoleProfile = {
 };
 
 function normRole(user?: { role?: string; department?: string } | null): string {
-  return String(user?.role || '')
+  let r = String(user?.role || '')
     .trim()
     .toUpperCase()
     .replace(/[\s-]+/g, '_');
+  if (r === 'TERRITORY_DESIGN_MANAGER') r = 'TERRITORIAL_DESIGN_MANAGER';
+  return r;
 }
 
 function normDept(user?: { department?: string } | null): string {
@@ -131,36 +133,45 @@ const CRM_PROFILES: Record<string, Omit<RoleProfile, 'portal'>> = {
 
 const DESIGN_PROFILES: Record<string, Omit<RoleProfile, 'portal'>> = {
   ADMIN: {
-    todayUi: 'minimal',
+    todayUi: 'full',
     todayDataSource: 'design_calendar',
-    homeModes: ['team', 'all'],
+    homeModes: ['all'],
     defaultMode: 'all',
     showsPersonalToggle: false,
-    showsScopeToggles: true,
+    showsScopeToggles: false,
+    crmActionsStrategy: 'oversight',
+  },
+  DEPUTY_GENERAL_MANAGER: {
+    todayUi: 'full',
+    todayDataSource: 'design_calendar',
+    homeModes: ['all'],
+    defaultMode: 'all',
+    showsPersonalToggle: false,
+    showsScopeToggles: false,
     crmActionsStrategy: 'oversight',
   },
   TERRITORIAL_DESIGN_MANAGER: {
-    todayUi: 'minimal',
+    todayUi: 'full',
     todayDataSource: 'design_calendar',
-    homeModes: ['team', 'all'],
+    homeModes: ['all'],
     defaultMode: 'all',
     showsPersonalToggle: false,
-    showsScopeToggles: true,
+    showsScopeToggles: false,
     crmActionsStrategy: 'oversight',
   },
   DESIGN_MANAGER: {
-    todayUi: 'minimal',
+    todayUi: 'full',
     todayDataSource: 'design_calendar',
     homeModes: ['team'],
     defaultMode: 'team',
     showsPersonalToggle: false,
-    showsScopeToggles: true,
+    showsScopeToggles: false,
     crmActionsStrategy: 'fresh_leads',
   },
   DQC_MANAGER: {
     todayUi: 'minimal',
     todayDataSource: 'design_calendar',
-    homeModes: ['team'],
+    homeModes: ['team', 'all'],
     defaultMode: 'team',
     showsPersonalToggle: false,
     showsScopeToggles: true,
@@ -169,7 +180,7 @@ const DESIGN_PROFILES: Record<string, Omit<RoleProfile, 'portal'>> = {
   MMT_MANAGER: {
     todayUi: 'minimal',
     todayDataSource: 'design_calendar',
-    homeModes: ['team'],
+    homeModes: ['team', 'all'],
     defaultMode: 'team',
     showsPersonalToggle: false,
     showsScopeToggles: true,
@@ -181,13 +192,13 @@ const DESIGN_PROFILES: Record<string, Omit<RoleProfile, 'portal'>> = {
     homeModes: ['team'],
     defaultMode: 'team',
     showsPersonalToggle: false,
-    showsScopeToggles: true,
+    showsScopeToggles: false,
     crmActionsStrategy: 'fresh_leads',
   },
   SENIOR_PROJECT_MANAGER: {
     todayUi: 'minimal',
     todayDataSource: 'design_calendar',
-    homeModes: ['team'],
+    homeModes: ['team', 'all'],
     defaultMode: 'team',
     showsPersonalToggle: false,
     showsScopeToggles: true,
@@ -196,7 +207,16 @@ const DESIGN_PROFILES: Record<string, Omit<RoleProfile, 'portal'>> = {
   OPERATION_MANAGER: {
     todayUi: 'minimal',
     todayDataSource: 'design_calendar',
-    homeModes: ['team'],
+    homeModes: ['team', 'all'],
+    defaultMode: 'all',
+    showsPersonalToggle: false,
+    showsScopeToggles: true,
+    crmActionsStrategy: 'fresh_leads',
+  },
+  ESCALATION_MANAGER: {
+    todayUi: 'hidden',
+    todayDataSource: 'design_calendar',
+    homeModes: ['team', 'all'],
     defaultMode: 'team',
     showsPersonalToggle: false,
     showsScopeToggles: true,
@@ -208,7 +228,7 @@ const DESIGN_PROFILES: Record<string, Omit<RoleProfile, 'portal'>> = {
     homeModes: ['my'],
     defaultMode: 'my',
     showsPersonalToggle: true,
-    showsScopeToggles: true,
+    showsScopeToggles: false,
     crmActionsStrategy: 'fresh_leads',
   },
   MMT_EXECUTIVE: {
@@ -216,15 +236,15 @@ const DESIGN_PROFILES: Record<string, Omit<RoleProfile, 'portal'>> = {
     todayDataSource: 'design_calendar',
     homeModes: ['my'],
     defaultMode: 'my',
-    showsPersonalToggle: false,
+    showsPersonalToggle: true,
     showsScopeToggles: false,
     crmActionsStrategy: 'fresh_leads',
   },
   FINANCE: {
     todayUi: 'minimal',
     todayDataSource: 'design_calendar',
-    homeModes: ['my'],
-    defaultMode: 'my',
+    homeModes: ['all'],
+    defaultMode: 'all',
     showsPersonalToggle: false,
     showsScopeToggles: false,
     crmActionsStrategy: 'fresh_leads',
@@ -234,7 +254,7 @@ const DESIGN_PROFILES: Record<string, Omit<RoleProfile, 'portal'>> = {
     todayDataSource: 'design_calendar',
     homeModes: ['my'],
     defaultMode: 'my',
-    showsPersonalToggle: false,
+    showsPersonalToggle: true,
     showsScopeToggles: false,
     crmActionsStrategy: 'fresh_leads',
   },

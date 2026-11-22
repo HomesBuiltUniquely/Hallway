@@ -187,15 +187,23 @@ export interface HallwayTodayEvent {
   endAt?: string;
   clientName?: string | null;
   leadId?: string | number | null;
+  salesName?: string | null;
   crmPersonName?: string | null;
   designerName?: string | null;
   meetingType?: string | null;
+  /** e.g. Pre 10% chip for meeting-management roles */
+  stageTag?: string;
+  /** e.g. Meeting Successful / In progress / Scheduled */
+  status?: string;
   attendees?: string[];
 }
 
 export interface HallwayTodayEventsResponse {
   dayBasis?: string;
   date?: string;
+  feedError?: boolean;
+  message?: string;
+  referenceId?: string;
   /** When true, server already applied My / team / all scope — skip client re-filter. */
   scoped?: boolean;
   /**
@@ -213,6 +221,7 @@ export interface HallwayActionItem {
   name: string;
   detail?: string;
   done: boolean;
+  linkUrl?: string;
   xpPoints?: number;
   xpPenaltyWarning?: string;
   /** Clock time for personal queues (executives). Prefer dueDateLabel for oversight. */
@@ -223,6 +232,17 @@ export interface HallwayActionItem {
   assignee?: string;
   /** Overdue / Due today / No due date — drives the status pill. */
   statusLabel?: 'Overdue' | 'Due today' | 'No due date';
+  /** Rich hold details for expanded view */
+  holdMetadata?: {
+    projectId: string;
+    customerName: string;
+    designerName: string;
+    daysOnHold: number;
+    holdReason: string;
+    heldSinceDate: string;
+    heldBy: string;
+    resumeAtDate?: string | null;
+  };
 }
 
 export interface HallwayActionGroup {
@@ -230,15 +250,25 @@ export interface HallwayActionGroup {
   title: string;
   count: number;
   urgent?: boolean;
+  uncounted?: boolean;
+  isWatchlist?: boolean;
   items: HallwayActionItem[];
   designerXpTier?: string;
   designerTotalXp?: number;
+  collapsedSummary?: {
+    projectCount: number;
+    oldestDays: number;
+    hubBreakdown?: Array<{ hub: string; count: number }>;
+  };
 }
 
 export interface HallwayActionsResponse {
   dayBasis?: string;
   scoped?: boolean;
   actions: HallwayActionGroup[];
+  feedError?: boolean;
+  message?: string;
+  referenceId?: string;
 }
 
 export interface HallwayFeedAuthor {

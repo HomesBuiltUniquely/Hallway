@@ -48,6 +48,22 @@ export function saveDesignHandoff(user: unknown, sessionId: string) {
   window.localStorage.setItem(DESIGN_HANDOFF_KEY, JSON.stringify({ user, sessionId }));
 }
 
+/** Numeric Design `users.id` from Hallway ↔ Design handoff (browser only). */
+export function readDesignUserIdFromHandoff(): string | undefined {
+  if (typeof window === 'undefined') return undefined;
+  try {
+    const raw = window.localStorage.getItem(DESIGN_HANDOFF_KEY);
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw) as { user?: { id?: number | string } };
+    const id = parsed?.user?.id;
+    if (id == null) return undefined;
+    const s = String(id).trim();
+    return /^\d+$/.test(s) ? s : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function clearDesignHandoff() {
   if (typeof window === 'undefined') return;
   window.localStorage.removeItem(DESIGN_HANDOFF_KEY);

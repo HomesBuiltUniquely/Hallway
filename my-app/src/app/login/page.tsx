@@ -106,7 +106,11 @@ export default function LoginPage() {
         }
       }
 
-      login(user.email || id, user.name || user.email || id, role, department);
+      const designUserId =
+        portal === 'design' && data.designSession?.user?.id != null
+          ? data.designSession.user.id
+          : user.id;
+      login(user.email || id, user.name || user.email || id, role, department, designUserId);
 
       if (typeof data.notice === 'string' && data.notice) {
         try {
