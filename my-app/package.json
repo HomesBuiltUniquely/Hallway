@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test:hallway-scope": "node src/lib/hallwayScope.test.mjs",
     "test:design-today": "node src/lib/designToday.test.mjs",
+    "test:celebrations": "node src/lib/celebrationsEligibility.test.mjs",
     "test:design-actions": "node src/lib/designProjectTrackerActions.test.mjs",
     "test:design-registry": "node --experimental-strip-types src/lib/designActionsRegistry.test.mjs"
   },

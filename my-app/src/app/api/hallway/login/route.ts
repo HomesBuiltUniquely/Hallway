@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { ensureCelebrationViewerBaselines } from '../../../../lib/celebrations';
 import { resolveHallwayIdentity } from '../../../../lib/hallwayPortalResolve';
 import { isDesignRole } from '../../../../lib/permissions';
 import {
@@ -43,6 +44,12 @@ const CRM_BASE = stripSlash(
 const DESIGN_AUTH_TIMEOUT_MS = 12000;
 const CRM_AUTH_TIMEOUT_MS = 8000;
 const IDENTITY_TIMEOUT_MS = 8000;
+
+function seedCelebrationBaseline(keys: Array<string | number | undefined | null>) {
+  const parts = keys.map((k) => String(k || '').trim()).filter(Boolean);
+  if (!parts.length) return;
+  void ensureCelebrationViewerBaselines(parts).catch(() => undefined);
+}
 
 type AuthAttempt = {
   ok: boolean;
@@ -358,6 +365,11 @@ export async function POST(request: Request) {
       !isSalesFamilyRole(crm.user?.role);
 
     if (design.ok && design.sessionId && design.user) {
+      seedCelebrationBaseline([
+        design.user.email,
+        design.user.id,
+        identifier,
+      ]);
       return NextResponse.json({
         ok: true,
         portal: 'design',
@@ -375,6 +387,7 @@ export async function POST(request: Request) {
 
     if (crm.ok && crm.token) {
       if (isDesigner) {
+        seedCelebrationBaseline([crm.user?.email, crm.user?.id, crm.user?.username, identifier]);
         return NextResponse.json({
           ok: true,
           portal: 'design',
@@ -391,6 +404,12 @@ export async function POST(request: Request) {
         });
       }
 
+      seedCelebrationBaseline([
+        crm.user?.email,
+        crm.user?.id,
+        crm.user?.username,
+        identifier,
+      ]);
       return NextResponse.json({
         ok: true,
         portal: 'crm',

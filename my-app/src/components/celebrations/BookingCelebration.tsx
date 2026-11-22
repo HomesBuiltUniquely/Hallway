@@ -25,6 +25,34 @@ export const CELEBRATION_VISIBLE_MS = 8000;
  * CRM / Design load the same file from the Hallway origin.
  */
 export const CELEBRATION_SOUND_PATH = '/celebrations/booking-done.mp3';
+export const CELEBRATION_MAX_POPUPS = 3;
+const CELEBRATION_SHOWN_CHANNEL = 'hw-cele-shown-v2';
+
+function celebrationSoundOn(): boolean {
+  const raw = String(process.env.NEXT_PUBLIC_CELEBRATION_SOUND_ENABLED || '')
+    .trim()
+    .toLowerCase();
+  return raw === 'true' || raw === '1' || raw === 'yes';
+}
+
+type DeliveryPayload = {
+  events: CelebrationEvent[];
+  overflowCount?: number;
+  heldBackIds?: string[];
+};
+
+function parseDeliveryPayload(raw: unknown): DeliveryPayload {
+  if (Array.isArray(raw)) return { events: raw as CelebrationEvent[] };
+  if (raw && typeof raw === 'object') {
+    const o = raw as Record<string, unknown>;
+    return {
+      events: Array.isArray(o.events) ? (o.events as CelebrationEvent[]) : [],
+      overflowCount: typeof o.overflowCount === 'number' ? o.overflowCount : 0,
+      heldBackIds: Array.isArray(o.heldBackIds) ? o.heldBackIds.map(String) : [],
+    };
+  }
+  return { events: [] };
+}
 
 type CelebrationEvent = {
   id: string;
@@ -78,6 +106,7 @@ export default function BookingCelebration({
   const surface =
     celebrationSurface || (placement === 'center' ? 'hallway' : 'crm');
   const [queue, setQueue] = useState<CelebrationEvent[]>([]);
+  const [overflowSummary, setOverflowSummary] = useState<number | null>(null);
   const [paused, setPaused] = useState(false);
   const [congratsState, setCongratsState] = useState<'idle' | 'sending' | 'sent'>('idle');
   const [visibleMs, setVisibleMs] = useState(CELEBRATION_VISIBLE_MS);
@@ -90,6 +119,9 @@ export default function BookingCelebration({
   const tabId = useRef(`tab-${Math.random().toString(36).slice(2)}`);
   const leader = useRef(false);
   const claimedIds = useRef<Set<string>>(new Set());
+  const heldBackIdsRef = useRef<string[]>([]);
+  const burstSoundPlayedRef = useRef(false);
+  const shownChannelRef = useRef<BroadcastChannel | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioPlayedRef = useRef(false);
   const audioPendingRef = useRef(false);
@@ -111,9 +143,30 @@ export default function BookingCelebration({
         ids.add(event.id);
         next.push(event);
       }
-      return next.slice(0, 5);
+      return next.slice(0, CELEBRATION_MAX_POPUPS);
     });
   }, []);
+
+  const broadcastShown = useCallback((eventId: string) => {
+    try {
+      shownChannelRef.current?.postMessage({ type: 'shown', id: eventId });
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const applyDelivery = useCallback(
+    (payload: DeliveryPayload) => {
+      if (payload.heldBackIds?.length) {
+        heldBackIdsRef.current = payload.heldBackIds;
+      }
+      if (typeof payload.overflowCount === 'number' && payload.overflowCount > 0) {
+        setOverflowSummary(payload.overflowCount);
+      }
+      enqueue(payload.events || []);
+    },
+    [enqueue]
+  );
 
   const markSeen = useCallback(
     async (eventId: string, congratulated: boolean) => {
@@ -155,7 +208,8 @@ export default function BookingCelebration({
   }, []);
 
   const playCelebrationSound = useCallback(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || !celebrationSoundOn()) return;
+    if (burstSoundPlayedRef.current) return;
     if (audioPlayedRef.current) return;
     try {
       const base = hallwayOrigin(apiBase) || window.location.origin;
@@ -184,6 +238,7 @@ export default function BookingCelebration({
         .play()
         .then(() => {
           audioPlayedRef.current = true;
+          burstSoundPlayedRef.current = true;
           audioPendingRef.current = false;
           if (audioRef.current) syncVisibleFromAudio(audioRef.current);
         })
@@ -205,6 +260,22 @@ export default function BookingCelebration({
   useEffect(() => {
     setCelebrationSurface(surface === 'hallway' ? 'hallway' : 'crm');
   }, [surface]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('BroadcastChannel' in window)) return;
+    const ch = new BroadcastChannel(CELEBRATION_SHOWN_CHANNEL);
+    shownChannelRef.current = ch;
+    ch.onmessage = (ev) => {
+      const id = (ev.data as { id?: string })?.id;
+      if (!id) return;
+      claimedIds.current.add(id);
+      setQueue((prev) => prev.filter((item) => item.id !== id));
+    };
+    return () => {
+      ch.close();
+      shownChannelRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     if (!celebrationEnabled) return;
@@ -293,7 +364,10 @@ export default function BookingCelebration({
         );
         if (!res.ok) return;
         const body = await res.json();
-        mergePull(Array.isArray(body?.events) ? body.events : []);
+        const payload = parseDeliveryPayload(body);
+        mergePull(payload.events);
+        if (payload.overflowCount) setOverflowSummary(payload.overflowCount);
+        if (payload.heldBackIds?.length) heldBackIdsRef.current = payload.heldBackIds;
       } catch {
         /* ignore */
       }
@@ -334,8 +408,8 @@ export default function BookingCelebration({
       );
       source.onmessage = (message) => {
         try {
-          const events = JSON.parse(message.data);
-          if (Array.isArray(events)) enqueue(events);
+          const payload = parseDeliveryPayload(JSON.parse(message.data));
+          applyDelivery(payload);
         } catch {
           /* ping or non-JSON */
         }
@@ -364,7 +438,7 @@ export default function BookingCelebration({
       }
       source = null;
     };
-  }, [apiBase, canDeliver, enqueue, viewerQuery]);
+  }, [apiBase, canDeliver, applyDelivery, enqueue, viewerQuery]);
 
   const currentId = current?.id || '';
 
@@ -391,8 +465,10 @@ export default function BookingCelebration({
 
   useEffect(() => {
     if (!currentId || !cardReady) return;
+    broadcastShown(currentId);
+    void markSeen(currentId, false);
     playCelebrationSound();
-  }, [cardReady, currentId, playCelebrationSound]);
+  }, [broadcastShown, cardReady, currentId, markSeen, playCelebrationSound]);
 
   // Retry sound after the first user gesture if autoplay was blocked.
   useEffect(() => {
@@ -428,6 +504,67 @@ export default function BookingCelebration({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [current, dismiss, markSeen, placement]);
+
+  const ackHeldBack = useCallback(async () => {
+    const ids = heldBackIdsRef.current;
+    if (!ids.length) return;
+    const base = hallwayOrigin(apiBase);
+    try {
+      await fetch(`${base}/api/celebrations/ack-batch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          viewerKey: identityKeys[0] || viewerKey,
+          viewerKeys: identityKeys,
+          eventIds: ids,
+        }),
+      });
+    } catch {
+      /* ignore */
+    }
+    heldBackIdsRef.current = [];
+  }, [apiBase, identityKeys, viewerKey]);
+
+  useEffect(() => {
+    if (current || queue.length > 0 || overflowSummary == null || overflowSummary <= 0) return;
+    void ackHeldBack();
+  }, [ackHeldBack, current, overflowSummary, queue.length]);
+
+  useEffect(() => {
+    if (current || queue.length > 0 || overflowSummary == null || overflowSummary <= 0) return;
+    const closeSummary = () => {
+      void ackHeldBack().finally(() => setOverflowSummary(null));
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeSummary();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [ackHeldBack, current, overflowSummary, queue.length]);
+
+  if (!current && overflowSummary != null && overflowSummary > 0) {
+    const closeSummary = () => {
+      void ackHeldBack().finally(() => setOverflowSummary(null));
+    };
+    return (
+      <div className="hw-cele-center" role="status" aria-live="polite">
+        <style>{`
+          .hw-cele-center { position: fixed; inset: 0; z-index: 80; display: flex; align-items: center; justify-content: center; background: rgba(15, 23, 42, 0.28); font-family: Manrope, "Segoe UI", sans-serif; }
+          .hw-cele-summary { background: #fff; color: #111827; border-radius: 16px; padding: 20px 24px; box-shadow: 0 18px 50px rgba(15, 23, 42, 0.22); max-width: min(420px, calc(100vw - 32px)); text-align: center; }
+          .hw-cele-summary h2 { margin: 0; font-size: 18px; font-weight: 800; }
+          .hw-cele-summary p { margin: 8px 0 0; color: #475467; font-size: 13px; }
+          .hw-cele-summary button { margin-top: 14px; height: 34px; border-radius: 10px; border: 1px solid #e5e7eb; background: #fff; font-weight: 700; padding: 0 14px; cursor: pointer; }
+        `}</style>
+        <div className="hw-cele-summary">
+          <h2>+{overflowSummary} more bookings today</h2>
+          <p>Your team closed additional deals. See the Deals &amp; Bookings feed for the full list.</p>
+          <button type="button" onClick={closeSummary}>
+            Done
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (!current) return null;
 
@@ -508,8 +645,8 @@ export default function BookingCelebration({
             {current.branchName ? ` · ${current.branchName}` : ''}
           </p>
           <p className="hw-cele-meta">
-            {current.customerName || 'Customer'} ·{' '}
-            <span className="hw-cele-amt">{current.quoteFormatted}</span>
+            {current.customerName?.trim() || 'Customer'} ·{' '}
+            <span className="hw-cele-amt">{current.quoteFormatted || '—'}</span>
           </p>
           <div className="hw-cele-actions">
             <button

@@ -235,6 +235,22 @@ export async function ensureHallwaySchema(): Promise<void> {
         PRIMARY KEY (event_id, viewer_key)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS celebration_viewer_cursors (
+        viewer_key VARCHAR(191) NOT NULL PRIMARY KEY,
+        baseline_at DATETIME NOT NULL,
+        reactivated_at DATETIME NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+    try {
+      await pool.query(
+        `ALTER TABLE celebration_events ADD COLUMN suppressed TINYINT(1) NOT NULL DEFAULT 0`
+      );
+    } catch {
+      /* column exists */
+    }
   await migrateCelebrationMilestones(pool);
   })().catch((err) => {
     _schemaReady = null;

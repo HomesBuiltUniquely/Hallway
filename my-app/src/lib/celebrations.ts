@@ -1,3 +1,8 @@
+import {
+  celebrationMaxPopups,
+  celebrationRecencyHours,
+  celebrationRolloutBaseline,
+} from './celebrationPolicy';
 import { ensureAnnouncementExists, ensureHallwaySchema, getPool } from './db';
 
 export type CelebrationMilestone = 'token' | 'booking_confirmed';
@@ -137,6 +142,16 @@ export async function createCelebration(input: {
   const customer = String(input.customerName || '').trim();
   const quote = Number(input.quoteAmount);
   const milestone = normalizeMilestone(input.milestone);
+  const statusRaw = String(
+    (input as { status?: string; bookingStatus?: string }).status ||
+      (input as { bookingStatus?: string }).bookingStatus ||
+      ''
+  )
+    .trim()
+    .toLowerCase();
+  if (statusRaw.includes('cancel')) {
+    return { created: false };
+  }
   if (!bookingId || !salesperson || !Number.isFinite(quote) || quote <= 0) {
     return { created: false };
   }
@@ -205,22 +220,136 @@ export async function createCelebration(input: {
   return { created, id };
 }
 
-/** Unseen celebrations for one person (any of their identity aliases). Newest first, at most five. */
-export async function listUnseenCelebrations(
+export type CelebrationDeliveryBatch = {
+  events: CelebrationEvent[];
+  /** Eligible celebrations beyond the popup cap (for “+N more” summary). */
+  overflowCount: number;
+  /** IDs not shown as pop-ups — mark seen when the summary line is displayed. */
+  heldBackIds: string[];
+};
+
+async function eligibleCelebrationSince(
+  pool: ReturnType<typeof getPool>,
+  viewers: string[]
+): Promise<Date | null> {
+  if (viewers.length === 0) return celebrationRolloutBaseline();
+  const placeholders = viewers.map(() => '?').join(', ');
+  const [rows] = await pool.query<any[]>(
+    `SELECT viewer_key, baseline_at, reactivated_at
+     FROM celebration_viewer_cursors
+     WHERE viewer_key IN (${placeholders})`,
+    viewers
+  );
+  const rollout = celebrationRolloutBaseline();
+  let floor: Date | null = rollout;
+  for (const row of rows || []) {
+    let baseline =
+      row.baseline_at instanceof Date ? row.baseline_at : new Date(String(row.baseline_at || ''));
+    const reactivated =
+      row.reactivated_at == null
+        ? null
+        : row.reactivated_at instanceof Date
+          ? row.reactivated_at
+          : new Date(String(row.reactivated_at));
+    if (reactivated && !Number.isNaN(reactivated.getTime()) && reactivated > baseline) {
+      baseline = reactivated;
+    }
+    if (!Number.isNaN(baseline.getTime())) {
+      floor = !floor || baseline > floor ? baseline : floor;
+    }
+  }
+  return floor;
+}
+
+/** Set server baseline on first authenticated touch (login or first poll). Idempotent. */
+export async function ensureCelebrationViewerBaselines(
   viewerKey: string | string[],
-  limit = 5
-): Promise<CelebrationEvent[]> {
+  opts?: { reactivated?: boolean }
+): Promise<void> {
   const viewers = expandViewerKeys(viewerKey);
-  if (viewers.length === 0) return [];
+  if (viewers.length === 0) return;
   await ensureHallwaySchema();
   const pool = getPool();
-  const cap = Math.min(Math.max(limit, 1), 5);
+  for (const viewer of viewers) {
+    if (opts?.reactivated) {
+      await pool.query(
+        `INSERT INTO celebration_viewer_cursors (viewer_key, baseline_at, reactivated_at)
+         VALUES (?, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+         ON DUPLICATE KEY UPDATE
+           reactivated_at = UTC_TIMESTAMP(),
+           updated_at = UTC_TIMESTAMP()`,
+        [viewer]
+      );
+      continue;
+    }
+    await pool.query(
+      `INSERT INTO celebration_viewer_cursors (viewer_key, baseline_at)
+       VALUES (?, UTC_TIMESTAMP())
+       ON DUPLICATE KEY UPDATE viewer_key = viewer_key`,
+      [viewer]
+    );
+  }
+}
+
+/**
+ * Eligible unseen celebrations — server filters: baseline, recency, seen, not suppressed.
+ * Returns at most celebrationMaxPopups() for display; overflowCount for summary line.
+ */
+export async function listUnseenCelebrations(
+  viewerKey: string | string[],
+  limit?: number
+): Promise<CelebrationEvent[]> {
+  const batch = await listUnseenCelebrationBatch(viewerKey, limit);
+  return batch.events;
+}
+
+export async function listUnseenCelebrationBatch(
+  viewerKey: string | string[],
+  limit?: number
+): Promise<CelebrationDeliveryBatch> {
+  const viewers = expandViewerKeys(viewerKey);
+  if (viewers.length === 0) return { events: [], overflowCount: 0, heldBackIds: [] };
+
+  await ensureCelebrationViewerBaselines(viewerKey);
+
+  await ensureHallwaySchema();
+  const pool = getPool();
+  const cap = Math.min(Math.max(limit ?? celebrationMaxPopups(), 1), 10);
+  const recencyHours = celebrationRecencyHours();
+  const since = await eligibleCelebrationSince(pool, viewers);
   const placeholders = viewers.map(() => '?').join(', ');
+
+  let baselineClause = '';
+  const sqlParams: unknown[] = [recencyHours];
+  if (since) {
+    baselineClause = ' AND e.occurred_at >= ?';
+    sqlParams.push(since);
+  }
+  const existsParams = [...sqlParams, ...viewers];
+
+  const [countRows] = await pool.query<any[]>(
+    `SELECT COUNT(*) AS total
+     FROM celebration_events e
+     WHERE e.suppressed = 0
+       AND e.occurred_at >= (UTC_TIMESTAMP() - INTERVAL ? HOUR)
+       ${baselineClause}
+       AND NOT EXISTS (
+         SELECT 1 FROM celebration_receipts r
+         WHERE r.event_id = e.id
+           AND r.viewer_key IN (${placeholders})
+           AND r.seen_at IS NOT NULL
+       )`,
+    existsParams
+  );
+  const totalEligible = Number(countRows?.[0]?.total) || 0;
+
   const [rows] = await pool.query<any[]>(
     `SELECT e.id, e.booking_id, e.celebration_type, e.salesperson_name, e.branch_name,
             e.customer_name, e.quote_amount, e.announcement_id, e.occurred_at
      FROM celebration_events e
-     WHERE e.occurred_at >= (NOW() - INTERVAL 30 DAY)
+     WHERE e.suppressed = 0
+       AND e.occurred_at >= (UTC_TIMESTAMP() - INTERVAL ? HOUR)
+       ${baselineClause}
        AND NOT EXISTS (
          SELECT 1 FROM celebration_receipts r
          WHERE r.event_id = e.id
@@ -229,9 +358,46 @@ export async function listUnseenCelebrations(
        )
      ORDER BY e.occurred_at DESC
      LIMIT ${cap}`,
-    viewers
+    existsParams
   );
-  return (rows || []).map(mapRow);
+
+  const events = (rows || []).map(mapRow);
+  const overflowCount = Math.max(0, totalEligible - events.length);
+
+  let heldBackIds: string[] = [];
+  if (overflowCount > 0) {
+    const [heldRows] = await pool.query<any[]>(
+      `SELECT e.id
+       FROM celebration_events e
+       WHERE e.suppressed = 0
+         AND e.occurred_at >= (UTC_TIMESTAMP() - INTERVAL ? HOUR)
+         ${baselineClause}
+         AND NOT EXISTS (
+           SELECT 1 FROM celebration_receipts r
+           WHERE r.event_id = e.id
+             AND r.viewer_key IN (${placeholders})
+             AND r.seen_at IS NOT NULL
+         )
+       ORDER BY e.occurred_at DESC
+       LIMIT 500 OFFSET ?`,
+      [...existsParams, cap]
+    );
+    heldBackIds = (heldRows || []).map((r) => String(r.id));
+  }
+
+  return { events, overflowCount, heldBackIds };
+}
+
+export async function markCelebrationsSeenBatch(
+  eventIds: string[],
+  viewerKey: string | string[]
+): Promise<void> {
+  const viewers = expandViewerKeys(viewerKey);
+  const ids = eventIds.map((id) => String(id || '').trim()).filter(Boolean);
+  if (!ids.length || !viewers.length) return;
+  for (const id of ids) {
+    await markCelebrationSeen(id, viewers, false);
+  }
 }
 
 export async function markCelebrationSeen(

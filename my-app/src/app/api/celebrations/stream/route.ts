@@ -1,4 +1,4 @@
-import { listUnseenCelebrations, normalizeViewerKey } from '@/lib/celebrations';
+import { listUnseenCelebrationBatch, normalizeViewerKey } from '@/lib/celebrations';
 import { CELEBRATION_STREAM_DB_POLL_MS } from '@/lib/celebrationRealtime';
 
 export const runtime = 'nodejs';
@@ -44,10 +44,18 @@ export async function GET(request: Request) {
           return;
         }
         try {
-          const events = await listUnseenCelebrations(viewerParam, 5);
-          const fresh = events.filter((event) => !sent.has(event.id));
+          const batch = await listUnseenCelebrationBatch(viewerParam);
+          const fresh = batch.events.filter((event) => !sent.has(event.id));
           fresh.forEach((event) => sent.add(event.id));
-          if (fresh.length > 0) write(`data: ${JSON.stringify(fresh)}\n\n`);
+          if (fresh.length > 0) {
+            write(
+              `data: ${JSON.stringify({
+                events: fresh,
+                overflowCount: batch.overflowCount,
+                heldBackIds: batch.heldBackIds,
+              })}\n\n`
+            );
+          }
           else write(': ping\n\n');
         } catch {
           write(': ping\n\n');

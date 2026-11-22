@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import {
   celebrationSecret,
   createCelebration,
-  listUnseenCelebrations,
+  listUnseenCelebrationBatch,
   normalizeViewerKey,
 } from '@/lib/celebrations';
 
@@ -28,8 +28,15 @@ export async function GET(request: Request) {
   if (!normalizeViewerKey(viewerParam?.split(',')[0])) {
     return NextResponse.json({ events: [] }, { headers: corsHeaders(request) });
   }
-  const events = await listUnseenCelebrations(viewerParam || '', 5);
-  return NextResponse.json({ events }, { headers: corsHeaders(request) });
+  const batch = await listUnseenCelebrationBatch(viewerParam || '');
+  return NextResponse.json(
+    {
+      events: batch.events,
+      overflowCount: batch.overflowCount,
+      heldBackIds: batch.heldBackIds,
+    },
+    { headers: corsHeaders(request) }
+  );
 }
 
 export async function POST(request: Request) {
