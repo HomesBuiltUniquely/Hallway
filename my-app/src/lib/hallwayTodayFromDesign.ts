@@ -242,6 +242,57 @@ function sameName(a?: string | null, b?: string | null): boolean {
 }
 
 /**
+ * Deduplicate meetings for the same customer/lead on the same day:
+ * Matches Meeting Management behavior: exactly one entry per lead reflecting the latest progress/active slot.
+ */
+function deduplicateEventsByLead(
+  events: Array<HallwayTodayEvent & { startMinutes: number; meetId: number }>
+): Array<HallwayTodayEvent & { startMinutes: number; meetId: number }> {
+  const byKey = new Map<string, Array<HallwayTodayEvent & { startMinutes: number; meetId: number }>>();
+
+  for (const ev of events) {
+    const key = ev.leadId
+      ? `lead:${ev.leadId}`
+      : `client:${String(ev.clientName || ev.title).toLowerCase().trim()}:${String(ev.designerName || '').toLowerCase().trim()}`;
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key)!.push(ev);
+  }
+
+  const result: Array<HallwayTodayEvent & { startMinutes: number; meetId: number }> = [];
+
+  for (const list of byKey.values()) {
+    if (list.length === 1) {
+      result.push(list[0]);
+      continue;
+    }
+
+    const scoreStatus = (st?: string) => {
+      const s = String(st || '').toLowerCase();
+      if (s.includes('in progress')) return 100;
+      if (s.includes('scheduled') || s.includes('rescheduled')) return 80;
+      if (s.includes('successful') || s.includes('completed')) return 60;
+      return 10;
+    };
+
+    list.sort((a, b) => {
+      const scoreDiff = scoreStatus(b.status) - scoreStatus(a.status);
+      if (scoreDiff !== 0) return scoreDiff;
+      if (b.startMinutes !== a.startMinutes) return b.startMinutes - a.startMinutes;
+      return b.meetId - a.meetId;
+    });
+
+    result.push(list[0]);
+  }
+
+  result.sort((a, b) => {
+    if (a.startMinutes !== b.startMinutes) return a.startMinutes - b.startMinutes;
+    return a.meetId - b.meetId;
+  });
+
+  return result;
+}
+
+/**
  * Fetch scheduled meetings from Design Module backend API via session auth.
  * Calls /api/meetings/scheduled — the same endpoint Meeting Management uses.
  */
@@ -365,12 +416,8 @@ async function fetchMeetingsFromDesignApi(
       });
     }
 
-    sortable.sort((a, b) => {
-      if (a.startMinutes !== b.startMinutes) return a.startMinutes - b.startMinutes;
-      return a.meetId - b.meetId;
-    });
-
-    return sortable.map(({ startMinutes, meetId, ...ev }) => ev);
+    const dedupedSortable = deduplicateEventsByLead(sortable);
+    return dedupedSortable.map(({ startMinutes, meetId, ...ev }) => ev);
   } catch (err) {
     console.warn('[loadTodayMeetingsFromDesign] Design API call failed, falling back to DB:', err);
     return null;
@@ -647,12 +694,8 @@ export async function loadTodayMeetingsFromDesign(
     });
   }
 
-  mappedAll.sort((a, b) => {
-    if (a.startMinutes !== b.startMinutes) return a.startMinutes - b.startMinutes;
-    return a.meetId - b.meetId;
-  });
-
-  const finalEvents: HallwayTodayEvent[] = mappedAll.map(({ startMinutes, meetId, ...ev }) => ev);
+  const dedupedMapped = deduplicateEventsByLead(mappedAll);
+  const finalEvents: HallwayTodayEvent[] = dedupedMapped.map(({ startMinutes, meetId, ...ev }) => ev);
 
   return {
     dayBasis: `Design Module · ${scopeMode} schedule (${dateYmd} IST)`,
