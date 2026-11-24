@@ -144,63 +144,7 @@ export function bookingRecognitionYmd(row: {
   );
 }
 
-const ALLOWED_LEAD_TABLES = new Set([
-  'mlead',
-  'glead',
-  'addlead',
-  'websitelead',
-  'ivrlead',
-  'whatsapplead',
-  'walkinlead',
-  'quikrlead',
-]);
-
-async function batchResolveLeadAssignees(
-  pool: any,
-  crmDb: string,
-  records: Array<{ lead_id?: number | null; lead_type?: string | null }>
-): Promise<Map<string, string>> {
-  const map = new Map<string, string>();
-  const byTable = new Map<string, Set<number>>();
-
-  for (const r of records) {
-    const rawTable = String(r.lead_type || '').toLowerCase().trim();
-    const id = Number(r.lead_id);
-    if (!id || !ALLOWED_LEAD_TABLES.has(rawTable)) continue;
-    if (!byTable.has(rawTable)) byTable.set(rawTable, new Set());
-    byTable.get(rawTable)!.add(id);
-  }
-
-  await Promise.all(
-    Array.from(byTable.entries()).map(async ([table, idSet]) => {
-      const ids = Array.from(idSet);
-      if (ids.length === 0) return;
-      try {
-        const [rows]: any = await pool.query(
-          `SELECT id, assignee FROM ${crmDb}.${table} WHERE id IN (?)`,
-          [ids]
-        );
-        for (const row of Array.isArray(rows) ? rows : []) {
-          const assignee = String(row.assignee || '').trim();
-          if (assignee) {
-            map.set(`${table}:${row.id}`, assignee);
-          }
-        }
-      } catch (err) {
-        console.warn(`[batchResolveLeadAssignees] failed for table ${table}:`, err);
-      }
-    })
-  );
-
-  return map;
-}
-
-function mapRow(
-  r: any,
-  dateFrom: string | null,
-  dateTo: string | null,
-  assigneeMap?: Map<string, string>
-): HallwayMonthBookingDeal | null {
+function mapRow(r: any, dateFrom: string | null, dateTo: string | null): HallwayMonthBookingDeal | null {
   const bookingDoneDate = ymdFromDb(r.booking_done_date);
   const tenPercentPaidDate = ymdFromDb(r.ten_percent_paid_date);
   const bookingDate = ymdFromDb(r.booking_date);
@@ -218,10 +162,7 @@ function mapRow(
   const dealValue = Number(r.quote_amount) || 0;
   if (dealValue <= 0) return null;
 
-  const rawTable = String(r.lead_type || '').toLowerCase().trim();
-  const leadKey = `${rawTable}:${Number(r.lead_id)}`;
-  const leadAssignee = assigneeMap?.get(leadKey);
-  const assign = String(leadAssignee || r.submitted_by_name || '').trim();
+  const assign = String(r.submitted_by_name || '').trim();
   if (!assign) return null;
 
   return {
@@ -259,8 +200,7 @@ export async function loadBookingDealsForPeriod(
       SELECT
         id, customer_name, submitted_by_name, quote_amount, amount_received,
         listing_type, booking_status, booking_done_date, ten_percent_paid_date,
-        token_taken_date, token_paid_date, booking_date, created_at,
-        lead_id, lead_type
+        token_taken_date, token_paid_date, booking_date, created_at
       FROM ${crmDb}.booking_token_record
       WHERE LOWER(TRIM(listing_type)) = 'booking'
         AND LOWER(TRIM(COALESCE(booking_status, ''))) NOT IN ('cancelled', 'canceled')
@@ -275,8 +215,7 @@ export async function loadBookingDealsForPeriod(
       SELECT
         id, customer_name, submitted_by_name, quote_amount, amount_received,
         listing_type, booking_status, booking_done_date, ten_percent_paid_date,
-        token_taken_date, token_paid_date, booking_date, created_at,
-        lead_id, lead_type
+        token_taken_date, token_paid_date, booking_date, created_at
       FROM ${crmDb}.booking_token_record
       WHERE LOWER(TRIM(listing_type)) = 'booking'
         AND LOWER(TRIM(COALESCE(booking_status, ''))) NOT IN ('cancelled', 'canceled')
@@ -315,10 +254,9 @@ export async function loadBookingDealsForPeriod(
     rows = Array.isArray(rangeRows) ? rangeRows : [];
   }
 
-  const assigneeMap = await batchResolveLeadAssignees(pool, crmDb, rows);
   const out: HallwayMonthBookingDeal[] = [];
   for (const r of rows) {
-    const mapped = mapRow(r, dateFrom, dateTo, assigneeMap);
+    const mapped = mapRow(r, dateFrom, dateTo);
     if (mapped) out.push(mapped);
   }
   out.sort((a, b) => (a.listingDate < b.listingDate ? 1 : a.listingDate > b.listingDate ? -1 : 0));
@@ -340,8 +278,7 @@ export async function loadThisMonthBookingDeals(
     SELECT
       id, customer_name, submitted_by_name, quote_amount, amount_received,
       listing_type, booking_status, booking_done_date, ten_percent_paid_date,
-      token_taken_date, token_paid_date, booking_date, created_at,
-      lead_id, lead_type
+      token_taken_date, token_paid_date, booking_date, created_at
     FROM ${crmDb}.booking_token_record
     WHERE LOWER(TRIM(listing_type)) = 'booking'
       AND LOWER(TRIM(COALESCE(booking_status, ''))) NOT IN ('cancelled', 'canceled')
@@ -379,11 +316,9 @@ export async function loadThisMonthBookingDeals(
     ]
   );
 
-  const rawRows = Array.isArray(rows) ? rows : [];
-  const assigneeMap = await batchResolveLeadAssignees(pool, crmDb, rawRows);
   const out: HallwayMonthBookingDeal[] = [];
-  for (const r of rawRows) {
-    const mapped = mapRow(r, dateFrom, dateTo, assigneeMap);
+  for (const r of Array.isArray(rows) ? rows : []) {
+    const mapped = mapRow(r, dateFrom, dateTo);
     if (mapped) out.push(mapped);
   }
   out.sort((a, b) => (a.listingDate < b.listingDate ? 1 : a.listingDate > b.listingDate ? -1 : 0));
