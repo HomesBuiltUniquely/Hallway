@@ -12,6 +12,7 @@
     "test:celebrations": "node src/lib/celebrationsEligibility.test.mjs",
     "test:meeting-outcomes": "node src/lib/meetingOutcomePolicy.test.mjs",
     "test:booking-attribution": "node src/lib/bookingAttribution.test.mjs",
+    "test:weekly-performer": "node src/lib/weeklyPerformerWindow.test.mjs",
     "test:design-actions": "node src/lib/designProjectTrackerActions.test.mjs",
     "test:design-registry": "node --experimental-strip-types src/lib/designActionsRegistry.test.mjs"
   },

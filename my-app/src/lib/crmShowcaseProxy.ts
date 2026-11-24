@@ -1201,7 +1201,6 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
     const feed: any[] = [];
       // Stable IST anchors for the calendar day — never Date.now(), or every poll reshuffles the feed
       const todayIst = istYmdNow(now);
-      const boardWeeklyAt = `${todayIst}T23:50:00+05:30`;
       const boardMonthlyAt = `${todayIst}T23:40:00+05:30`;
       const boardMilestoneAt = `${todayIst}T23:30:00+05:30`;
 
@@ -1253,44 +1252,33 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
 
       const validDeals = monthBookingDeals;
 
-      // Weekly performer: current IST Mon–Sun; on Monday (empty week) use completed prior week
-      let weeklyBounds = weekWindow.primary;
-      let weekly = tallyBookingTotals(
-        validDeals,
-        weeklyBounds.weekFromMs,
-        weeklyBounds.weekToMs,
-        weekWindow.monthFromMs,
-        weekWindow.monthToMs
+      const { resolveWeeklyPerformerContext } = await import('./hallwayWeeklyPerformer');
+      const { loadBookingDealsForDateRange } = await import('./hallwayBookingFeedFromCrm');
+      const weeklyCtx = resolveWeeklyPerformerContext(now);
+      const scoring = weeklyCtx.scoringBounds;
+      const weekDeals = await loadBookingDealsForDateRange(scoring.mondayYmd, scoring.sundayYmd);
+      const weekly = tallyBookingTotals(
+        weekDeals,
+        scoring.weekFromMs,
+        scoring.weekToMs,
+        scoring.weekFromMs,
+        scoring.weekToMs
       );
-      let weeklyTimestamp = 'This week';
-      let weeklyTitle = 'This Week’s Top Performer';
-      if (!weekly.winner || weekly.winner.total <= 0) {
-        weeklyBounds = weekWindow.fallback;
-        weekly = tallyBookingTotals(
-          validDeals,
-          weeklyBounds.weekFromMs,
-          weeklyBounds.weekToMs,
-          weekWindow.monthFromMs,
-          weekWindow.monthToMs
-        );
-        weeklyTimestamp = 'Last week';
-        weeklyTitle = 'Last Week’s Top Performer';
-      }
 
       const boardCards: any[] = [];
 
       if (weekly.winner && weekly.winner.total > 0) {
         const weekAmount = formatQuote(weekly.winner.total);
-        const weekMondayYmd = weeklyBounds.mondayYmd;
+        const weekMondayYmd = scoring.mondayYmd;
         boardCards.push({
-          id: `crm-weekly-top-${weekMondayYmd}`,
+          id: weeklyCtx.cardId,
           type: 'performer',
           registerKind: 'weekly',
-          title: weeklyTitle,
-          content: `${weekly.winner.name} leads ${weeklyTimestamp.toLowerCase()} with ${weekAmount} in gross bookings.`,
+          title: 'Top Performer of the Week',
+          content: `${weekly.winner.name} topped the week of ${weeklyCtx.label} with ${weekAmount} in gross bookings.`,
           quoteFormatted: weekAmount,
-          timestamp: weeklyTimestamp,
-          createdAt: boardWeeklyAt,
+          timestamp: `Week of ${weeklyCtx.label}`,
+          createdAt: weeklyCtx.cardCreatedAtIso,
           author: { name: weekly.winner.name, avatar: null, team: weekly.winner.team },
           department: 'Sales',
           rawBooking: {

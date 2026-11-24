@@ -59,13 +59,4 @@ const group = [
 ];
 assert.equal(pickBest(group).id, 2, 'in_progress wins for same lead');
 
-function weeklyCardUseFallback(currentTotal, fallbackTotal) {
-  if (currentTotal > 0) return { label: 'This week', total: currentTotal };
-  if (fallbackTotal > 0) return { label: 'Last week', total: fallbackTotal };
-  return null;
-}
-
-assert.deepEqual(weeklyCardUseFallback(0, 1420000), { label: 'Last week', total: 1420000 });
-assert.deepEqual(weeklyCardUseFallback(50000, 100000), { label: 'This week', total: 50000 });
-
 console.log('bookingAttribution.test.mjs: ok');

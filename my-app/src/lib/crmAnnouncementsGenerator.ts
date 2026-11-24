@@ -1,5 +1,6 @@
 import { FeedPost } from '../types/index';
 import { formatPersonName, istYmd } from './hallwayDisplay';
+import { resolveWeeklyPerformerContext } from './hallwayWeeklyPerformer';
 import {
   HallwayFeedItem,
   HallwayTargetCard,
@@ -417,9 +418,10 @@ export function generateCrmAnnouncements({
 
     const normalizedTitle =
       kind === 'weekly' ||
+      item.title?.toLowerCase().includes('top performer of the week') ||
       item.title?.toLowerCase().includes('week’s top performer') ||
       item.title?.toLowerCase().includes("week's top performer")
-        ? 'This Week’s Top Performer'
+        ? 'Top Performer of the Week'
         : kind === 'monthly' ||
             item.title?.toLowerCase().includes('month’s top performer') ||
             item.title?.toLowerCase().includes("month's top performer")
@@ -456,120 +458,27 @@ export function generateCrmAnnouncements({
     seenIds.add(item.id);
   }
 
-  // Keep exactly one "This Week" card — current IST Monday window only.
-  // Drop stale prior-week ids (e.g. crm-weekly-top-2026-10-20) still sitting in memory/DB merges.
+  // Exactly one weekly card — id keyed to completed scoring week (see hallwayWeeklyPerformer).
   {
-    const todayYmd = istYmd();
-    const [y, m, d] = todayYmd.split('-').map(Number);
-    const dow = new Date(`${todayYmd}T12:00:00+05:30`).getUTCDay();
-    const diffToMonday = dow === 0 ? -6 : 1 - dow;
-    const mondayDt = new Date(Date.UTC(y, m - 1, d + diffToMonday));
-    const currentWeekMondayYmd = mondayDt.toISOString().slice(0, 10);
-    const currentWeeklyId = `crm-weekly-top-${currentWeekMondayYmd}`;
+    const weeklyCtx = resolveWeeklyPerformerContext(new Date());
+    const expectedWeeklyId = weeklyCtx.cardId;
 
     const weeklyPosts = posts.filter((p) => p.id.startsWith('crm-weekly-top-'));
-    if (weeklyPosts.length > 0) {
-      const keep =
-        weeklyPosts.find((p) => p.id === currentWeeklyId) ||
-        // If feed somehow only sent an older id, still keep a single card and relabel only if current id
-        weeklyPosts[0];
-      const deduped = posts.filter((p) => !p.id.startsWith('crm-weekly-top-'));
-      if (keep.id === currentWeeklyId) {
-        deduped.push({
-          ...keep,
-          title: 'This Week’s Top Performer',
-          timestamp: 'This week',
-        });
-      }
-      // Stale prior-week cards are dropped entirely (never show two "This week" winners)
-      posts.length = 0;
-      posts.push(...deduped);
-      seenIds.clear();
-      for (const p of posts) seenIds.add(p.id);
+    const keep = weeklyPosts.find((p) => p.id === expectedWeeklyId);
+    const deduped = posts.filter((p) => !p.id.startsWith('crm-weekly-top-'));
+    if (keep) {
+      deduped.push({
+        ...keep,
+        title: 'Top Performer of the Week',
+        timestamp: keep.timestamp?.startsWith('Week of')
+          ? keep.timestamp
+          : `Week of ${weeklyCtx.label}`,
+      });
     }
-
-    const hasCurrentWeekly = posts.some((p) => p.id === currentWeeklyId);
-    if (!hasCurrentWeekly) {
-      const [yy, mm] = todayYmd.split('-').map(Number);
-      const monthFromMs = new Date(
-        `${yy}-${String(mm).padStart(2, '0')}-01T00:00:00+05:30`
-      ).getTime();
-      const nextMonth =
-        mm === 12 ? `${yy + 1}-01-01` : `${yy}-${String(mm + 1).padStart(2, '0')}-01`;
-      const monthToMs = new Date(`${nextMonth}T00:00:00+05:30`).getTime() - 1;
-      const weekFromMs = new Date(`${currentWeekMondayYmd}T00:00:00+05:30`).getTime();
-      const sundayYmd = (() => {
-        const [sy, sm, sd] = currentWeekMondayYmd.split('-').map(Number);
-        return new Date(Date.UTC(sy, sm - 1, sd + 6)).toISOString().slice(0, 10);
-      })();
-      const weekToMs = new Date(`${sundayYmd}T23:59:59.999+05:30`).getTime();
-
-      const isBookingItem = (item: HallwayFeedItem) => {
-        if (item.registerKind && item.registerKind !== 'booking') return false;
-        if (String(item.id || '').startsWith('crm-booking-token-')) return false;
-        const listing = String(item.rawBooking?.listingType || '').toLowerCase();
-        if (listing === 'token') return false;
-        return listing === 'booking' || listing === '' || item.registerKind === 'booking';
-      };
-
-      const repWeekTotals = new Map<
-        string,
-        { name: string; total: number; team: string; count: number }
-      >();
-      for (const item of crmFeedItems || []) {
-        if (!item || !isBookingItem(item)) continue;
-        const rep = formatPersonName(item.author?.name || '');
-        if (!rep || rep === 'User' || /\b(test|alice|shalny|razi)\b/i.test(rep)) continue;
-        const rawDate = item.createdAt || item.rawBooking?.bookingDoneDate || item.timestamp;
-        const t = rawDate ? new Date(rawDate).getTime() : NaN;
-        if (isNaN(t)) continue;
-        if (t < monthFromMs || t > monthToMs || t < weekFromMs || t > weekToMs) continue;
-        const rawQuote =
-          Number(item.rawBooking?.quoteAmount) ||
-          parseAmountFromText(item.quoteFormatted || item.content || '').valueInr ||
-          0;
-        if (rawQuote <= 0) continue;
-        const prev = repWeekTotals.get(rep) || {
-          name: rep,
-          total: 0,
-          team: item.author?.team || 'Sales Hub',
-          count: 0,
-        };
-        prev.total += rawQuote;
-        prev.count += 1;
-        repWeekTotals.set(rep, prev);
-      }
-      const weeklyWinner = [...repWeekTotals.values()].sort(
-        (a, b) => b.total - a.total || b.count - a.count || a.name.localeCompare(b.name)
-      )[0];
-
-      if (weeklyWinner && weeklyWinner.total > 0 && !seenIds.has(currentWeeklyId)) {
-        const weekAmount = formatInrToLakhsOrCrores(weeklyWinner.total);
-        const preserved = existingPostsMap.get(currentWeeklyId);
-        posts.push({
-          id: currentWeeklyId,
-          type: 'performer',
-          categoryColor: '#EAB308',
-          iconEmoji: '🏅',
-          title: 'This Week’s Top Performer',
-          timestamp: 'This week',
-          createdAt: `${istYmd()}T23:50:00+05:30`,
-          author: {
-            name: weeklyWinner.name,
-            avatar: preserved?.author?.avatar || '',
-            team: weeklyWinner.team,
-          },
-          content: `${weeklyWinner.name} leads this week with ${weekAmount} in gross bookings.`,
-          quoteFormatted: weekAmount,
-          reactions: preserved?.reactions ? { ...preserved.reactions } : defaultReactions(),
-          comments:
-            preserved?.comments && preserved.comments.length > 0 ? [...preserved.comments] : [],
-          commentsCount: preserved?.commentsCount || preserved?.comments?.length || 0,
-          department: 'Sales',
-        });
-        seenIds.add(currentWeeklyId);
-      }
-    }
+    posts.length = 0;
+    posts.push(...deduped);
+    seenIds.clear();
+    for (const p of posts) seenIds.add(p.id);
   }
 
   // Fallback monthly / milestone only when feed board cards are absent

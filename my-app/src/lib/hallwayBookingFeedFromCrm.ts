@@ -389,15 +389,18 @@ export async function loadBookingDealsForPeriod(
   return out;
 }
 
-/** Home feed: full IST calendar month (CRM “This month” parity). */
-export async function loadThisMonthBookingDeals(
-  now = new Date()
+/**
+ * Confirmed BOOKING deals recognized between dateFrom and dateTo (inclusive, IST ymd).
+ * Used for weekly performer scoring and full-month feeds.
+ */
+export async function loadBookingDealsForDateRange(
+  dateFrom: string,
+  dateTo: string
 ): Promise<HallwayMonthBookingDeal[]> {
-  const { dateFrom, dateTo } = istCalendarMonthBounds(now);
   const pool = getPool();
   const crmDb = process.env.CRM_DB_NAME || 'CRM';
-  const monthStartUtc = new Date(`${dateFrom}T00:00:00+05:30`);
-  const monthEndUtc = new Date(`${dateTo}T23:59:59.999+05:30`);
+  const rangeStartUtc = new Date(`${dateFrom}T00:00:00+05:30`);
+  const rangeEndUtc = new Date(`${dateTo}T23:59:59.999+05:30`);
 
   const [rows]: any = await pool.query(
     `
@@ -437,8 +440,8 @@ export async function loadThisMonthBookingDeals(
       dateTo,
       dateFrom,
       dateTo,
-      monthStartUtc,
-      monthEndUtc,
+      rangeStartUtc,
+      rangeEndUtc,
     ]
   );
 
@@ -451,4 +454,12 @@ export async function loadThisMonthBookingDeals(
   }
   out.sort((a, b) => (a.listingDate < b.listingDate ? 1 : a.listingDate > b.listingDate ? -1 : 0));
   return out;
+}
+
+/** Home feed: full IST calendar month (CRM “This month” parity). */
+export async function loadThisMonthBookingDeals(
+  now = new Date()
+): Promise<HallwayMonthBookingDeal[]> {
+  const { dateFrom, dateTo } = istCalendarMonthBounds(now);
+  return loadBookingDealsForDateRange(dateFrom, dateTo);
 }

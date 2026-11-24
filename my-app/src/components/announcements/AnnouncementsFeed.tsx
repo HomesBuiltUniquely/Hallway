@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { Megaphone } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import HubLiveFeedCard from './HubLiveFeedCard';
+import { resolveWeeklyPerformerContext } from '../../lib/hallwayWeeklyPerformer';
 
 type TagFilter = 'ALL' | 'DEALS' | 'ANNOUNCEMENTS' | 'PERFORMERS' | 'MILESTONES';
 
@@ -34,12 +35,13 @@ export default function AnnouncementsFeed({
     return true;
   });
 
-  // Hard guard: never show more than one "This Week's Top Performer"
   const weeklyCards = eligibleAnnouncements.filter((p) => p.id.startsWith('crm-weekly-top-'));
+  const expectedWeeklyId = resolveWeeklyPerformerContext(new Date()).cardId;
   const keepWeeklyId =
-    weeklyCards.length <= 1
+    weeklyCards.find((p) => p.id === expectedWeeklyId)?.id ||
+    (weeklyCards.length <= 1
       ? weeklyCards[0]?.id
-      : [...weeklyCards].sort((a, b) => String(b.id).localeCompare(String(a.id)))[0]?.id;
+      : [...weeklyCards].sort((a, b) => String(b.id).localeCompare(String(a.id)))[0]?.id);
   const dedupedAnnouncements =
     weeklyCards.length <= 1
       ? eligibleAnnouncements

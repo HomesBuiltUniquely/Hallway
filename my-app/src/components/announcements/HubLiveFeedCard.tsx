@@ -53,7 +53,7 @@ function categoryMeta(
     case 'performer':
       return {
         label: post.id.startsWith('crm-weekly-top-')
-          ? 'Top Performers — This week'
+          ? 'Top Performers — Weekly'
           : post.id.startsWith('crm-monthly-top-')
             ? 'Top Performers — This month'
             : 'Top Performers',
@@ -106,7 +106,10 @@ function extractMetric(post: FeedPost, kind: CardKind): { value: string; unit: s
     if (kind === 'performer') {
       return {
         value: cleaned,
-        unit: post.id.startsWith('crm-weekly-top-') ? 'this week' : 'this month',
+        unit:
+          post.id.startsWith('crm-weekly-top-')
+            ? post.timestamp || 'top week'
+            : 'this month',
       };
     }
     return { value: cleaned, unit: 'booked' };
@@ -152,7 +155,11 @@ function TitleBoost({ kind }: { kind: CardKind }) {
 }
 
 function cardTime(post: FeedPost): string {
-  if (post.id.startsWith('crm-weekly-top-')) return 'This week';
+  if (post.id.startsWith('crm-weekly-top-')) {
+    const ts = String(post.timestamp || '').trim();
+    if (ts) return ts;
+    return 'Weekly';
+  }
   if (post.id.startsWith('crm-monthly-top-') || post.id.startsWith('crm-month-milestone-')) return 'This month';
   if (post.id.startsWith('crm-booking-') && post.createdAt) {
     const when = new Date(post.createdAt);
