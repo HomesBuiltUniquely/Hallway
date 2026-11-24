@@ -73,6 +73,7 @@ export interface FeedPost {
   commentsCount: number;
   comments: Comment[];
   badgeText?: string;
+  honorBadges?: string[];
   department?: 'Sales' | 'Design' | 'Operations' | 'HR' | 'Finance';
   iconEmoji?: string;
 }

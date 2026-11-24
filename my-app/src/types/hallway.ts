@@ -290,6 +290,8 @@ export interface HallwayFeedItem {
   createdAt?: string;
   author?: HallwayFeedAuthor;
   department?: string;
+  /** Chips on deal cards when honors were merged from weekly/monthly performer cards */
+  honorBadges?: string[];
   rawBooking?: {
     bookingId: string;
     leadId?: string | number;

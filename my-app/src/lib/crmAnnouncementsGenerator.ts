@@ -1,6 +1,7 @@
 import { FeedPost } from '../types/index';
 import { formatPersonName, istYmd } from './hallwayDisplay';
 import { resolveWeeklyPerformerContext } from './hallwayWeeklyPerformer';
+import { coalesceAnnouncementFeed } from './hallwayFeedCoalesce';
 import {
   HallwayFeedItem,
   HallwayTargetCard,
@@ -375,7 +376,9 @@ export function generateCrmAnnouncements({
   const seenIds = new Set<string>();
   const ONE_CRORE_INR = 10_000_000;
 
-  const register = (crmFeedItems || []).filter((item) =>
+  const coalescedFeed = coalesceAnnouncementFeed(crmFeedItems || [], new Date()).items;
+
+  const register = coalescedFeed.filter((item) =>
     Boolean(
       item?.registerKind &&
         (item.registerKind === 'booking' ||
@@ -450,6 +453,7 @@ export function generateCrmAnnouncements({
       },
       content,
       quoteFormatted,
+      honorBadges: Array.isArray(item.honorBadges) && item.honorBadges.length > 0 ? [...item.honorBadges] : undefined,
       reactions: preserved?.reactions ? { ...preserved.reactions } : defaultReactions(),
       comments: preserved?.comments && preserved.comments.length > 0 ? [...preserved.comments] : [],
       commentsCount: preserved?.commentsCount || preserved?.comments?.length || 0,

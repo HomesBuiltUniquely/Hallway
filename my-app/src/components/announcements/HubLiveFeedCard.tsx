@@ -379,6 +379,18 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
           <h3 className="text-[15px] font-bold leading-snug tracking-tight text-slate-900 sm:text-base dark:text-white">
             {displayTitle}
           </h3>
+          {post.honorBadges && post.honorBadges.length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {post.honorBadges.map((badge) => (
+                <span
+                  key={badge}
+                  className="inline-flex items-center rounded-full border border-amber-200/90 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-100"
+                >
+                  {badge}
+                </span>
+              ))}
+            </div>
+          ) : null}
           <p className="mt-1.5 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
             {cleanPostContent(post.content)}
           </p>

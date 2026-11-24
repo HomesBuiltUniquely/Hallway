@@ -1350,6 +1350,11 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
       // Board highlights first, then newest deals — keeps Top Performer / Milestone instant on paint
       feed.unshift(...boardCards);
 
+      const { coalesceAnnouncementFeed } = await import('./hallwayFeedCoalesce');
+      const coalesced = coalesceAnnouncementFeed(feed, now);
+      feed.length = 0;
+      feed.push(...coalesced.items);
+
     const resJson = JSON.stringify({
       source: 'CRM Booking & Token (this month recognition)',
       feed,
