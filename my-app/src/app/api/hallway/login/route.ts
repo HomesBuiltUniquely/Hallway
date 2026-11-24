@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { ensureCelebrationViewerBaselines } from '../../../../lib/celebrations';
+import { getPool } from '../../../../lib/db';
 import { resolveHallwayIdentity } from '../../../../lib/hallwayPortalResolve';
 import { isDesignRole } from '../../../../lib/permissions';
 import {
@@ -19,18 +20,32 @@ function stripSlash(url: string) {
   return url.replace(/\/$/, '');
 }
 
-/** Prefer server env; fall back so Vercel misconfig still hits the known Design API host. */
+const DESIGN_API_CANONICAL = 'https://api.hubinterior.com';
+
+/** Server-side auth must hit the Design API host, never the Design SPA (design.hubinterior.com). */
+function normalizeDesignApiBase(raw: string): string {
+  const trimmed = stripSlash(String(raw || '').trim());
+  if (!trimmed) return DESIGN_API_CANONICAL;
+  try {
+    const host = new URL(trimmed).hostname.toLowerCase();
+    if (host === 'design.hubinterior.com' || host === 'www.design.hubinterior.com') {
+      return DESIGN_API_CANONICAL;
+    }
+  } catch {
+    /* ignore */
+  }
+  return trimmed;
+}
+
 const DESIGN_MODULE_BASE_URLS = Array.from(
   new Set(
     [
       process.env.DESIGN_MODULE_BASE_URL,
       process.env.DESIGN_API_URL,
-      process.env.DESIGN_MODULE_FRONTEND_URL,
-      'https://api.hubinterior.com',
-      'https://design.hubinterior.com',
+      DESIGN_API_CANONICAL,
     ]
       .filter(Boolean)
-      .map((u) => stripSlash(String(u)))
+      .map((u) => normalizeDesignApiBase(String(u)))
   )
 );
 
@@ -166,19 +181,113 @@ async function tryDesignLoginOnce(baseUrl: string, email: string, password: stri
   }
 }
 
-async function tryDesignLogin(email: string, password: string): Promise<AuthAttempt> {
-  let last: AuthAttempt = {
-    ok: false,
-    status: 503,
-    outage: true,
-    authFailed: false,
-    message: LOGIN_DESIGN_UNAVAILABLE,
-  };
-  for (const base of DESIGN_MODULE_BASE_URLS) {
-    last = await tryDesignLoginOnce(base, email, password);
-    if (last.ok || last.authFailed) return last;
+/**
+ * Try every configured API host (do not stop at the first 401 — a stale env URL can lie).
+ * Fall back to shared RDS when Vercel cannot reach the Design API (firewall / routing).
+ */
+async function tryDesignLoginFromDb(email: string, password: string): Promise<AuthAttempt> {
+  const emailValue = email.includes('@') ? email.trim() : `${email.trim()}@hubinterior.com`;
+  const designDb = process.env.DESIGN_DB_NAME || 'DesignMod';
+  try {
+    const pool = getPool();
+    const [rows]: any = await pool.query(
+      `SELECT id, email, name, role, password
+       FROM ${designDb}.users
+       WHERE LOWER(TRIM(email)) = LOWER(TRIM(?))
+       LIMIT 1`,
+      [emailValue]
+    );
+    const row = Array.isArray(rows) ? rows[0] : null;
+    if (!row) {
+      return {
+        ok: false,
+        status: 401,
+        outage: false,
+        authFailed: true,
+        baseUrl: 'design_db',
+        message: LOGIN_INVALID_CREDENTIALS,
+      };
+    }
+    const stored = String(row.password ?? '');
+    if (stored !== password) {
+      return {
+        ok: false,
+        status: 401,
+        outage: false,
+        authFailed: true,
+        baseUrl: 'design_db',
+        message: LOGIN_INVALID_CREDENTIALS,
+      };
+    }
+    const sessionId = `sess-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
+    await pool.query(`INSERT INTO ${designDb}.sessions (id, user_id, created_at) VALUES (?, ?, ?)`, [
+      sessionId,
+      row.id,
+      new Date(),
+    ]);
+    return {
+      ok: true,
+      status: 200,
+      outage: false,
+      authFailed: false,
+      baseUrl: 'design_db',
+      sessionId,
+      user: {
+        email: String(row.email || emailValue),
+        name: typeof row.name === 'string' ? row.name : undefined,
+        role: typeof row.role === 'string' ? row.role : 'DESIGNER',
+        id: row.id,
+      },
+    };
+  } catch (err) {
+    console.warn('[hallway/login] Design DB auth fallback failed', {
+      err: err instanceof Error ? err.message : String(err),
+    });
+    return {
+      ok: false,
+      status: 503,
+      outage: true,
+      authFailed: false,
+      baseUrl: 'design_db',
+      message: LOGIN_DESIGN_UNAVAILABLE,
+    };
   }
-  return last;
+}
+
+async function tryDesignLogin(email: string, password: string): Promise<AuthAttempt> {
+  const attempts: AuthAttempt[] = [];
+  for (const base of DESIGN_MODULE_BASE_URLS) {
+    const attempt = await tryDesignLoginOnce(base, email, password);
+    attempts.push(attempt);
+    if (attempt.ok) return attempt;
+  }
+
+  if (attempts.length === 0) {
+    return {
+      ok: false,
+      status: 503,
+      outage: true,
+      authFailed: false,
+      message: LOGIN_DESIGN_UNAVAILABLE,
+    };
+  }
+
+  const allAuthFailed = attempts.every((a) => a.authFailed);
+  if (allAuthFailed) {
+    const dbAttempt = await tryDesignLoginFromDb(email, password);
+    if (dbAttempt.ok) return dbAttempt;
+    if (dbAttempt.authFailed) return dbAttempt;
+    return attempts[attempts.length - 1];
+  }
+
+  const anyOutage = attempts.some((a) => a.outage);
+  if (anyOutage) {
+    const dbAttempt = await tryDesignLoginFromDb(email, password);
+    if (dbAttempt.ok || dbAttempt.authFailed) return dbAttempt;
+    return attempts.find((a) => a.outage) || dbAttempt;
+  }
+
+  return attempts[attempts.length - 1];
 }
 
 async function tryCrmLoginOnce(username: string, password: string, email?: string): Promise<AuthAttempt> {
@@ -442,7 +551,8 @@ export async function POST(request: Request) {
     }
 
     if (isDesigner || preferDesign) {
-      if (design.authFailed || crm.authFailed) {
+      // Design portal: CRM 401/403 is expected — never treat it as “wrong password”.
+      if (design.authFailed) {
         return NextResponse.json({ ok: false, message: LOGIN_INVALID_CREDENTIALS }, { status: 401 });
       }
       if (design.outage && crm.outage) {
@@ -452,10 +562,11 @@ export async function POST(request: Request) {
         });
         return NextResponse.json({ ok: false, message: LOGIN_BOTH_UNAVAILABLE }, { status: 503 });
       }
-      if (design.outage && !crm.ok) {
-        console.warn('[hallway/login] Design outage; CRM did not admit', {
+      if (design.outage) {
+        console.warn('[hallway/login] Design auth unavailable for design portal user', {
           designBases: DESIGN_MODULE_BASE_URLS,
           crmStatus: crm.status,
+          crmOk: crm.ok,
         });
         return NextResponse.json({ ok: false, message: LOGIN_DESIGN_UNAVAILABLE }, { status: 503 });
       }

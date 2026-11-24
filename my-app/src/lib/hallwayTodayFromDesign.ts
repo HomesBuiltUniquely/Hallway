@@ -216,6 +216,82 @@ export function parseMeetingTime(
   };
 }
 
+function meetingActivityRank(row: {
+  progress?: string | null;
+  meetingStatus?: string | null;
+}): number {
+  const prog = String(row.progress || '').toLowerCase();
+  const status = String(row.meetingStatus || '').toLowerCase();
+  if (prog === 'in_progress' || status.includes('in progress')) return 40;
+  if (prog === 'rescheduled' || status === 'rescheduled') return 30;
+  if (prog === 'scheduled' || status === 'scheduled') return 20;
+  if (prog === 'completed' || status.includes('successful')) return 0;
+  return 10;
+}
+
+/** One authoritative row per lead for Today (matches Meeting Management). */
+export function dedupeMeetingsByLeadId<T extends RawDesignMeeting>(
+  rows: T[],
+  dateYmd: string
+): T[] {
+  const byLead = new Map<number, T[]>();
+  for (const r of rows) {
+    const lid = Number(r.leadId);
+    if (!Number.isFinite(lid) || lid <= 0) continue;
+    const bucket = byLead.get(lid) || [];
+    bucket.push(r);
+    byLead.set(lid, bucket);
+  }
+  const out: T[] = [];
+  for (const group of byLead.values()) {
+    group.sort((a, b) => {
+      const rankDiff = meetingActivityRank(b) - meetingActivityRank(a);
+      if (rankDiff !== 0) return rankDiff;
+      const ta = parseMeetingTime(a.meetingTime, dateYmd).startMinutes;
+      const tb = parseMeetingTime(b.meetingTime, dateYmd).startMinutes;
+      if (tb !== ta) return tb - ta;
+      return Number(b.id) - Number(a.id);
+    });
+    out.push(group[0]);
+  }
+  return out;
+}
+
+function dedupeTodayEventsByLead(events: HallwayTodayEvent[]): HallwayTodayEvent[] {
+  const byLead = new Map<string, HallwayTodayEvent[]>();
+  for (const ev of events) {
+    const lid = ev.leadId != null ? String(ev.leadId) : '';
+    if (!lid) {
+      byLead.set(`row-${ev.id}`, [ev]);
+      continue;
+    }
+    const bucket = byLead.get(lid) || [];
+    bucket.push(ev);
+    byLead.set(lid, bucket);
+  }
+  const rank = (ev: HallwayTodayEvent) => {
+    const s = String(ev.status || '').toLowerCase();
+    if (s.includes('in progress')) return 40;
+    if (s.includes('reschedul')) return 30;
+    if (s.includes('schedul')) return 20;
+    if (s.includes('successful') || s.includes('completed')) return 0;
+    return 10;
+  };
+  const out: HallwayTodayEvent[] = [];
+  for (const group of byLead.values()) {
+    group.sort((a, b) => {
+      const d = rank(b) - rank(a);
+      if (d !== 0) return d;
+      const ta = Date.parse(String(a.startAt || '')) || 0;
+      const tb = Date.parse(String(b.startAt || '')) || 0;
+      if (tb !== ta) return tb - ta;
+      return String(b.id).localeCompare(String(a.id));
+    });
+    out.push(group[0]);
+  }
+  return out;
+}
+
 type RawDesignMeeting = {
   id: number;
   leadId: number;
@@ -266,7 +342,7 @@ async function fetchMeetingsFromDesignApi(
       if (hRes.ok) {
         const body = await hRes.json().catch(() => null);
         if (body && Array.isArray(body.events)) {
-          return (body.events as any[]).map((ev) => {
+          const mapped = (body.events as any[]).map((ev) => {
             const s = cleanPersonName(ev.salesName || ev.crmPersonName);
             const d = cleanPersonName(ev.designerName);
             return {
@@ -276,6 +352,7 @@ async function fetchMeetingsFromDesignApi(
               designerName: d,
             };
           }) as HallwayTodayEvent[];
+          return dedupeTodayEventsByLead(mapped);
         }
       }
     } catch {
@@ -306,7 +383,27 @@ async function fetchMeetingsFromDesignApi(
 
     const sortable: Array<HallwayTodayEvent & { startMinutes: number; meetId: number }> = [];
 
-    for (const m of todayMeetings) {
+    const apiRaw: RawDesignMeeting[] = todayMeetings.map((m) => ({
+      id: Number(m.id),
+      leadId: Number(m.leadId),
+      projectName: m.projectName,
+      customerName: m.customerName || m.projectName,
+      designerName: m.designerName,
+      designerId: m.designerId != null ? Number(m.designerId) : null,
+      salesName: m.salesName,
+      branchName: m.branchName,
+      meetingTime: m.meetingTime || m.meetingTimeLabel,
+      meetingMode: m.meetingMode,
+      meetingType: m.meetingType,
+      meetingStatus: m.meetingStatus,
+      progress: m.progress,
+      meetingLink: m.meetingLink,
+    }));
+    const dedupedMeetings = dedupeMeetingsByLeadId(apiRaw, dateYmd);
+    const meetingById = new Map(todayMeetings.map((m) => [Number(m.id), m]));
+
+    for (const raw of dedupedMeetings) {
+      const m = meetingById.get(raw.id) || raw;
       const timeInfo = parseMeetingTime(m.meetingTime || m.meetingTimeLabel, dateYmd);
       const rawClient = m.customerName || m.projectName || '';
       const clientName = cleanCustomerName(rawClient, m.leadId);
@@ -594,7 +691,10 @@ export async function loadTodayMeetingsFromDesign(
   }
 
   // 2. Direct database query from shared RDS DesignMod with server-side scoping matching Meeting Management
-  const rawMeetings = await queryMeetingsFromDesignDb(dateYmd, viewer, scopeMode);
+  const rawMeetings = dedupeMeetingsByLeadId(
+    await queryMeetingsFromDesignDb(dateYmd, viewer, scopeMode),
+    dateYmd
+  );
 
   const mappedAll: Array<HallwayTodayEvent & { startMinutes: number; meetId: number }> = [];
 

@@ -3,6 +3,7 @@ import {
   celebrationRecencyHours,
   celebrationRolloutBaseline,
 } from './celebrationPolicy';
+import { resolveBookingAssigneeForBookingId } from './hallwayBookingFeedFromCrm';
 import { ensureAnnouncementExists, ensureHallwaySchema, getPool } from './db';
 
 export type CelebrationMilestone = 'token' | 'booking_confirmed';
@@ -138,7 +139,9 @@ export async function createCelebration(input: {
   quoteAmount?: number;
 }): Promise<{ created: boolean; id?: string }> {
   const bookingId = String(input.bookingId || '').trim();
-  const salesperson = String(input.salespersonName || '').trim();
+  let salesperson = String(input.salespersonName || '').trim();
+  const fromLead = await resolveBookingAssigneeForBookingId(bookingId);
+  if (fromLead) salesperson = fromLead;
   const customer = String(input.customerName || '').trim();
   const quote = Number(input.quoteAmount);
   const milestone = normalizeMilestone(input.milestone);

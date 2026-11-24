@@ -3,11 +3,20 @@ import { NextResponse } from 'next/server';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const DESIGN_MODULE_BASE_URL = (
-  process.env.DESIGN_MODULE_BASE_URL ||
-  process.env.DESIGN_API_URL ||
-  'https://api.hubinterior.com'
-).replace(/\/$/, '');
+function designApiBase(): string {
+  const raw = (
+    process.env.DESIGN_MODULE_BASE_URL ||
+    process.env.DESIGN_API_URL ||
+    'https://api.hubinterior.com'
+  ).replace(/\/$/, '');
+  try {
+    const host = new URL(raw).hostname.toLowerCase();
+    if (host === 'design.hubinterior.com') return 'https://api.hubinterior.com';
+  } catch {
+    /* ignore */
+  }
+  return raw;
+}
 
 export async function POST(request: Request) {
   try {
@@ -23,7 +32,7 @@ export async function POST(request: Request) {
 
     let response: Response;
     try {
-      response = await fetch(`${DESIGN_MODULE_BASE_URL}/api/auth/login`, {
+      response = await fetch(`${designApiBase()}/api/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

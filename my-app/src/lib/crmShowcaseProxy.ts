@@ -1253,36 +1253,51 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
 
       const validDeals = monthBookingDeals;
 
-      // Exactly ONE weekly board card: current IST Mon–Sun only (no prior-week leftover titled "This week")
-      const weekly = tallyBookingTotals(
+      // Weekly performer: current IST Mon–Sun; on Monday (empty week) use completed prior week
+      let weeklyBounds = weekWindow.primary;
+      let weekly = tallyBookingTotals(
         validDeals,
-        weekWindow.primary.weekFromMs,
-        weekWindow.primary.weekToMs,
+        weeklyBounds.weekFromMs,
+        weeklyBounds.weekToMs,
         weekWindow.monthFromMs,
         weekWindow.monthToMs
       );
-      const currentWeekMondayYmd = weekWindow.primary.mondayYmd;
+      let weeklyTimestamp = 'This week';
+      let weeklyTitle = 'This Week’s Top Performer';
+      if (!weekly.winner || weekly.winner.total <= 0) {
+        weeklyBounds = weekWindow.fallback;
+        weekly = tallyBookingTotals(
+          validDeals,
+          weeklyBounds.weekFromMs,
+          weeklyBounds.weekToMs,
+          weekWindow.monthFromMs,
+          weekWindow.monthToMs
+        );
+        weeklyTimestamp = 'Last week';
+        weeklyTitle = 'Last Week’s Top Performer';
+      }
 
       const boardCards: any[] = [];
 
       if (weekly.winner && weekly.winner.total > 0) {
         const weekAmount = formatQuote(weekly.winner.total);
+        const weekMondayYmd = weeklyBounds.mondayYmd;
         boardCards.push({
-          id: `crm-weekly-top-${currentWeekMondayYmd}`,
+          id: `crm-weekly-top-${weekMondayYmd}`,
           type: 'performer',
           registerKind: 'weekly',
-          title: 'This Week’s Top Performer',
-          content: `${weekly.winner.name} leads this week with ${weekAmount} in gross bookings.`,
+          title: weeklyTitle,
+          content: `${weekly.winner.name} leads ${weeklyTimestamp.toLowerCase()} with ${weekAmount} in gross bookings.`,
           quoteFormatted: weekAmount,
-          timestamp: 'This week',
+          timestamp: weeklyTimestamp,
           createdAt: boardWeeklyAt,
           author: { name: weekly.winner.name, avatar: null, team: weekly.winner.team },
           department: 'Sales',
           rawBooking: {
-            bookingId: currentWeekMondayYmd,
+            bookingId: weekMondayYmd,
             quoteAmount: weekly.winner.total,
             customerName: weekly.winner.name,
-            bookingDoneDate: currentWeekMondayYmd,
+            bookingDoneDate: weekMondayYmd,
             listingType: 'booking',
           },
         });

@@ -1,5 +1,5 @@
 import { getPool } from './db';
-import { istYmd } from './hallwayDisplay';
+import { formatPersonName, istYmd } from './hallwayDisplay';
 
 /**
  * One CRM BOOKING row for Hallway — same recognition rules as
@@ -144,7 +144,132 @@ export function bookingRecognitionYmd(row: {
   );
 }
 
-function mapRow(r: any, dateFrom: string | null, dateTo: string | null): HallwayMonthBookingDeal | null {
+const CRM_LEAD_TABLES = [
+  'mlead',
+  'addlead',
+  'glead',
+  'formlead',
+  'walkinlead',
+  'websitelead',
+  'whatsapplead',
+  'ivrlead',
+  'quikrlead',
+] as const;
+
+function normalizeCrmLeadTable(leadType: unknown): (typeof CRM_LEAD_TABLES)[number] | null {
+  const raw = String(leadType || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, '');
+  const aliases: Record<string, (typeof CRM_LEAD_TABLES)[number]> = {
+    mlead: 'mlead',
+    m: 'mlead',
+    addlead: 'addlead',
+    add: 'addlead',
+    glead: 'glead',
+    g: 'glead',
+    formlead: 'formlead',
+    form: 'formlead',
+    walkinlead: 'walkinlead',
+    walkin: 'walkinlead',
+    websitelead: 'websitelead',
+    website: 'websitelead',
+    whatsapplead: 'whatsapplead',
+    whatsapp: 'whatsapplead',
+    ivrlead: 'ivrlead',
+    ivr: 'ivrlead',
+    quikrlead: 'quikrlead',
+    quikr: 'quikrlead',
+  };
+  const hit = aliases[raw];
+  if (hit) return hit;
+  return (CRM_LEAD_TABLES as readonly string[]).includes(raw)
+    ? (raw as (typeof CRM_LEAD_TABLES)[number])
+    : null;
+}
+
+/** Credit sales executive from lead.assignee; fall back to form submitter. */
+export async function resolveBookingAssigneeMap(
+  rows: Array<{ lead_id?: unknown; lead_type?: unknown }>,
+  crmDb: string
+): Promise<Map<string, string>> {
+  const pool = getPool();
+  const byTable = new Map<string, Set<number>>();
+  for (const r of rows) {
+    const table = normalizeCrmLeadTable(r.lead_type);
+    const id = Number(r.lead_id);
+    if (!table || !Number.isFinite(id) || id <= 0) continue;
+    const set = byTable.get(table) || new Set<number>();
+    set.add(id);
+    byTable.set(table, set);
+  }
+
+  const out = new Map<string, string>();
+  for (const table of CRM_LEAD_TABLES) {
+    const ids = byTable.get(table);
+    if (!ids || ids.size === 0) continue;
+    const idList = [...ids];
+    try {
+      const [leadRows]: any = await pool.query(
+        `SELECT id, NULLIF(TRIM(assignee), '') AS assignee
+         FROM ${crmDb}.${table}
+         WHERE id IN (${idList.map(() => '?').join(',')})`,
+        idList
+      );
+      for (const row of Array.isArray(leadRows) ? leadRows : []) {
+        const assignee = String(row.assignee || '').trim();
+        if (assignee) out.set(`${table}:${Number(row.id)}`, assignee);
+      }
+    } catch {
+      /* table missing or permission — skip */
+    }
+  }
+  return out;
+}
+
+export function bookingAssignForRow(
+  r: { lead_id?: unknown; lead_type?: unknown; submitted_by_name?: unknown },
+  assigneeMap: Map<string, string>
+): string {
+  const table = normalizeCrmLeadTable(r.lead_type);
+  const id = Number(r.lead_id);
+  if (table && Number.isFinite(id) && id > 0) {
+    const fromLead = assigneeMap.get(`${table}:${id}`);
+    if (fromLead) return formatPersonName(fromLead) || fromLead;
+  }
+  return String(r.submitted_by_name || '').trim();
+}
+
+/** Celebration webhooks often send submitter name — resolve lead.assignee from booking id. */
+export async function resolveBookingAssigneeForBookingId(bookingId: string): Promise<string | null> {
+  const id = Number(String(bookingId || '').trim());
+  if (!Number.isFinite(id) || id <= 0) return null;
+  const pool = getPool();
+  const crmDb = process.env.CRM_DB_NAME || 'CRM';
+  try {
+    const [rows]: any = await pool.query(
+      `SELECT lead_id, lead_type, submitted_by_name
+       FROM ${crmDb}.booking_token_record
+       WHERE id = ?
+       LIMIT 1`,
+      [id]
+    );
+    const r = Array.isArray(rows) ? rows[0] : null;
+    if (!r) return null;
+    const assigneeMap = await resolveBookingAssigneeMap([r], crmDb);
+    const assign = bookingAssignForRow(r, assigneeMap);
+    return assign || null;
+  } catch {
+    return null;
+  }
+}
+
+function mapRow(
+  r: any,
+  dateFrom: string | null,
+  dateTo: string | null,
+  assignOverride?: string
+): HallwayMonthBookingDeal | null {
   const bookingDoneDate = ymdFromDb(r.booking_done_date);
   const tenPercentPaidDate = ymdFromDb(r.ten_percent_paid_date);
   const bookingDate = ymdFromDb(r.booking_date);
@@ -162,7 +287,7 @@ function mapRow(r: any, dateFrom: string | null, dateTo: string | null): Hallway
   const dealValue = Number(r.quote_amount) || 0;
   if (dealValue <= 0) return null;
 
-  const assign = String(r.submitted_by_name || '').trim();
+  const assign = (assignOverride || String(r.submitted_by_name || '')).trim();
   if (!assign) return null;
 
   return {
@@ -198,7 +323,7 @@ export async function loadBookingDealsForPeriod(
     const [allRows]: any = await pool.query(
       `
       SELECT
-        id, customer_name, submitted_by_name, quote_amount, amount_received,
+        id, lead_id, lead_type, customer_name, submitted_by_name, quote_amount, amount_received,
         listing_type, booking_status, booking_done_date, ten_percent_paid_date,
         token_taken_date, token_paid_date, booking_date, created_at
       FROM ${crmDb}.booking_token_record
@@ -213,7 +338,7 @@ export async function loadBookingDealsForPeriod(
     const [rangeRows]: any = await pool.query(
       `
       SELECT
-        id, customer_name, submitted_by_name, quote_amount, amount_received,
+        id, lead_id, lead_type, customer_name, submitted_by_name, quote_amount, amount_received,
         listing_type, booking_status, booking_done_date, ten_percent_paid_date,
         token_taken_date, token_paid_date, booking_date, created_at
       FROM ${crmDb}.booking_token_record
@@ -254,9 +379,10 @@ export async function loadBookingDealsForPeriod(
     rows = Array.isArray(rangeRows) ? rangeRows : [];
   }
 
+  const assigneeMap = await resolveBookingAssigneeMap(rows, crmDb);
   const out: HallwayMonthBookingDeal[] = [];
   for (const r of rows) {
-    const mapped = mapRow(r, dateFrom, dateTo);
+    const mapped = mapRow(r, dateFrom, dateTo, bookingAssignForRow(r, assigneeMap));
     if (mapped) out.push(mapped);
   }
   out.sort((a, b) => (a.listingDate < b.listingDate ? 1 : a.listingDate > b.listingDate ? -1 : 0));
@@ -276,7 +402,7 @@ export async function loadThisMonthBookingDeals(
   const [rows]: any = await pool.query(
     `
     SELECT
-      id, customer_name, submitted_by_name, quote_amount, amount_received,
+      id, lead_id, lead_type, customer_name, submitted_by_name, quote_amount, amount_received,
       listing_type, booking_status, booking_done_date, ten_percent_paid_date,
       token_taken_date, token_paid_date, booking_date, created_at
     FROM ${crmDb}.booking_token_record
@@ -316,9 +442,11 @@ export async function loadThisMonthBookingDeals(
     ]
   );
 
+  const rowList = Array.isArray(rows) ? rows : [];
+  const assigneeMap = await resolveBookingAssigneeMap(rowList, crmDb);
   const out: HallwayMonthBookingDeal[] = [];
-  for (const r of Array.isArray(rows) ? rows : []) {
-    const mapped = mapRow(r, dateFrom, dateTo);
+  for (const r of rowList) {
+    const mapped = mapRow(r, dateFrom, dateTo, bookingAssignForRow(r, assigneeMap));
     if (mapped) out.push(mapped);
   }
   out.sort((a, b) => (a.listingDate < b.listingDate ? 1 : a.listingDate > b.listingDate ? -1 : 0));
