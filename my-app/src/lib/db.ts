@@ -68,6 +68,50 @@ export const DEFAULT_REACTIONS: Record<string, any> = {
   byUser: {} as Record<string, string>,
 };
 
+const REACTION_COUNT_KEYS = [
+  'thumbsUp',
+  'clap',
+  'heart',
+  'joy',
+  'surprised',
+  'pray',
+  'fire',
+  'party',
+  'hundred',
+  'rocket',
+] as const;
+
+function userReactionKey(reactionType: string) {
+  return 'user' + reactionType.charAt(0).toUpperCase() + reactionType.slice(1);
+}
+
+function reconcileReactionCountsFromByUser(byUser: Record<string, string>) {
+  const counts: Record<string, number> = {};
+  for (const type of Object.values(byUser)) {
+    const t = String(type || '').trim();
+    if (!t) continue;
+    counts[t] = (counts[t] || 0) + 1;
+  }
+  return counts;
+}
+
+/** Persisted JSON must not include per-viewer user* flags (they broke multi-user counts). */
+export function reactionsForPersistence(reactions: any) {
+  const parsed = parseReactions(reactions);
+  const byUser =
+    parsed.byUser && typeof parsed.byUser === 'object'
+      ? { ...(parsed.byUser as Record<string, string>) }
+      : {};
+  const fromMap = reconcileReactionCountsFromByUser(byUser);
+  const stored: Record<string, unknown> = { byUser };
+  for (const k of REACTION_COUNT_KEYS) {
+    const legacy = Number(parsed[k]) || 0;
+    const fromUsers = fromMap[k] || 0;
+    stored[k] = Object.keys(byUser).length > 0 ? Math.max(legacy, fromUsers) : legacy;
+  }
+  return stored;
+}
+
 export function parseReactions(raw: any) {
   let reactions = { ...DEFAULT_REACTIONS };
   if (raw) {
@@ -79,6 +123,20 @@ export function parseReactions(raw: any) {
     } catch {
       // ignore JSON parse error
     }
+  }
+  const byUser =
+    reactions.byUser && typeof reactions.byUser === 'object'
+      ? (reactions.byUser as Record<string, string>)
+      : {};
+  if (Object.keys(byUser).length > 0) {
+    const reconciled = reconcileReactionCountsFromByUser(byUser);
+    for (const k of REACTION_COUNT_KEYS) {
+      const orphan = Number(reactions[k]) || 0;
+      reactions[k] = Math.max(orphan, reconciled[k] || 0);
+    }
+  }
+  for (const k of REACTION_COUNT_KEYS) {
+    delete reactions[userReactionKey(k)];
   }
   return reactions;
 }
@@ -547,6 +605,7 @@ export async function ensureAnnouncementExists(
     department?: string;
     quotaProgress?: any;
     author?: { name?: string; avatar?: string; team?: string };
+    createdAt?: string | Date;
   }
 ) {
   await ensureHallwaySchema();
@@ -564,7 +623,12 @@ export async function ensureAnnouncementExists(
     const content = defaults?.content || 'Live event synced from CRM.';
     const department = defaults?.department || 'Sales';
     const quotaProgressJson = defaults?.quotaProgress ? JSON.stringify(defaults.quotaProgress) : null;
-    const now = new Date();
+    const insertAt = (() => {
+      if (!defaults?.createdAt) return new Date();
+      const parsed =
+        defaults.createdAt instanceof Date ? defaults.createdAt : new Date(defaults.createdAt);
+      return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+    })();
 
     await pool.query(
       `INSERT INTO announcements (
@@ -586,7 +650,7 @@ export async function ensureAnnouncementExists(
         JSON.stringify(DEFAULT_REACTIONS),
         0,
         department,
-        now,
+        insertAt,
       ]
     );
   } else if (defaults?.title && (rows[0].title === 'CRM Live Update' || rows[0].content === 'Live event synced from CRM.')) {
@@ -607,6 +671,66 @@ export async function ensureAnnouncementExists(
       ]
     );
   }
+}
+
+/** First-seen CRM feed card: persist immutable created_at; return ISO for sort + footer. */
+export async function ensureCrmFeedAnnouncementTimestamp(
+  pool: Pool,
+  item: {
+    id: string;
+    title?: string;
+    type?: string;
+    registerKind?: string;
+    content?: string;
+    createdAt?: string;
+    timestamp?: string;
+    author?: { name?: string; team?: string };
+    department?: string;
+  }
+): Promise<string> {
+  await ensureHallwaySchema();
+  const [rows] = await pool.query<any[]>('SELECT created_at FROM announcements WHERE id = ?', [item.id]);
+  if (rows.length > 0 && rows[0].created_at) {
+    return new Date(rows[0].created_at).toISOString();
+  }
+
+  const kind = String(item.registerKind || item.type || '').toLowerCase();
+  const id = String(item.id || '');
+  const isPeriod =
+    kind === 'weekly' ||
+    kind === 'monthly' ||
+    kind === 'milestone' ||
+    id.startsWith('crm-weekly-top-') ||
+    id.startsWith('crm-monthly-top-') ||
+    id.startsWith('crm-month-milestone-');
+
+  let insertAt = new Date();
+  if (isPeriod && item.createdAt) {
+    const parsed = new Date(item.createdAt);
+    if (!Number.isNaN(parsed.getTime())) insertAt = parsed;
+  }
+
+  const postType =
+    kind === 'weekly' || kind === 'monthly' || id.startsWith('crm-weekly-top-') || id.startsWith('crm-monthly-top-')
+      ? 'performer'
+      : kind === 'milestone' || id.startsWith('crm-month-milestone-')
+        ? 'quota'
+        : 'booking';
+
+  await ensureAnnouncementExists(pool, item.id, {
+    title: item.title,
+    type: postType,
+    content: item.content,
+    department: item.department || 'Sales',
+    author: item.author,
+    createdAt: insertAt,
+  });
+
+  const [after] = await pool.query<any[]>('SELECT created_at FROM announcements WHERE id = ?', [item.id]);
+  if (after.length > 0 && after[0].created_at) {
+    return new Date(after[0].created_at).toISOString();
+  }
+  return insertAt.toISOString();
 }
 
 export function ensureJsonAnnouncement(
@@ -755,23 +879,6 @@ export async function addComment(
   return { comment: createdComment, announcement: announcementResult };
 }
 
-const REACTION_COUNT_KEYS = [
-  'thumbsUp',
-  'clap',
-  'heart',
-  'joy',
-  'surprised',
-  'pray',
-  'fire',
-  'party',
-  'hundred',
-  'rocket',
-] as const;
-
-function userReactionKey(reactionType: string) {
-  return 'user' + reactionType.charAt(0).toUpperCase() + reactionType.slice(1);
-}
-
 /** Project global user* flags for a specific viewer from byUser map. */
 export function withViewerReactionFlags(raw: any, userKey?: string | null) {
   const reactions = parseReactions(raw);
@@ -796,31 +903,23 @@ export function applyWhatsAppReaction(raw: any, reactionType: string, userKey?: 
     ...(reactions.byUser && typeof reactions.byUser === 'object' ? reactions.byUser : {}),
   };
   const key = (userKey || 'anonymous').toLowerCase().trim() || 'anonymous';
-  const current = byUser[key] || null;
+  const prevType = byUser[key] || null;
 
-  // Legacy migration: if no byUser entry but a global user* flag is set, treat as this user
-  let legacy: string | null = current;
-  if (!legacy) {
-    for (const k of REACTION_COUNT_KEYS) {
-      if (reactions[userReactionKey(k)]) {
-        legacy = k;
-        break;
-      }
-    }
-  }
-
-  if (legacy === reactionType) {
-    reactions[reactionType] = Math.max(0, (Number(reactions[reactionType]) || 0) - 1);
+  if (prevType === reactionType) {
     delete byUser[key];
   } else {
-    if (legacy) {
-      reactions[legacy] = Math.max(0, (Number(reactions[legacy]) || 0) - 1);
-    }
-    reactions[reactionType] = (Number(reactions[reactionType]) || 0) + 1;
     byUser[key] = reactionType;
   }
 
   reactions.byUser = byUser;
+  const reconciled = reconcileReactionCountsFromByUser(byUser);
+  for (const k of REACTION_COUNT_KEYS) {
+    const orphan = Number(reactions[k]) || 0;
+    const fromUsers = reconciled[k] || 0;
+    reactions[k] =
+      Object.keys(byUser).length > 0 ? Math.max(orphan, fromUsers) : orphan;
+  }
+
   return withViewerReactionFlags(reactions, key);
 }
 
@@ -841,8 +940,9 @@ export async function toggleReaction(
   }
 
   const updatedReactions = applyWhatsAppReaction(rows[0].reactions, reactionType, userKey);
+  const persisted = reactionsForPersistence(updatedReactions);
   await pool.query('UPDATE announcements SET reactions = ? WHERE id = ?', [
-    JSON.stringify(updatedReactions),
+    JSON.stringify(persisted),
     announcementId,
   ]);
 
@@ -853,13 +953,13 @@ export async function toggleReaction(
     if (!post) {
       post = ensureJsonAnnouncement(announcementId, postMetadata);
     }
-    post.reactions = updatedReactions;
+    post.reactions = persisted;
     saveJsonAnnouncements(list);
   } catch (err) {
     console.error('JSON sync error in toggleReaction:', err);
   }
 
-  return updatedReactions;
+  return withViewerReactionFlags(persisted, userKey);
 }
 
 export async function toggleCommentLike(announcementId: string, commentId: string) {

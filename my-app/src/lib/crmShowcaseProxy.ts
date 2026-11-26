@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { getPool } from './db';
+import { ensureCrmFeedAnnouncementTimestamp, ensureHallwaySchema, getPool } from './db';
 import { formatPersonName } from './hallwayDisplay';
 
 const DEFAULT_CRM = 'https://hows.hubinterior.com';
@@ -1167,8 +1167,6 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
     void payload;
     const now = new Date();
     const weekWindow = resolveWeeklyWindow(now);
-    const monthStartYmd = `${weekWindow.monthKey}-01`;
-
     // Source of truth = CRM DB booking_token_record with BookingTokenRecognitionDates
     // (BOOKING tab + This month, incl. token-old + 10% this month). Hub dateRange=month
     // is UTC + showcase-token fragile — do not depend on it for home cards.
@@ -1201,8 +1199,6 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
     const feed: any[] = [];
       // Stable IST anchors for the calendar day — never Date.now(), or every poll reshuffles the feed
       const todayIst = istYmdNow(now);
-      const boardMonthlyAt = `${todayIst}T23:40:00+05:30`;
-      const boardMilestoneAt = `${todayIst}T23:30:00+05:30`;
 
       // Deal cards = exactly CRM BOOKING + this month rows (customer, assign, deal value)
       for (const d of monthBookingDeals) {
@@ -1219,10 +1215,6 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
         const customer = d.customerName ? formatPersonName(d.customerName) : '';
         const home = customer ? `${customer}'s home` : 'a home';
         const ymd = dealRecognitionYmd(d) || String(d.listingDate || '').slice(0, 10) || todayIst;
-        const dealTime = dealRecognitionMs(d);
-        const createdAt = Number.isFinite(dealTime)
-          ? new Date(dealTime).toISOString()
-          : `${ymd}T12:00:00+05:30`;
         const whoLabel = branch ? `${repName} (${branch})` : repName;
 
         feed.push({
@@ -1235,7 +1227,6 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
             : `${whoLabel} booked ${home} for ${amount}.`,
           quoteFormatted: amount,
           timestamp: ymd,
-          createdAt,
           author: { name: repName, avatar: null, team: teamName },
           department: 'Sales',
           rawBooking: {
@@ -1291,33 +1282,36 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
         });
       }
 
-      // Month board + ₹1 Cr milestone from the same booking register (no extra CRM round-trips)
+      const { resolveMonthlyPerformerContext } = await import('./hallwayMonthlyPerformer');
+      const monthlyCtx = resolveMonthlyPerformerContext(now);
+      const scoringMonth = monthlyCtx.scoringBounds;
+      const monthDeals = await loadBookingDealsForDateRange(scoringMonth.dateFrom, scoringMonth.dateTo);
       const monthly = tallyBookingTotals(
-        validDeals,
-        weekWindow.monthFromMs,
-        weekWindow.monthToMs,
-        weekWindow.monthFromMs,
-        weekWindow.monthToMs
+        monthDeals,
+        scoringMonth.fromMs,
+        scoringMonth.toMs,
+        scoringMonth.fromMs,
+        scoringMonth.toMs
       );
 
       if (monthly.winner && monthly.winner.total > 0) {
         const monthAmount = formatQuote(monthly.winner.total);
         boardCards.push({
-          id: `crm-monthly-top-${weekWindow.monthKey}`,
+          id: monthlyCtx.monthlyCardId,
           type: 'performer',
           registerKind: 'monthly',
-          title: 'This Month’s Top Performer',
-          content: `${monthly.winner.name} leads this month with ${monthAmount} in gross bookings.`,
+          title: `Top Performer of ${monthlyCtx.monthLabel}`,
+          content: `${monthly.winner.name} topped ${monthlyCtx.monthLabel} with ${monthAmount} in gross bookings.`,
           quoteFormatted: monthAmount,
-          timestamp: 'This month',
-          createdAt: boardMonthlyAt,
+          timestamp: `Month of ${monthlyCtx.monthLabel}`,
+          createdAt: monthlyCtx.cardCreatedAtIso,
           author: { name: monthly.winner.name, avatar: null, team: monthly.winner.team },
           department: 'Sales',
           rawBooking: {
-            bookingId: weekWindow.monthKey,
+            bookingId: scoringMonth.monthKey,
             quoteAmount: monthly.winner.total,
             customerName: monthly.winner.name,
-            bookingDoneDate: monthStartYmd,
+            bookingDoneDate: scoringMonth.dateFrom,
             listingType: 'booking',
           },
         });
@@ -1327,33 +1321,48 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
       if (monthly.companyTotal >= ONE_CRORE_INR) {
         const achieved = formatQuote(monthly.companyTotal);
         boardCards.push({
-          id: `crm-month-milestone-${weekWindow.monthKey}`,
+          id: monthlyCtx.milestoneCardId,
           type: 'quota',
           registerKind: 'milestone',
-          title: 'Company crossed ₹1 Cr this month',
-          content: `Achieved ${achieved} in bookings this month.`,
+          title: `Company crossed ₹1 Cr in ${monthlyCtx.monthLabel}`,
+          content: `Achieved ${achieved} in bookings in ${monthlyCtx.monthLabel}.`,
           quoteFormatted: achieved,
-          timestamp: 'This month',
-          createdAt: boardMilestoneAt,
+          timestamp: `Month of ${monthlyCtx.monthLabel}`,
+          createdAt: monthlyCtx.milestoneCreatedAtIso,
           author: { name: 'HUB', avatar: null, team: 'Company' },
           department: 'Sales',
           rawBooking: {
-            bookingId: weekWindow.monthKey,
+            bookingId: scoringMonth.monthKey,
             quoteAmount: monthly.companyTotal,
             customerName: 'HUB',
-            bookingDoneDate: monthStartYmd,
+            bookingDoneDate: scoringMonth.dateFrom,
             listingType: 'booking',
           },
         });
       }
 
-      // Board highlights first, then newest deals — keeps Top Performer / Milestone instant on paint
-      feed.unshift(...boardCards);
+      feed.push(...boardCards);
 
       const { coalesceAnnouncementFeed } = await import('./hallwayFeedCoalesce');
       const coalesced = coalesceAnnouncementFeed(feed, now);
       feed.length = 0;
       feed.push(...coalesced.items);
+
+      try {
+        const pool = getPool();
+        await ensureHallwaySchema();
+        for (const item of feed) {
+          if (!String(item?.id || '').startsWith('crm-')) continue;
+          item.createdAt = await ensureCrmFeedAnnouncementTimestamp(pool, item);
+        }
+      } catch (stampErr) {
+        console.warn('CRM feed created_at sync skipped:', stampErr);
+        for (const item of feed) {
+          if (!item.createdAt && String(item?.id || '').startsWith('crm-')) {
+            item.createdAt = new Date().toISOString();
+          }
+        }
+      }
 
     const resJson = JSON.stringify({
       source: 'CRM Booking & Token (this month recognition)',

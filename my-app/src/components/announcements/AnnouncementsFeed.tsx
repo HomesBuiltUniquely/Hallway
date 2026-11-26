@@ -112,19 +112,9 @@ export default function AnnouncementsFeed({
       }
       return 0;
     };
-    // Newest announcements first
     const diff = getTime(b) - getTime(a);
     if (diff !== 0) return diff;
-    // Same-second board cards: weekly → monthly → milestone → deals → broadcasts
-    const rank = (p: typeof a) => {
-      if (p.id?.startsWith('crm-weekly-top-')) return 5;
-      if (p.id?.startsWith('crm-monthly-top-')) return 4;
-      if (p.id?.startsWith('crm-month-milestone-')) return 3;
-      if (p.type === 'booking') return 2;
-      if (p.type === 'performer') return 1;
-      return 0;
-    };
-    return rank(b) - rank(a);
+    return String(b.id).localeCompare(String(a.id));
   });
 
   useEffect(() => {

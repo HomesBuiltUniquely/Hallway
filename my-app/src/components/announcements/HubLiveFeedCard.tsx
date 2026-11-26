@@ -1,12 +1,14 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { KeyRound, Trophy, Target, Megaphone, SmilePlus, Trash2, Heart } from 'lucide-react';
+import { KeyRound, Trophy, Target, Megaphone, SmilePlus, Trash2, Heart, Clock } from 'lucide-react';
 import { FeedPost } from '../../types/index';
 import { useApp } from '../../context/AppContext';
 import {
   cleanPostContent,
   formatCommentTime,
+  formatIstClockTime,
+  formatPersonName,
   formatRelativeTime,
   getYesterdayYmd,
   istYmd,
@@ -188,9 +190,12 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
   const [newCommentText, setNewCommentText] = useState('');
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const [showReactionPicker, setShowReactionPicker] = useState(false);
+  const [rollupReactionId, setRollupReactionId] = useState<string | null>(null);
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
   const [likingCommentId, setLikingCommentId] = useState<string | null>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
+  const rollupRef = useRef<HTMLDivElement>(null);
+  const actionBarRef = useRef<HTMLDivElement>(null);
   const longPressTimerRef = useRef<number | null>(null);
   const hoverOpenTimerRef = useRef<number | null>(null);
   const suppressClickRef = useRef(false);
@@ -224,6 +229,43 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
     () => AVAILABLE_REACTIONS.find((r) => reactions[userKeyFor(r.id)]) || null,
     [reactions]
   );
+
+  const viewerKey = useMemo(
+    () =>
+      String(currentUser?.email || currentUser?.id || currentUser?.name || '')
+        .toLowerCase()
+        .trim(),
+    [currentUser]
+  );
+
+  const rollupMeta = useMemo(
+    () => AVAILABLE_REACTIONS.find((r) => r.id === rollupReactionId) || null,
+    [rollupReactionId]
+  );
+
+  const reactorsForRollup = useMemo(() => {
+    if (!rollupReactionId) return [];
+    const byUser =
+      reactions.byUser && typeof reactions.byUser === 'object'
+        ? (reactions.byUser as Record<string, string>)
+        : {};
+    return Object.entries(byUser)
+      .filter(([, type]) => type === rollupReactionId)
+      .map(([key]) => ({ key, name: formatPersonName(key) }));
+  }, [reactions, rollupReactionId]);
+
+  const footerClock = useMemo(() => formatIstClockTime(post.createdAt), [post.createdAt]);
+
+  const footerClockAria = useMemo(() => {
+    if (!post.createdAt) return undefined;
+    const when = new Date(post.createdAt);
+    if (Number.isNaN(when.getTime())) return undefined;
+    return when.toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
+  }, [post.createdAt]);
 
   const commentsList = post.comments || [];
   const commentsCount = Math.max(commentsList.length, post.commentsCount || 0);
@@ -259,6 +301,31 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
   }, [showReactionPicker]);
+
+  useEffect(() => {
+    if (!rollupReactionId) return;
+    const onDoc = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (rollupRef.current?.contains(target)) return;
+      if (actionBarRef.current?.contains(target)) return;
+      setRollupReactionId(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setRollupReactionId(null);
+    };
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [rollupReactionId]);
+
+  useEffect(() => {
+    if (rollupReactionId) {
+      rollupRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }, [rollupReactionId]);
 
   const handleToggleReaction = async (reactionKey: string) => {
     try {
@@ -395,19 +462,27 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
             {cleanPostContent(post.content)}
           </p>
 
-          {/* Chips + React + comment + delete — one row */}
-          <div className="mt-3 flex flex-nowrap items-center gap-3 border-t border-slate-100 pt-3 dark:border-slate-800">
+          <div
+            ref={actionBarRef}
+            className="mt-3 border-t border-slate-100 pt-3 dark:border-slate-800"
+          >
+            <div className="flex flex-nowrap items-center gap-3">
             {activeReactionChips.map((r) => (
               <button
                 key={r.id}
                 type="button"
-                onClick={() => handleToggleReaction(r.id)}
+                onClick={() => {
+                  if (r.count > 0) {
+                    setRollupReactionId((cur) => (cur === r.id ? null : r.id));
+                    setShowReactionPicker(false);
+                  }
+                }}
                 className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-full border px-2 text-[12px] transition-all ${
                   r.mine
                     ? 'border-brand/40 bg-brand-soft text-ink shadow-xs dark:text-white'
                     : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200'
                 }`}
-                title={r.mine ? 'Remove your reaction' : `React with ${r.label}`}
+                title={`See who reacted with ${r.label}`}
               >
                 <span>{r.emoji}</span>
                 <span className="text-[11px] font-bold tabular-nums">{r.count}</span>
@@ -479,21 +554,70 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
                 : 'Add a comment…'}
             </button>
 
-            {canDeleteAnnouncement(post, currentUser) && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (window.confirm(`Delete "${post.title}"?`)) {
-                    void deleteAnnouncement(post.id);
-                  }
-                }}
-                className="ml-auto cursor-pointer p-1 text-slate-300 transition-colors hover:text-slate-500 dark:text-slate-600 dark:hover:text-slate-400"
-                title="Delete post"
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              {footerClock ? (
+                <time
+                  dateTime={post.createdAt}
+                  className="inline-flex items-center gap-1 text-[11px] font-medium tabular-nums text-slate-400 dark:text-slate-500"
+                  aria-label={footerClockAria}
+                  title={footerClockAria}
+                >
+                  <Clock className="h-3 w-3 shrink-0 opacity-70" aria-hidden />
+                  {footerClock}
+                </time>
+              ) : null}
+              {canDeleteAnnouncement(post, currentUser) ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (window.confirm(`Delete "${post.title}"?`)) {
+                      void deleteAnnouncement(post.id);
+                    }
+                  }}
+                  className="cursor-pointer p-1 text-slate-300 transition-colors hover:text-slate-500 dark:text-slate-600 dark:hover:text-slate-400"
+                  title="Delete post"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              ) : null}
+            </div>
+            </div>
+
+            {rollupReactionId && rollupMeta ? (
+              <div
+                ref={rollupRef}
+                className="mt-2 max-h-48 w-full overflow-y-auto rounded-lg border border-slate-200 bg-slate-50/90 dark:border-slate-700 dark:bg-slate-800/40"
+                role="dialog"
+                aria-label={`People who reacted with ${rollupMeta.label}`}
               >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
-            )}
+                <p className="flex items-center gap-2 border-b border-slate-200/80 px-3 py-2 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200">
+                  <span className="text-base leading-none">{rollupMeta.emoji}</span>
+                  <span>{rollupMeta.label}</span>
+                </p>
+                {reactorsForRollup.length > 0 ? (
+                  <ul className="py-1">
+                    {reactorsForRollup.map(({ key, name }) => (
+                      <li
+                        key={key}
+                        className={`px-3 py-1.5 text-sm ${
+                          key === viewerKey
+                            ? 'bg-brand-soft/60 font-semibold text-ink dark:text-white'
+                            : 'text-slate-700 dark:text-slate-200'
+                        }`}
+                      >
+                        {name}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">
+                    {Number(reactions[rollupReactionId]) || 0}{' '}
+                    {(Number(reactions[rollupReactionId]) || 0) === 1 ? 'reaction' : 'reactions'}
+                  </p>
+                )}
+              </div>
+            ) : null}
           </div>
         </div>
       </div>

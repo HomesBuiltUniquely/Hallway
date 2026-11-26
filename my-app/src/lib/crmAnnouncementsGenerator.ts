@@ -1,5 +1,6 @@
 import { FeedPost } from '../types/index';
 import { formatPersonName, istYmd } from './hallwayDisplay';
+import { resolveMonthlyPerformerContext } from './hallwayMonthlyPerformer';
 import { resolveWeeklyPerformerContext } from './hallwayWeeklyPerformer';
 import { coalesceAnnouncementFeed } from './hallwayFeedCoalesce';
 import {
@@ -374,7 +375,6 @@ export function generateCrmAnnouncements({
 }: CrmGeneratorInputs): FeedPost[] {
   const posts: FeedPost[] = [];
   const seenIds = new Set<string>();
-  const ONE_CRORE_INR = 10_000_000;
 
   const coalescedFeed = coalesceAnnouncementFeed(crmFeedItems || [], new Date()).items;
 
@@ -445,7 +445,7 @@ export function generateCrmAnnouncements({
       iconEmoji: type === 'performer' ? '🏅' : type === 'quota' ? '🎯' : '💰',
       title: normalizedTitle,
       timestamp: item.timestamp || 'Recent',
-      createdAt: item.createdAt,
+      createdAt: preserved?.createdAt || item.createdAt,
       author: {
         name: rep,
         avatar: preserved?.author?.avatar || '',
@@ -485,95 +485,44 @@ export function generateCrmAnnouncements({
     for (const p of posts) seenIds.add(p.id);
   }
 
-  // Fallback monthly / milestone only when feed board cards are absent
-  if (!posts.some((p) => p.id.startsWith('crm-monthly-top-'))) {
-    const mtdLeader = (topPerformers || []).find(
-      (person) =>
-        Boolean(person?.name) &&
-        !/\btest\b/i.test(String(person.name)) &&
-        (Number(person.revenue) > 0 ||
-          Boolean(person.revenueFormatted && person.revenueFormatted !== '₹0'))
+  {
+    const monthlyCtx = resolveMonthlyPerformerContext(new Date());
+    const expectedMonthlyId = monthlyCtx.monthlyCardId;
+    const expectedMilestoneId = monthlyCtx.milestoneCardId;
+
+    const monthlyPosts = posts.filter((p) => p.id.startsWith('crm-monthly-top-'));
+    const keepMonthly = monthlyPosts.find((p) => p.id === expectedMonthlyId);
+    const milestonePosts = posts.filter((p) => p.id.startsWith('crm-month-milestone-'));
+    const keepMilestone = milestonePosts.find((p) => p.id === expectedMilestoneId);
+
+    const deduped = posts.filter(
+      (p) => !p.id.startsWith('crm-monthly-top-') && !p.id.startsWith('crm-month-milestone-')
     );
-    if (mtdLeader?.name) {
-      const monthKey = istYmd().slice(0, 7);
-      const monthId = `crm-monthly-top-${monthKey}`;
-      const name = formatPersonName(mtdLeader.name);
-      const amount =
-        mtdLeader.revenueFormatted || formatInrToLakhsOrCrores(Number(mtdLeader.revenue) || 0);
-      if (!seenIds.has(monthId) && name && name !== 'User' && amount && amount !== '₹0') {
-        const preserved = existingPostsMap.get(monthId);
-        posts.push({
-          id: monthId,
-          type: 'performer',
-          categoryColor: '#EAB308',
-          iconEmoji: '🏅',
-          title: 'This Month’s Top Performer',
-          timestamp: 'This month',
-          createdAt: `${istYmd()}T23:40:00+05:30`,
-          author: {
-            name,
-            avatar: preserved?.author?.avatar || '',
-            team: 'Sales',
-          },
-          content: `${name} leads this month with ${amount} in gross bookings.`,
-          quoteFormatted: amount,
-          reactions: preserved?.reactions ? { ...preserved.reactions } : defaultReactions(),
-          comments: preserved?.comments && preserved.comments.length > 0 ? [...preserved.comments] : [],
-          commentsCount: preserved?.commentsCount || preserved?.comments?.length || 0,
-          department: 'Sales',
-        });
-        seenIds.add(monthId);
-      }
+    if (keepMonthly) {
+      deduped.push({
+        ...keepMonthly,
+        title: `Top Performer of ${monthlyCtx.monthLabel}`,
+        timestamp: keepMonthly.timestamp?.startsWith('Month of')
+          ? keepMonthly.timestamp
+          : `Month of ${monthlyCtx.monthLabel}`,
+      });
     }
+    if (keepMilestone) {
+      deduped.push(keepMilestone);
+    }
+    posts.length = 0;
+    posts.push(...deduped);
+    seenIds.clear();
+    for (const p of posts) seenIds.add(p.id);
   }
 
-  if (!posts.some((p) => p.id.startsWith('crm-month-milestone-'))) {
-    const achievedInr = Number(overallTargets[0]?.currentInr) || 0;
-    if (achievedInr >= ONE_CRORE_INR) {
-      const monthKey = istYmd().slice(0, 7);
-      const milestoneId = `crm-month-milestone-${monthKey}`;
-      if (!seenIds.has(milestoneId)) {
-        const achieved = formatInrToLakhsOrCrores(achievedInr);
-        const preserved = existingPostsMap.get(milestoneId);
-        posts.push({
-          id: milestoneId,
-          type: 'quota',
-          categoryColor: '#0284C7',
-          iconEmoji: '🎯',
-          title: 'Company crossed ₹1 Cr this month',
-          timestamp: 'This month',
-          createdAt: `${istYmd()}T23:30:00+05:30`,
-          author: {
-            name: 'HUB',
-            avatar: preserved?.author?.avatar || '',
-            team: 'Company',
-          },
-          content: `Achieved ${achieved} in bookings this month.`,
-          quoteFormatted: achieved,
-          reactions: preserved?.reactions ? { ...preserved.reactions } : defaultReactions(),
-          comments: preserved?.comments && preserved.comments.length > 0 ? [...preserved.comments] : [],
-          commentsCount: preserved?.commentsCount || preserved?.comments?.length || 0,
-          department: 'Sales',
-        });
-      }
-    }
-  }
-
-  // Latest activity first; board cards (same-second createdAt) keep a stable highlight order
   posts.sort((a, b) => {
     const tA = new Date(a.createdAt || 0).getTime();
     const tB = new Date(b.createdAt || 0).getTime();
     const safeA = Number.isFinite(tA) ? tA : 0;
     const safeB = Number.isFinite(tB) ? tB : 0;
     if (safeB !== safeA) return safeB - safeA;
-    const rank = (p: FeedPost) => {
-      if (p.id.startsWith('crm-weekly-top-')) return 4;
-      if (p.id.startsWith('crm-monthly-top-')) return 3;
-      if (p.id.startsWith('crm-month-milestone-')) return 2;
-      if (p.type === 'booking') return 1;
-      return 0;
-    };
-    return rank(b) - rank(a);
+    return String(b.id).localeCompare(String(a.id));
   });
   return posts;
 }

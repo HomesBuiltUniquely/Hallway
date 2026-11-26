@@ -123,23 +123,33 @@ function withViewerReactionFlags(raw: any, userKey?: string) {
   return base;
 }
 
+function reconcileCountsFromByUser(byUser: Record<string, string>) {
+  const counts: Record<string, number> = {};
+  for (const type of Object.values(byUser)) {
+    const t = String(type || '').trim();
+    if (!t) continue;
+    counts[t] = (counts[t] || 0) + 1;
+  }
+  return counts;
+}
+
 function mergeReactions(serverReactions?: any, localReactions?: any, userKey?: string) {
   const reactionKeys = [
     'thumbsUp', 'clap', 'heart', 'joy', 'surprised', 'pray',
     'fire', 'party', 'hundred', 'rocket',
   ] as const;
   const merged: any = {
-    ...(serverReactions || {}),
     byUser: {
       ...(serverReactions?.byUser || {}),
       ...(localReactions?.byUser || {}),
     },
   };
+  const fromUsers = reconcileCountsFromByUser(merged.byUser);
   for (const k of reactionKeys) {
-    merged[k] = Math.max(
-      Number(serverReactions?.[k]) || 0,
-      Number(localReactions?.[k]) || 0
-    );
+    const serverN = Number(serverReactions?.[k]) || 0;
+    const localN = Number(localReactions?.[k]) || 0;
+    const mapN = fromUsers[k] || 0;
+    merged[k] = Math.max(serverN, localN, mapN);
   }
   return withViewerReactionFlags(merged, userKey);
 }
@@ -941,8 +951,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         viewerKey
       );
       const comments = mergeComments(s.comments, mergeComments(dbPost?.comments, localPost?.comments));
+      const mergedCreatedAt =
+        dbPost?.createdAt ?? localPost?.createdAt ?? currentPostsMap.get(s.id)?.createdAt ?? s.createdAt;
       announcementPostsMap.set(s.id, {
         ...s,
+        createdAt: mergedCreatedAt,
         reactions,
         comments,
         commentsCount: Math.max(s.commentsCount || 0, comments.length),
@@ -980,14 +993,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const safeA = Number.isFinite(tA) ? tA : 0;
         const safeB = Number.isFinite(tB) ? tB : 0;
         if (safeB !== safeA) return safeB - safeA;
-        const rank = (p: FeedPost) => {
-          if (p.id.startsWith('crm-weekly-top-')) return 5;
-          if (p.id.startsWith('crm-monthly-top-')) return 4;
-          if (p.id.startsWith('crm-month-milestone-')) return 3;
-          if (p.type === 'booking') return 2;
-          return 0;
-        };
-        return rank(b) - rank(a);
+        return String(b.id).localeCompare(String(a.id));
       });
   };
 
@@ -1434,24 +1440,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       feedPosts.find((p) => p.id === postId) || announcementPosts.find((p) => p.id === postId);
     const viewerKey = reactionViewerKey(currentUser);
 
-    // WhatsApp-style optimistic update: one reaction per user (keyed in byUser)
+  const reactionCountKeys = [
+    'thumbsUp', 'clap', 'heart', 'joy', 'surprised', 'pray',
+    'fire', 'party', 'hundred', 'rocket',
+  ] as const;
+
     const updatePost = (post: FeedPost) => {
       if (post.id !== postId) return post;
       const prev = (post.reactions || {}) as any;
       const byUser: Record<string, string> = { ...(prev.byUser || {}) };
       const current = viewerKey && byUser[viewerKey] ? byUser[viewerKey] : null;
-      const next: any = { ...prev, byUser };
       if (current === reactionType) {
-        next[reactionType] = Math.max(0, (Number(next[reactionType]) || 0) - 1);
         if (viewerKey) delete byUser[viewerKey];
-      } else {
-        if (current) {
-          next[current] = Math.max(0, (Number(next[current]) || 0) - 1);
-        }
-        next[reactionType] = (Number(next[reactionType]) || 0) + 1;
-        if (viewerKey) byUser[viewerKey] = reactionType;
+      } else if (viewerKey) {
+        byUser[viewerKey] = reactionType;
       }
-      next.byUser = byUser;
+      const fromUsers = reconcileCountsFromByUser(byUser);
+      const next: any = { byUser };
+      for (const k of reactionCountKeys) {
+        const orphan = Number(prev[k]) || 0;
+        const fromMap = fromUsers[k] || 0;
+        next[k] = Object.keys(byUser).length > 0 ? Math.max(orphan, fromMap) : orphan;
+      }
       return { ...post, reactions: withViewerReactionFlags(next, viewerKey) };
     };
 
@@ -1487,12 +1497,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (data?.reactions) {
           const syncReactionPost = (post: FeedPost) => {
             if (post.id !== postId) return post;
+            const base: any = {
+              byUser: data.reactions.byUser && typeof data.reactions.byUser === 'object'
+                ? { ...data.reactions.byUser }
+                : {},
+            };
+            for (const k of reactionCountKeys) {
+              base[k] = Number(data.reactions[k]) || 0;
+            }
             return {
               ...post,
-              reactions: withViewerReactionFlags(
-                { ...(post.reactions || {}), ...data.reactions },
-                viewerKey
-              ),
+              reactions: withViewerReactionFlags(base, viewerKey),
             };
           };
           setFeedPosts((prev) => prev.map(syncReactionPost));

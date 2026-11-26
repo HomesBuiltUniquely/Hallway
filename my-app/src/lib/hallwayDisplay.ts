@@ -31,6 +31,19 @@ export function getYesterdayYmd(): string {
   return istYmd(istDateObj);
 }
 
+/** Footer clock on feed cards, e.g. `4:32 PM` in IST. */
+export function formatIstClockTime(dateInput?: string | Date | null): string | null {
+  if (!dateInput) return null;
+  const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+  if (isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(date);
+}
+
 export function formatRelativeTime(dateInput?: string | Date | null): string {
   if (!dateInput) return 'Just now';
   const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;

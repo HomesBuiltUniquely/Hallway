@@ -1,4 +1,5 @@
-import { resolveWeeklyPerformerContext, istYmdFromDate } from './hallwayWeeklyPerformer';
+import { leadingMonthBadge, resolveMonthlyPerformerContext } from './hallwayMonthlyPerformer';
+import { resolveWeeklyPerformerContext } from './hallwayWeeklyPerformer';
 
 const MONTH_NAMES = [
   'January',
@@ -68,12 +69,6 @@ function dealRecognitionYmd(item: CoalesceableFeedItem): string {
   return '';
 }
 
-function monthLabelFromKey(monthKey: string): string {
-  const [, m] = monthKey.split('-').map(Number);
-  if (!m || m < 1 || m > 12) return monthKey;
-  return MONTH_NAMES[m - 1];
-}
-
 function isBookingItem(item: CoalesceableFeedItem): boolean {
   if (item.registerKind === 'booking') return true;
   if (!String(item.id || '').startsWith('crm-booking-')) return false;
@@ -105,7 +100,8 @@ export function coalesceAnnouncementFeed<T extends CoalesceableFeedItem>(
   const list = items.map((i) => ({ ...i, honorBadges: i.honorBadges ? [...i.honorBadges] : undefined }));
   const weeklyCtx = resolveWeeklyPerformerContext(now);
   const scoring = weeklyCtx.scoringBounds;
-  const monthKey = istYmdFromDate(now).slice(0, 7);
+  const monthlyCtx = resolveMonthlyPerformerContext(now);
+  const scoringMonthKey = monthlyCtx.scoringBounds.monthKey;
 
   const weekly = list.find(isWeeklyItem);
   const monthly = list.find(isMonthlyItem);
@@ -146,7 +142,7 @@ export function coalesceAnnouncementFeed<T extends CoalesceableFeedItem>(
       monthlyName &&
       name === monthlyName &&
       amountsClose(inr, monthlyInr) &&
-      ymd.slice(0, 7) === monthKey
+      ymd.slice(0, 7) === scoringMonthKey
     ) {
       flags.monthly = true;
     }
@@ -172,20 +168,12 @@ export function coalesceAnnouncementFeed<T extends CoalesceableFeedItem>(
     badges.push(`Top of the week · Week of ${weeklyCtx.label}`);
   }
   if (best.flags.monthly) {
-    badges.push(`Leading ${monthLabelFromKey(monthKey)}`);
+    badges.push(leadingMonthBadge(scoringMonthKey));
   }
-
-  const fullStack =
-    best.flags.weekly &&
-    best.flags.monthly &&
-    weeklyName === monthlyName &&
-    amountsClose(weeklyInr, monthlyInr);
 
   const suppressed = new Set<string>();
-  if (fullStack) {
-    if (weekly?.id) suppressed.add(weekly.id);
-    if (monthly?.id) suppressed.add(monthly.id);
-  }
+  if (best.flags.weekly && weekly?.id) suppressed.add(weekly.id);
+  if (best.flags.monthly && monthly?.id) suppressed.add(monthly.id);
 
   const out = list
     .filter((i) => !suppressed.has(i.id))
