@@ -1,5 +1,9 @@
 import { leadingMonthBadge, resolveMonthlyPerformerContext } from './hallwayMonthlyPerformer';
-import { resolveWeeklyPerformerContext } from './hallwayWeeklyPerformer';
+import {
+  istYmdFromDate,
+  resolveWeeklyPerformerContext,
+  shouldPublishWeeklyTopPerformerCard,
+} from './hallwayWeeklyPerformer';
 
 const MONTH_NAMES = [
   'January',
@@ -21,6 +25,8 @@ export type CoalesceableFeedItem = {
   registerKind?: string;
   quoteFormatted?: string;
   timestamp?: string;
+  /** When this card first appeared on the Hallway feed (announcements.created_at). */
+  createdAt?: string;
   author?: { name?: string | null };
   rawBooking?: {
     quoteAmount?: number;
@@ -61,12 +67,55 @@ export function amountsClose(a: number, b: number): boolean {
   return Math.abs(a - b) <= 1;
 }
 
-function dealRecognitionYmd(item: CoalesceableFeedItem): string {
+export function bookingRecognitionYmdForCoalesce(item: CoalesceableFeedItem): string {
   const fromBooking = String(item.rawBooking?.bookingDoneDate || '').slice(0, 10);
   if (/^\d{4}-\d{2}-\d{2}$/.test(fromBooking)) return fromBooking;
-  const ts = String(item.timestamp || '').slice(0, 10);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(ts)) return ts;
   return '';
+}
+
+function inScoringWeek(ymd: string, mondayYmd: string, sundayYmd: string): boolean {
+  return Boolean(ymd && ymd >= mondayYmd && ymd <= sundayYmd);
+}
+
+function hallwayFirstSeenYmd(item: CoalesceableFeedItem): string {
+  if (!item.createdAt) return '';
+  const when = new Date(item.createdAt);
+  if (Number.isNaN(when.getTime())) return '';
+  return istYmdFromDate(when);
+}
+
+/**
+ * Weekly honor belongs on a deal card only when the booking closed in the scoring week
+ * and the Hallway announcement is not older than that week (avoids "1 Nov" + "week 16–22").
+ */
+export function weeklyHonorEligibleForBooking(
+  item: CoalesceableFeedItem,
+  bookingYmd: string,
+  mondayYmd: string,
+  sundayYmd: string
+): boolean {
+  if (!inScoringWeek(bookingYmd, mondayYmd, sundayYmd)) return false;
+  const hallwayYmd = hallwayFirstSeenYmd(item);
+  if (!hallwayYmd) return true;
+  return hallwayYmd >= mondayYmd;
+}
+
+function honorCandidateRank(
+  item: CoalesceableFeedItem,
+  flags: { weekly: boolean; monthly: boolean },
+  weeklyInr: number,
+  monthlyInr: number
+): number {
+  const inr = amountInrForItem(item);
+  const ymd = bookingRecognitionYmdForCoalesce(item);
+  let rank = 0;
+  if (flags.weekly) rank += 10_000;
+  if (flags.monthly) rank += 1_000;
+  if (flags.weekly && amountsClose(inr, weeklyInr)) rank += 500;
+  if (flags.monthly && amountsClose(inr, monthlyInr)) rank += 200;
+  if (flags.weekly) rank += inr;
+  if (ymd) rank += new Date(`${ymd}T12:00:00+05:30`).getTime() / 1e9;
+  return rank;
 }
 
 function isBookingItem(item: CoalesceableFeedItem): boolean {
@@ -97,13 +146,22 @@ export function coalesceAnnouncementFeed<T extends CoalesceableFeedItem>(
   items: T[],
   now = new Date()
 ): CoalesceResult<T> {
-  const list = items.map((i) => ({ ...i, honorBadges: i.honorBadges ? [...i.honorBadges] : undefined }));
+  let list = items.map((i) => {
+    const copy = { ...i };
+    delete copy.honorBadges;
+    return copy;
+  });
   const weeklyCtx = resolveWeeklyPerformerContext(now);
   const scoring = weeklyCtx.scoringBounds;
   const monthlyCtx = resolveMonthlyPerformerContext(now);
   const scoringMonthKey = monthlyCtx.scoringBounds.monthKey;
+  const weeklyProgramOn = shouldPublishWeeklyTopPerformerCard(now);
 
-  const weekly = list.find(isWeeklyItem);
+  if (!weeklyProgramOn) {
+    list = list.filter((i) => !isWeeklyItem(i));
+  }
+
+  const weekly = weeklyProgramOn ? list.find(isWeeklyItem) : undefined;
   const monthly = list.find(isMonthlyItem);
   if (!weekly && !monthly) {
     return { items: list, suppressedPerformerIds: [] };
@@ -121,7 +179,7 @@ export function coalesceAnnouncementFeed<T extends CoalesceableFeedItem>(
     if (!isBookingItem(item)) continue;
     const name = normalizePersonName(item.author?.name);
     const inr = amountInrForItem(item);
-    const ymd = dealRecognitionYmd(item);
+    const ymd = bookingRecognitionYmdForCoalesce(item);
     if (!ymd) continue;
 
     const flags: MatchFlags = { weekly: false, monthly: false };
@@ -130,9 +188,8 @@ export function coalesceAnnouncementFeed<T extends CoalesceableFeedItem>(
       weekly &&
       weeklyName &&
       name === weeklyName &&
-      amountsClose(inr, weeklyInr) &&
-      ymd >= scoring.mondayYmd &&
-      ymd <= scoring.sundayYmd
+      weeklyHonorEligibleForBooking(item, ymd, scoring.mondayYmd, scoring.sundayYmd) &&
+      amountsClose(inr, weeklyInr)
     ) {
       flags.weekly = true;
     }
@@ -153,8 +210,9 @@ export function coalesceAnnouncementFeed<T extends CoalesceableFeedItem>(
       best = { item, flags };
       continue;
     }
-    const score = (f: MatchFlags) => (f.weekly ? 2 : 0) + (f.monthly ? 1 : 0);
-    if (score(flags) > score(best.flags)) {
+    const nextRank = honorCandidateRank(item, flags, weeklyInr, monthlyInr);
+    const bestRank = honorCandidateRank(best.item, best.flags, weeklyInr, monthlyInr);
+    if (nextRank > bestRank) {
       best = { item, flags };
     }
   }

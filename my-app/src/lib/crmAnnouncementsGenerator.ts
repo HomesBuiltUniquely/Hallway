@@ -1,7 +1,10 @@
 import { FeedPost } from '../types/index';
 import { formatPersonName, istYmd } from './hallwayDisplay';
 import { resolveMonthlyPerformerContext } from './hallwayMonthlyPerformer';
-import { resolveWeeklyPerformerContext } from './hallwayWeeklyPerformer';
+import {
+  isVisibleWeeklyTopPerformerCardId,
+  resolveWeeklyPerformerContext,
+} from './hallwayWeeklyPerformer';
 import { coalesceAnnouncementFeed } from './hallwayFeedCoalesce';
 import {
   HallwayFeedItem,
@@ -376,7 +379,14 @@ export function generateCrmAnnouncements({
   const posts: FeedPost[] = [];
   const seenIds = new Set<string>();
 
-  const coalescedFeed = coalesceAnnouncementFeed(crmFeedItems || [], new Date()).items;
+  const itemsForCoalesce = (crmFeedItems || []).map((item) => {
+    const preserved = existingPostsMap.get(item.id);
+    return {
+      ...item,
+      createdAt: preserved?.createdAt || item.createdAt,
+    };
+  });
+  const coalescedFeed = coalesceAnnouncementFeed(itemsForCoalesce, new Date()).items;
 
   const register = coalescedFeed.filter((item) =>
     Boolean(
@@ -390,6 +400,12 @@ export function generateCrmAnnouncements({
 
   for (const item of register) {
     if (!item.id || seenIds.has(item.id)) continue;
+    if (
+      (item.registerKind === 'weekly' || String(item.id).startsWith('crm-weekly-top-')) &&
+      !isVisibleWeeklyTopPerformerCardId(item.id)
+    ) {
+      continue;
+    }
     // Only CRM BOOKING cards (this-month feed) — never token / cancel / legacy
     if (
       String(item.id).startsWith('crm-booking-token-') ||
@@ -454,6 +470,7 @@ export function generateCrmAnnouncements({
       content,
       quoteFormatted,
       honorBadges: Array.isArray(item.honorBadges) && item.honorBadges.length > 0 ? [...item.honorBadges] : undefined,
+      rawBooking: item.rawBooking,
       reactions: preserved?.reactions ? { ...preserved.reactions } : defaultReactions(),
       comments: preserved?.comments && preserved.comments.length > 0 ? [...preserved.comments] : [],
       commentsCount: preserved?.commentsCount || preserved?.comments?.length || 0,

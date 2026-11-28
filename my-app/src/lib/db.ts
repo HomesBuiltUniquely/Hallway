@@ -606,6 +606,7 @@ export async function ensureAnnouncementExists(
     quotaProgress?: any;
     author?: { name?: string; avatar?: string; team?: string };
     createdAt?: string | Date;
+    timestampText?: string;
   }
 ) {
   await ensureHallwaySchema();
@@ -629,6 +630,7 @@ export async function ensureAnnouncementExists(
         defaults.createdAt instanceof Date ? defaults.createdAt : new Date(defaults.createdAt);
       return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
     })();
+    const timestampText = String(defaults?.timestampText || 'Live').trim() || 'Live';
 
     await pool.query(
       `INSERT INTO announcements (
@@ -641,7 +643,7 @@ export async function ensureAnnouncementExists(
         type,
         categoryColor,
         title,
-        'Live',
+        timestampText,
         authorName,
         authorAvatar,
         authorTeam,
@@ -673,6 +675,71 @@ export async function ensureAnnouncementExists(
   }
 }
 
+function crmFeedTimestampText(item: {
+  timestamp?: string;
+}): string | null {
+  const ts = String(item.timestamp || '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(ts.slice(0, 10))) return ts.slice(0, 10);
+  if (ts.startsWith('Week of') || ts.startsWith('Month of')) return ts;
+  return null;
+}
+
+/** Keep timestamp_text aligned with CRM recognition (never changes created_at). */
+async function syncCrmRecognitionTimestampText(
+  pool: Pool,
+  id: string,
+  timestampText: string | null
+): Promise<void> {
+  if (!timestampText) return;
+  const crmId = String(id || '');
+  const isBooking = crmId.startsWith('crm-booking-');
+  const isPeriod =
+    crmId.startsWith('crm-weekly-top-') ||
+    crmId.startsWith('crm-monthly-top-') ||
+    crmId.startsWith('crm-month-milestone-');
+  if (!isBooking && !isPeriod) return;
+  if (isBooking && /^\d{4}-\d{2}-\d{2}$/.test(timestampText)) {
+    await pool.query(`UPDATE announcements SET timestamp_text = ? WHERE id = ?`, [
+      timestampText,
+      id,
+    ]);
+    return;
+  }
+  if (isPeriod) {
+    await pool.query(
+      `UPDATE announcements
+       SET timestamp_text = ?
+       WHERE id = ?
+         AND (timestamp_text IS NULL OR timestamp_text IN ('Live', 'Just Now', 'Just now', 'Recent'))`,
+      [timestampText, id]
+    );
+  }
+}
+
+/** Load persisted Hallway first-seen times so feed coalesce can gate weekly honors. */
+export async function hydrateCrmFeedHallwayCreatedAt(
+  pool: Pool,
+  feed: { id?: string; createdAt?: string }[]
+): Promise<void> {
+  const ids = feed.map((i) => String(i?.id || '')).filter((id) => id.startsWith('crm-'));
+  if (ids.length === 0) return;
+  const placeholders = ids.map(() => '?').join(',');
+  const [rows] = await pool.query<any[]>(
+    `SELECT id, created_at FROM announcements WHERE id IN (${placeholders})`,
+    ids
+  );
+  const byId = new Map<string, string>();
+  for (const r of rows) {
+    if (!r?.id || !r.created_at) continue;
+    byId.set(String(r.id), new Date(r.created_at).toISOString());
+  }
+  for (const item of feed) {
+    const id = String(item?.id || '');
+    const iso = byId.get(id);
+    if (iso) item.createdAt = iso;
+  }
+}
+
 /** First-seen CRM feed card: persist immutable created_at; return ISO for sort + footer. */
 export async function ensureCrmFeedAnnouncementTimestamp(
   pool: Pool,
@@ -689,8 +756,10 @@ export async function ensureCrmFeedAnnouncementTimestamp(
   }
 ): Promise<string> {
   await ensureHallwaySchema();
+  const timestampText = crmFeedTimestampText(item);
   const [rows] = await pool.query<any[]>('SELECT created_at FROM announcements WHERE id = ?', [item.id]);
   if (rows.length > 0 && rows[0].created_at) {
+    await syncCrmRecognitionTimestampText(pool, item.id, timestampText);
     return new Date(rows[0].created_at).toISOString();
   }
 
@@ -724,7 +793,9 @@ export async function ensureCrmFeedAnnouncementTimestamp(
     department: item.department || 'Sales',
     author: item.author,
     createdAt: insertAt,
+    timestampText: timestampText || 'Live',
   });
+  await syncCrmRecognitionTimestampText(pool, item.id, timestampText);
 
   const [after] = await pool.query<any[]>('SELECT created_at FROM announcements WHERE id = ?', [item.id]);
   if (after.length > 0 && after[0].created_at) {

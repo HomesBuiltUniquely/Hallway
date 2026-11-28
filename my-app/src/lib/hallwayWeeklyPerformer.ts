@@ -97,3 +97,31 @@ export function resolveWeeklyPerformerContext(now = new Date()): WeeklyPerformer
     cardCreatedAtIso: `${scoringBounds.sundayYmd}T23:59:00+05:30`,
   };
 }
+
+/** Hallway reset (IST): no weekly cards for scoring weeks before the week we reopened the program. */
+const WEEKLY_PROGRAM_RESET_ANCHOR = new Date('2026-11-28T12:00:00+05:30');
+
+export const WEEKLY_PERFORMER_PROGRAM_START_MONDAY_YMD =
+  displayWeekBounds(WEEKLY_PROGRAM_RESET_ANCHOR).mondayYmd;
+
+export function weeklyPerformerScoringMondayFromCardId(id: string): string | null {
+  const m = String(id || '').match(/^crm-weekly-top-(\d{4}-\d{2}-\d{2})$/);
+  return m ? m[1] : null;
+}
+
+export function isWeeklyPerformerProgramScoringWeek(scoringMondayYmd: string): boolean {
+  return Boolean(scoringMondayYmd && scoringMondayYmd >= WEEKLY_PERFORMER_PROGRAM_START_MONDAY_YMD);
+}
+
+/** Publish the Top Performer card only for scoring weeks on/after program start (not retro weeks). */
+export function shouldPublishWeeklyTopPerformerCard(now = new Date()): boolean {
+  const { scoringBounds } = resolveWeeklyPerformerContext(now);
+  return isWeeklyPerformerProgramScoringWeek(scoringBounds.mondayYmd);
+}
+
+export function isVisibleWeeklyTopPerformerCardId(id: string): boolean {
+  if (!String(id || '').startsWith('crm-weekly-top-')) return true;
+  const monday = weeklyPerformerScoringMondayFromCardId(id);
+  if (!monday) return false;
+  return isWeeklyPerformerProgramScoringWeek(monday);
+}

@@ -89,4 +89,13 @@ function formatScoredWeekLabel(mondayYmd, sundayYmd) {
   assert.equal(`crm-weekly-top-${scoringMonday}`, 'crm-weekly-top-2026-11-16');
 }
 
+// Program reset Nov 28 2026 — 16–22 card hidden; first publish after current week ends
+{
+  const PROGRAM_START = displayWeekBounds(new Date('2026-11-28T12:00:00+05:30')).mondayYmd;
+  const now = new Date('2026-11-28T15:00:00+05:30');
+  const scoring = scoringWeekBounds(now);
+  assert.equal(scoring.mondayYmd, '2026-11-16');
+  assert.ok(scoring.mondayYmd < PROGRAM_START);
+}
+
 console.log('weeklyPerformerWindow.test.mjs: ok');

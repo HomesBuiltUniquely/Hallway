@@ -1,6 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { ensureCrmFeedAnnouncementTimestamp, ensureHallwaySchema, getPool } from './db';
+import {
+  ensureCrmFeedAnnouncementTimestamp,
+  ensureHallwaySchema,
+  hydrateCrmFeedHallwayCreatedAt,
+  getPool,
+} from './db';
 import { formatPersonName } from './hallwayDisplay';
 
 const DEFAULT_CRM = 'https://hows.hubinterior.com';
@@ -488,11 +493,14 @@ function dealSubmittedMs(d: any): number {
 /** Booking & Token listing recognition date (IST), aligned with {@code BookingTokenRecognitionDates}. */
 function dealRecognitionYmd(d: any): string {
   const raw =
-    d?.listingDate ||
-    d?.bookingRecognitionDate ||
     d?.bookingDoneDate ||
+    d?.booking_done_date ||
     d?.tenPercentPaidDate ||
+    d?.ten_percent_paid_date ||
     d?.bookingDate ||
+    d?.booking_date ||
+    d?.bookingRecognitionDate ||
+    d?.listingDate ||
     null;
   if (raw) {
     const s = String(raw).slice(0, 10);
@@ -1258,7 +1266,8 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
 
       const boardCards: any[] = [];
 
-      if (weekly.winner && weekly.winner.total > 0) {
+      const { shouldPublishWeeklyTopPerformerCard } = await import('./hallwayWeeklyPerformer');
+      if (weekly.winner && weekly.winner.total > 0 && shouldPublishWeeklyTopPerformerCard(now)) {
         const weekAmount = formatQuote(weekly.winner.total);
         const weekMondayYmd = scoring.mondayYmd;
         boardCards.push({
@@ -1344,19 +1353,23 @@ async function sanitizeHallwayFeedPayload(payload: UpstreamPayload): Promise<Ups
       feed.push(...boardCards);
 
       const { coalesceAnnouncementFeed } = await import('./hallwayFeedCoalesce');
-      const coalesced = coalesceAnnouncementFeed(feed, now);
-      feed.length = 0;
-      feed.push(...coalesced.items);
 
       try {
         const pool = getPool();
         await ensureHallwaySchema();
+        await hydrateCrmFeedHallwayCreatedAt(pool, feed);
+        const coalesced = coalesceAnnouncementFeed(feed, now);
+        feed.length = 0;
+        feed.push(...coalesced.items);
         for (const item of feed) {
           if (!String(item?.id || '').startsWith('crm-')) continue;
           item.createdAt = await ensureCrmFeedAnnouncementTimestamp(pool, item);
         }
       } catch (stampErr) {
         console.warn('CRM feed created_at sync skipped:', stampErr);
+        const coalesced = coalesceAnnouncementFeed(feed, now);
+        feed.length = 0;
+        feed.push(...coalesced.items);
         for (const item of feed) {
           if (!item.createdAt && String(item?.id || '').startsWith('crm-')) {
             item.createdAt = new Date().toISOString();

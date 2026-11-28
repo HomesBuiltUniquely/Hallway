@@ -74,6 +74,15 @@ export interface FeedPost {
   comments: Comment[];
   badgeText?: string;
   honorBadges?: string[];
+  rawBooking?: {
+    bookingId?: string;
+    quoteAmount?: number;
+    customerName?: string;
+    isLargeBooking?: boolean;
+    bookingDoneDate?: string;
+    listingType?: string;
+    branchName?: string;
+  };
   department?: 'Sales' | 'Design' | 'Operations' | 'HR' | 'Finance';
   iconEmoji?: string;
 }

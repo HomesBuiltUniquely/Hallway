@@ -14,6 +14,35 @@ function amountsClose(a, b) {
   return Math.abs(a - b) <= 1 && a > 0 && b > 0;
 }
 
+function istYmd(iso) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(iso));
+}
+
+function weeklyHonorEligible(item, bookingYmd, mondayYmd, sundayYmd) {
+  if (!bookingYmd || bookingYmd < mondayYmd || bookingYmd > sundayYmd) return false;
+  if (!item.createdAt) return true;
+  const hallwayYmd = istYmd(item.createdAt);
+  return hallwayYmd >= mondayYmd;
+}
+
+function honorRank(item, flags, weeklyInr, monthlyInr) {
+  const inr = item.rawBooking?.quoteAmount || 0;
+  const ymd = String(item.rawBooking?.bookingDoneDate || '').slice(0, 10);
+  let rank = 0;
+  if (flags.weekly) rank += 10_000;
+  if (flags.monthly) rank += 1_000;
+  if (flags.weekly && amountsClose(inr, weeklyInr)) rank += 500;
+  if (flags.monthly && amountsClose(inr, monthlyInr)) rank += 200;
+  if (flags.weekly) rank += inr;
+  if (ymd) rank += new Date(`${ymd}T12:00:00+05:30`).getTime() / 1e9;
+  return rank;
+}
+
 function coalesceMirror(items, { scoringFrom, scoringTo, monthKey, weekLabel }) {
   const weekly = items.find((i) => i.registerKind === 'weekly');
   const monthly = items.find((i) => i.registerKind === 'monthly');
@@ -36,8 +65,7 @@ function coalesceMirror(items, { scoringFrom, scoringTo, monthKey, weekLabel }) 
       weeklyName &&
       name === weeklyName &&
       amountsClose(inr, weeklyInr) &&
-      ymd >= scoringFrom &&
-      ymd <= scoringTo
+      weeklyHonorEligible(item, ymd, scoringFrom, scoringTo)
     ) {
       flags.weekly = true;
     }
@@ -56,8 +84,9 @@ function coalesceMirror(items, { scoringFrom, scoringTo, monthKey, weekLabel }) 
       best = { item, flags };
       continue;
     }
-    const score = (f) => (f.weekly ? 2 : 0) + (f.monthly ? 1 : 0);
-    if (score(flags) > score(best.flags)) best = { item, flags };
+  if (honorRank(item, flags, weeklyInr, monthlyInr) > honorRank(best.item, best.flags, weeklyInr, monthlyInr)) {
+      best = { item, flags };
+    }
   }
 
   if (!best) return items;
@@ -83,6 +112,7 @@ function coalesceMirror(items, { scoringFrom, scoringTo, monthKey, weekLabel }) 
     {
       id: 'crm-booking-1',
       registerKind: 'booking',
+      createdAt: '2026-11-22T10:00:00+05:30',
       author: { name: 'Meghana' },
       rawBooking: { quoteAmount: 1462047, bookingDoneDate: '2026-11-22' },
     },
@@ -116,6 +146,7 @@ function coalesceMirror(items, { scoringFrom, scoringTo, monthKey, weekLabel }) 
     {
       id: 'crm-booking-1',
       registerKind: 'booking',
+      createdAt: '2026-11-22T10:00:00+05:30',
       author: { name: 'Meghana' },
       rawBooking: { quoteAmount: 1462047, bookingDoneDate: '2026-11-22' },
     },
@@ -142,6 +173,94 @@ function coalesceMirror(items, { scoringFrom, scoringTo, monthKey, weekLabel }) 
   assert.equal(out.some((i) => i.id === 'crm-booking-1'), true);
   assert.equal(out.some((i) => i.id === 'crm-monthly-top-2026-10'), true);
   assert.equal(out.find((i) => i.id === 'crm-booking-1').honorBadges?.length, 1);
+}
+
+// Nov 1 same amount as weekly winner — outside scoring week → no weekly badge
+{
+  const items = [
+    {
+      id: 'crm-booking-nov1',
+      registerKind: 'booking',
+      author: { name: 'Meghana' },
+      rawBooking: { quoteAmount: 1462047, bookingDoneDate: '2026-11-01' },
+    },
+    {
+      id: 'crm-weekly-top-2026-11-16',
+      registerKind: 'weekly',
+      author: { name: 'Meghana' },
+      rawBooking: { quoteAmount: 1462047 },
+    },
+  ];
+  const out = coalesceMirror(items, {
+    scoringFrom: '2026-11-16',
+    scoringTo: '2026-11-22',
+    monthKey: '2026-10',
+    weekLabel: '16–22 Nov',
+  });
+  assert.equal(out.length, 2);
+  assert.equal(out.find((i) => i.id === 'crm-booking-nov1')?.honorBadges?.length || 0, 0);
+}
+
+// Hallway first-seen before scoring week — no weekly badge on booking; weekly card stays
+{
+  const items = [
+    {
+      id: 'crm-booking-meghana',
+      registerKind: 'booking',
+      createdAt: '2026-11-01T07:38:06.000Z',
+      author: { name: 'Meghana' },
+      rawBooking: { quoteAmount: 1462047, bookingDoneDate: '2026-11-22' },
+    },
+    {
+      id: 'crm-weekly-top-2026-11-16',
+      registerKind: 'weekly',
+      author: { name: 'Meghana' },
+      rawBooking: { quoteAmount: 1462047 },
+    },
+  ];
+  const out = coalesceMirror(items, {
+    scoringFrom: '2026-11-16',
+    scoringTo: '2026-11-22',
+    monthKey: '2026-11',
+    weekLabel: '16–22 Nov',
+  });
+  assert.equal(out.length, 2);
+  assert.equal(out.find((i) => i.id === 'crm-booking-meghana')?.honorBadges?.length || 0, 0);
+  assert.equal(out.some((i) => i.id === 'crm-weekly-top-2026-11-16'), true);
+}
+
+// Nov 22 in-week deal preferred over Nov 1 same amount when both present
+{
+  const items = [
+    {
+      id: 'crm-booking-nov1',
+      registerKind: 'booking',
+      author: { name: 'Meghana' },
+      rawBooking: { quoteAmount: 1462047, bookingDoneDate: '2026-11-01' },
+    },
+    {
+      id: 'crm-booking-nov22',
+      registerKind: 'booking',
+      createdAt: '2026-11-22T12:00:00+05:30',
+      author: { name: 'Meghana' },
+      rawBooking: { quoteAmount: 1462047, bookingDoneDate: '2026-11-22' },
+    },
+    {
+      id: 'crm-weekly-top-2026-11-16',
+      registerKind: 'weekly',
+      author: { name: 'Meghana' },
+      rawBooking: { quoteAmount: 1462047 },
+    },
+  ];
+  const out = coalesceMirror(items, {
+    scoringFrom: '2026-11-16',
+    scoringTo: '2026-11-22',
+    monthKey: '2026-10',
+    weekLabel: '16–22 Nov',
+  });
+  assert.equal(out.length, 2);
+  assert.equal(out.find((i) => i.id === 'crm-booking-nov22')?.honorBadges?.length, 1);
+  assert.equal(out.find((i) => i.id === 'crm-booking-nov1')?.honorBadges?.length || 0, 0);
 }
 
 // Amount mismatch — no coalesce

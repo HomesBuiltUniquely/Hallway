@@ -156,6 +156,25 @@ function TitleBoost({ kind }: { kind: CardKind }) {
   );
 }
 
+function hallwayDayLabel(dateInput?: string | Date | null): string {
+  if (!dateInput) return formatRelativeTime(dateInput);
+  const when = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+  if (Number.isNaN(when.getTime())) return formatRelativeTime(dateInput);
+  return formatRecognitionDayLabel(istYmd(when));
+}
+
+function formatRecognitionDayLabel(ymd: string): string {
+  if (ymd === istYmd()) return 'Today';
+  if (ymd === getYesterdayYmd()) return 'Yesterday';
+  const when = new Date(`${ymd}T12:00:00+05:30`);
+  if (Number.isNaN(when.getTime())) return ymd;
+  return when.toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'Asia/Kolkata',
+  });
+}
+
 function cardTime(post: FeedPost): string {
   if (post.id.startsWith('crm-weekly-top-')) {
     const ts = String(post.timestamp || '').trim();
@@ -163,18 +182,8 @@ function cardTime(post: FeedPost): string {
     return 'Weekly';
   }
   if (post.id.startsWith('crm-monthly-top-') || post.id.startsWith('crm-month-milestone-')) return 'This month';
-  if (post.id.startsWith('crm-booking-') && post.createdAt) {
-    const when = new Date(post.createdAt);
-    if (!Number.isNaN(when.getTime())) {
-      const ymd = istYmd(when);
-      if (ymd === istYmd()) return 'Today';
-      if (ymd === getYesterdayYmd()) return 'Yesterday';
-      return when.toLocaleDateString('en-IN', {
-        day: 'numeric',
-        month: 'short',
-        timeZone: 'Asia/Kolkata',
-      });
-    }
+  if (post.id.startsWith('crm-booking-')) {
+    return hallwayDayLabel(post.createdAt);
   }
   return formatRelativeTime(post.createdAt || post.timestamp);
 }
@@ -322,9 +331,11 @@ export default function HubLiveFeedCard({ post }: { post: FeedPost }) {
   }, [rollupReactionId]);
 
   useEffect(() => {
-    if (rollupReactionId) {
+    if (!rollupReactionId) return;
+    const id = requestAnimationFrame(() => {
       rollupRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    }
+    });
+    return () => cancelAnimationFrame(id);
   }, [rollupReactionId]);
 
   const handleToggleReaction = async (reactionKey: string) => {

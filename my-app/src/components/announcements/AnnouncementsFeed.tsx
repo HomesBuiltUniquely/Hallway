@@ -4,7 +4,10 @@ import React, { useEffect, useState } from 'react';
 import { Megaphone } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import HubLiveFeedCard from './HubLiveFeedCard';
-import { resolveWeeklyPerformerContext } from '../../lib/hallwayWeeklyPerformer';
+import {
+  isVisibleWeeklyTopPerformerCardId,
+  resolveWeeklyPerformerContext,
+} from '../../lib/hallwayWeeklyPerformer';
 
 type TagFilter = 'ALL' | 'DEALS' | 'ANNOUNCEMENTS' | 'PERFORMERS' | 'MILESTONES';
 
@@ -22,6 +25,7 @@ export default function AnnouncementsFeed({
 
   const eligibleAnnouncements = (announcementPosts || []).filter((post) => {
     if (post.id.startsWith('crm-target-')) return false;
+    if (post.id.startsWith('crm-weekly-top-') && !isVisibleWeeklyTopPerformerCardId(post.id)) return false;
     if (post.id.startsWith('crm-booking-token-')) return false;
     if (
       String(post.title || '')
@@ -100,10 +104,6 @@ export default function AnnouncementsFeed({
     const getTime = (p: typeof a) => {
       if (p.createdAt) {
         const t = new Date(p.createdAt).getTime();
-        if (Number.isFinite(t)) return t;
-      }
-      if (p.timestamp) {
-        const t = new Date(p.timestamp).getTime();
         if (Number.isFinite(t)) return t;
       }
       if (p.id?.startsWith('post-')) {
